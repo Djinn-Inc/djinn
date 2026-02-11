@@ -55,9 +55,9 @@ These represent different capabilities. A brilliant analyst may lack bankroll di
 
 Djinn unbundles information from execution.
 
-Analysts (**Geniuses**) sell predictions. Buyers (**Idiots**) purchase access. What buyers do with the information is their business — betting, not betting, or partial hedging. Djinn remains agnostic.
+Analysts (**Geniuses**) sell predictions. Buyers (**Idiots**) purchase access. What buyers do with the information is their business: betting, not betting, or partial hedging. Djinn remains agnostic.
 
-This separation benefits:
+The separation benefits all parties:
 
 - **Geniuses:** Edge scales across thousands of buyers without moving markets.
 - **Idiots:** They are purchasing methodology, not execution risk.
@@ -65,7 +65,7 @@ This separation benefits:
 
 ### Two Core Guarantees
 
-1. **Signals stay secret forever.** Not until game time — permanently. No entity, including Djinn, ever views signal content.
+1. **Signals stay secret forever.** Not just until game time, but permanently. No entity, including Djinn, ever views signal content.
 
 2. **Track records are verifiable forever.** Cryptographic proof confirms ROI and performance without revealing individual picks.
 
@@ -81,7 +81,7 @@ Every signal is committed on-chain before the game. It is encrypted so no one ca
 
 ### Collateral-Backed Guarantees
 
-Geniuses deposit real money as collateral. After 10 signals with a given buyer, an audit occurs. Underperformance triggers damages paid from collateral — a standard service-level agreement.
+Geniuses deposit real money as collateral. After 10 signals with a given buyer, an audit occurs. Underperformance triggers damages paid from collateral, functioning as a standard service-level agreement.
 
 ### True Blindness
 
@@ -93,7 +93,7 @@ Signal creation involves:
 
 ### Permanent Secrecy via Zero-Knowledge Proofs
 
-For audits, neither party reveals signals to smart contracts. Instead, the client generates a zero-knowledge proof — a mathematical statement that says "I know the preimage of these on-chain commitments, and when I evaluate them against the public game outcomes, the Quality Score is X."
+For audits, neither party reveals signals to smart contracts. Instead, the client generates a zero-knowledge proof, a mathematical statement that says "I know the preimage of these on-chain commitments, and when I evaluate them against the public game outcomes, the Quality Score is X."
 
 For public records, aggregate proofs work identically: "Across my 347 committed signals, my ROI is 8% and my favorable rate is 54%."
 
@@ -145,7 +145,7 @@ If both checks pass, the browser:
 
 ### Decoys
 
-The Genius selects nine decoy lines to accompany the real signal — 10 lines total. Decoy quality is the Genius's responsibility. Sophisticated Geniuses choose plausible decoys at similar odds across the same sport to maximize ambiguity:
+The Genius selects nine decoy lines to accompany the real signal (10 lines total). Decoy quality is the Genius's responsibility. Sophisticated Geniuses choose plausible decoys at similar odds across the same sport to maximize ambiguity:
 
 | Index | Line | Real? |
 |-------|------|-------|
@@ -193,7 +193,7 @@ Track records are displayed per sport. For example, Alice might show +18% ROI ac
 
 Bob clicks "Buy" with $1,000 notional and FanDuel as his sportsbook.
 
-Notional is the amount of protection Bob is purchasing — the reference amount for both fees and potential SLA damages. It does not need to match any actual wager, and Bob does not need to place a bet at all. If Bob buys a signal at $1,000 notional but bets $2,000 at a sportsbook, SLA damages cover only $1,000. The excess exposure is Bob's risk.
+Notional is the amount of protection Bob is purchasing: the reference amount for both fees and potential SLA damages. It does not need to match any actual wager, and Bob does not need to place a bet at all. If Bob buys a signal at $1,000 notional but bets $2,000 at a sportsbook, SLA damages cover only $1,000. The excess exposure is Bob's risk.
 
 Bob has previously deposited USDC into the Escrow contract, giving him a platform balance. This pre-funding enables instant purchases without wallet approval delays.
 
@@ -241,15 +241,15 @@ Ten signals provide meaningful statistical separation between skilled and random
 | 20 | −0.21 | +0.54 | 0.75 |
 | 50 | −0.34 | +0.85 | 1.19 |
 
-At 10 signals, the gap of 0.53 is meaningful — roughly the difference between a losing strategy and the stock market's long-term risk-adjusted return. Ten signals balance statistical separation against the speed of accountability. An active Genius can complete a cycle in a week.
+At 10 signals, the gap of 0.53 is meaningful, roughly the difference between a losing strategy and the stock market's long-term risk-adjusted return. Ten signals balance statistical separation against the speed of accountability. An active Genius can complete a cycle in a week.
 
 ### Variance Is a Feature
 
 Skilled Geniuses do not pass every audit. At −110 odds, a 5-5 split produces a negative Quality Score because the SLA penalty on unfavorable signals exceeds the favorable credit. A Genius needs 6+ favorable out of 10 to pass. A Genius with a genuine 60% win rate passes approximately 63% of the time, meaning that losing audits occur roughly once every three cycles due to variance alone.
 
-This is intentional. Short audit windows protect Idiots from extended exposure to a Genius who may have lost their edge. Skilled Geniuses recover quickly.
+The design is intentional. Short audit windows protect Idiots from extended exposure to a Genius who may have lost their edge. Skilled Geniuses recover quickly.
 
-For fakers, the math is unforgiving. A random picker at 50% has only a 38% chance of passing any single audit. Consecutive passes collapse rapidly: 14% for two, 5% for three, and under 1% for five. After 10 consecutive audits, a faker has a 0.006% chance of passing all of them. A skilled Genius at 60% has about a 1% chance — 160 times more likely. Over time, the protocol reliably separates real skill from noise.
+For fakers, the math is unforgiving. A random picker at 50% has only a 38% chance of passing any single audit. Consecutive passes collapse rapidly: 14% for two, 5% for three, and under 1% for five. After 10 consecutive audits, a faker has a 0.006% chance of passing all of them. A skilled Genius at 60% has about a 1% chance, which is 160 times more likely. Over time, the protocol reliably separates real skill from noise.
 
 ### Quality Score Calculation
 
@@ -291,7 +291,7 @@ Bob never receives more USDC than he paid. Credits offset future purchases but c
 
 ### Track Record Integrity
 
-A Genius's public track record must cover **every committed signal whose outcome has finalized**, not just signals from completed audit cycles. This prevents cherry-picking.
+A Genius's public track record must cover **every committed signal whose outcome has finalized**, not just signals from completed audit cycles. The requirement prevents cherry-picking.
 
 The client application computes track record proofs automatically. When a Genius opens the app:
 1. The client checks for newly finalized outcomes on-chain.
@@ -368,7 +368,7 @@ Example: If a signal costs $100 and Bob has $30 in credits, he pays $70 USDC + $
 
 A buyer can never extract more USDC than they put in.
 
-Credits do not expire. They are non-transferable, non-cashable, and cannot be converted to USDC. They function solely as a discount on future purchases. This structure ensures that credits are not profits — they are a service credit analogous to store credit after a refund, carrying no cash value outside the platform.
+Credits do not expire. They are non-transferable, non-cashable, and cannot be converted to USDC. They function solely as a discount on future purchases. This structure ensures that credits are not profits; they are a service credit analogous to store credit after a refund, carrying no cash value outside the platform.
 
 ---
 
@@ -380,7 +380,7 @@ This revenue funds protocol development, smart contract maintenance, gas fees, Z
 
 ### Revenue-Backed Token Value
 
-Unlike subnets relying purely on speculative token value, Djinn's alpha token is backed by actual economic activity through protocol-funded buybacks. This means miners and validators earn emissions in a token whose value is supported by real, recurring revenue — not inflation.
+Unlike subnets relying purely on speculative token value, Djinn's alpha token is backed by actual economic activity through protocol-funded buybacks. Miners and validators therefore earn emissions in a token whose value is supported by real, recurring revenue rather than inflation.
 
 As platform volume grows, buyback pressure increases, supporting a higher token value and attracting more network participants.
 
@@ -442,7 +442,7 @@ Djinn never serves code that handles user secrets. The client is open source, pu
 
 ### User Experience
 
-Users interact only with Base chain. They need only an ETH wallet and USDC — no TAO, no Bittensor wallet, no subnet knowledge, and no ZK proof knowledge. All complexity is hidden.
+Users interact only with Base chain. They need only an ETH wallet and USDC. No TAO, no Bittensor wallet, no subnet knowledge, no ZK proof knowledge. All complexity is hidden.
 
 ### Wallet-Based Key Recovery
 
@@ -490,9 +490,9 @@ The vulnerable window is typically narrow: minutes to hours between creation and
 
 ### Outcome Attestation
 
-Game outcomes are publicly verifiable facts: final scores from official league sources (NBA API, NFL API, ESPN, etc.). Validators independently query these sources and attest outcomes, requiring 2/3+ consensus before writing results on-chain. If official sources agree — as is overwhelmingly the case — validators converge trivially.
+Game outcomes are publicly verifiable facts: final scores from official league sources (NBA API, NFL API, ESPN, etc.). Validators independently query these sources and attest outcomes, requiring 2/3+ consensus before writing results on-chain. When official sources agree, which is almost always, validators converge trivially.
 
-When validators disagree (ambiguous outcomes, stat corrections, suspended games), Bittensor's Yuma Consensus mechanism determines the canonical result. Validators whose attestations align with the consensus-weighted majority receive full credit; outliers are penalized. This creates a strong incentive to report accurately and wait for authoritative rulings before attesting, rather than racing to attest ambiguous results.
+When validators disagree (ambiguous outcomes, stat corrections, suspended games), Bittensor's Yuma Consensus mechanism determines the canonical result. Validators whose attestations align with the consensus-weighted majority receive full credit; outliers are penalized. The result is a strong incentive to report accurately and wait for authoritative rulings before attesting, rather than racing to attest ambiguous results.
 
 ### Miners
 
@@ -500,11 +500,11 @@ Miners are line-checking oracles with cryptographic accountability. Their role i
 
 During signal creation or purchase, miners receive 10 candidate lines (not knowing which is real), query sportsbook data sources to check availability at two or more sportsbooks, and report availability to validators. This is Phase 1: the fast check that gates the purchase.
 
-Miners acquire their own data sources: paid odds APIs (e.g., The Odds API, OddsJam), direct sportsbook integrations, or their own scraping infrastructure. Data acquisition is the miner's responsibility and primary operational cost. Miners without reliable data sources produce inaccurate reports and lose emissions. This mirrors other competitive markets — the cost of participating is the cost of obtaining good data.
+Miners acquire their own data sources: paid odds APIs (e.g., The Odds API, OddsJam), direct sportsbook integrations, or their own scraping infrastructure. Data acquisition is the miner's responsibility and primary operational cost. Miners without reliable data sources produce inaccurate reports and lose emissions. As in any competitive market, the cost of participating is the cost of obtaining good data.
 
 Seconds later, the miner submits a TLSNotary proof of the same TLS session (Phase 2). The proof is cryptographically tied to the sportsbook's server and cannot be forged without the sportsbook's private key. Validators verify the proof and update the miner's accuracy score, after which the proof is discarded. The accuracy score is a permanent record, but the proof itself is ephemeral: once the score is updated, the proof has served its purpose.
 
-Because speed accounts for 40% of miner scoring, geographic proximity to sportsbook servers provides a measurable advantage. Miners optimizing for emissions will co-locate near major sportsbook infrastructure, typically in the eastern United States. This is a feature: it ensures that the fastest miners serve the regions where most sportsbooks operate, directly improving purchase latency for users.
+Because speed accounts for 40% of miner scoring, geographic proximity to sportsbook servers provides a measurable advantage. Miners optimizing for emissions will co-locate near major sportsbook infrastructure, typically in the eastern United States. That geographic concentration is a feature, not a bug: the fastest miners end up serving the regions where most sportsbooks operate, directly improving purchase latency for users.
 
 ### Miner Scoring
 
@@ -526,7 +526,7 @@ Miner emissions during active epochs depend on five metrics:
 
 **Uptime** is the percentage of epochs where the miner responded to health checks. It carries lower weight because it overlaps with speed: an offline miner cannot be fast.
 
-**History** is consecutive epochs of participation, scaled logarithmically so that early loyalty is rewarded more than marginal gains at epoch 1,000. This prevents churn and rewards commitment.
+**History** is consecutive epochs of participation, scaled logarithmically so that early loyalty is rewarded more than marginal gains at epoch 1,000. The curve prevents churn and rewards commitment.
 
 **TLSNotary proof submission** is the percentage of queries where the miner submitted a valid TLSNotary proof. The pool is optional: miners who skip it forfeit 20% of potential emissions but face no penalty. Combined with accuracy, honest and verifiable reporting accounts for 40% of emissions.
 
@@ -565,7 +565,7 @@ The only rational strategies are to report honestly and submit proof (maximum ea
 
 **Client code tampering:** The frontend is served from a public Git repository. Every deploy is a public commit, and the build is reproducible. Security researchers, competitors, and automated monitors can continuously verify that the served code matches the public source.
 
-**Browser extension attacks:** A malicious browser extension with broad permissions could theoretically observe decrypted signal content in the DOM. This is an inherent limitation of browser-based cryptography, not specific to Djinn. Mitigations include using a dedicated browser profile with extensions disabled, or using the protocol through a standalone application if one becomes available. The protocol's encryption, Shamir sharing, and ZK layers protect signals from every other attack vector — the browser is the last-mile trust boundary.
+**Browser extension attacks:** A malicious browser extension with broad permissions could theoretically observe decrypted signal content in the DOM. The vulnerability is inherent to browser-based cryptography, not specific to Djinn. Mitigations include using a dedicated browser profile with extensions disabled, or using the protocol through a standalone application if one becomes available. The protocol's encryption, Shamir sharing, and ZK layers protect signals from every other attack vector. The browser itself is the last-mile trust boundary.
 
 **TLSNotary and evolving TLS standards:** TLSNotary relies on the structure of TLS sessions to produce verifiable proofs. As TLS evolves (TLS 1.3 Encrypted Client Hello, post-quantum cipher suites), TLSNotary tooling must evolve alongside it. The protocol monitors TLSNotary compatibility with major sportsbook TLS configurations and will adapt proof mechanisms as the TLS landscape changes. If a specific sportsbook becomes incompatible with TLSNotary, miners cannot produce proofs for that sportsbook, and the accuracy scoring system reflects this naturally.
 
@@ -597,7 +597,7 @@ For cases where no miner submitted a TLSNotary proof for a specific query, a rea
 
 ## 13. Legal Positioning
 
-Djinn is an information marketplace — not a sportsbook, exchange, or gambling platform. The distinction is structural, not cosmetic.
+Djinn is an information marketplace, not a sportsbook, exchange, or gambling platform. The distinction is structural, not cosmetic.
 
 ### What Djinn Does
 
@@ -611,7 +611,7 @@ Djinn does not accept bets. It does not match bettors, set odds, or take a posit
 
 These are not policy commitments; they are architectural constraints enforced by protocol design:
 
-**Djinn cannot see signals.** All signal content is encrypted client-side, and the encryption key is split across validators via Shamir's Secret Sharing. Djinn's servers never receive, process, or store signal plaintext. This is provable from the open-source client code.
+**Djinn cannot see signals.** All signal content is encrypted client-side, and the encryption key is split across validators via Shamir's Secret Sharing. Djinn's servers never receive, process, or store signal plaintext. Anyone can verify this from the open-source client code.
 
 **Djinn cannot see outcomes at signal level.** Audits are settled via ZK proofs. The smart contract verifies that the Quality Score was correctly computed without learning which signals were favorable or unfavorable. Djinn sees only the aggregate score.
 
@@ -647,7 +647,7 @@ The ZK proof layer further strengthens this position by ensuring that Djinn is s
 
 ## 15. Web Attestation Service
 
-The TLSNotary infrastructure that Djinn builds for sports has immediate standalone value. A TLSNotary proof attests that a specific web server sent specific content at a specific time — a decentralized, trustless, permanent record of what a website said, serving as a cryptographic alternative to screenshots, web archives, and trust-based attestations.
+The TLSNotary infrastructure that Djinn builds for sports has immediate standalone value. A TLSNotary proof attests that a specific web server sent specific content at a specific time. It provides a decentralized, trustless, permanent record of what a website said: a cryptographic alternative to screenshots, web archives, and trust-based attestations.
 
 ### How It Works
 
@@ -659,11 +659,11 @@ The proof hash is stored on-chain permanently, while the full proof is stored on
 
 Web attestation follows the same economic model as sports. The attestation fee flows to the protocol as revenue, supporting the subnet's alpha token through the same buyback mechanism described in Section 8. Miners completing attestation work earn emission credit, scored on the same metrics as sports queries: speed, accuracy, and proof submission.
 
-This is a Bittensor-native approach. Emissions pay miners and validators for being online, responsive, and accurate. User fees flow into the protocol's revenue pool, supporting the alpha token, making emissions more valuable, and attracting better miners. The same flywheel applies whether a miner is checking a sportsbook line or attesting a web page.
+The approach is Bittensor-native. Emissions pay miners and validators for being online, responsive, and accurate. User fees flow into the protocol's revenue pool, supporting the alpha token, making emissions more valuable, and attracting better miners. The same flywheel applies whether a miner is checking a sportsbook line or attesting a web page.
 
 From a miner's perspective, a web attestation request is indistinguishable from a sports executability check. Both involve fetching data from a server, generating a TLSNotary proof, and submitting it for validation. The scoring mechanism treats both workloads identically, which means attestation requests naturally fill low-volume sports periods, keeping miners engaged and the network responsive without requiring a separate incentive structure.
 
-Bittensor's multiple incentive mechanism feature allows the subnet to allocate a portion of emissions specifically to web attestation work. This ensures that miners are rewarded proportionally for both sports and attestation tasks without one crowding out the other.
+Bittensor's multiple incentive mechanism feature allows the subnet to allocate a portion of emissions specifically to web attestation work. The allocation ensures that miners are rewarded proportionally for both sports and attestation tasks without one crowding out the other.
 
 ### Use Cases
 
@@ -704,9 +704,9 @@ Three things change when the protocol extends to a new domain:
 
 ### The Communication Delay Case
 
-Some domains don't merely benefit from unbundling information and execution — they require it. Consider a robot on a factory floor, a drone in a remote location, or a rover on another planet. When communication delays make real-time remote control impossible, local executors must act on pre-committed instructions from remote intelligence. The executor reports available actions, transmits them to a remote analyst, receives instructions, and acts autonomously.
+Some domains don't merely benefit from unbundling information and execution; they require it. Consider a robot on a factory floor, a drone in a remote location, or a rover on another planet. When communication delays make real-time remote control impossible, local executors must act on pre-committed instructions from remote intelligence. The executor reports available actions, transmits them to a remote analyst, receives instructions, and acts autonomously.
 
-The interplanetary case makes this vivid. Light takes 3 to 24 minutes each way between Earth and Mars, so it is impossible to remotely control a Mars rover in real time. There must be local execution with remote intelligence. The rover reports available actions, Earth-based analysts select the optimal action, the rover executes, and the outcome is measurable. In this context, unbundling is not a design choice — it is physics.
+The interplanetary case makes this vivid. Light takes 3 to 24 minutes each way between Earth and Mars, so it is impossible to remotely control a Mars rover in real time. There must be local execution with remote intelligence. The rover reports available actions, Earth-based analysts select the optimal action, the rover executes, and the outcome is measurable. In this context, unbundling is not a design choice. It is physics.
 
 In these environments, the accountability layer matters more, not less. The cost of bad instructions scales with the executing agent's value: a destroyed rover, not a lost bet. Verified track records of which intelligence sources produce good outcomes become critical infrastructure, not a convenience.
 
@@ -722,13 +722,13 @@ The vision is a general-purpose marketplace for accountable intelligence. Sports
 
 ## 17. Governance
 
-Protocol parameters — miner scoring weights, audit window size, fee percentages, emission allocations — are controlled by the subnet owner (Djinn Inc.). This is standard for Bittensor subnets: the subnet owner registers the subnet, deploys the incentive mechanism, and retains authority to update parameters as operational data dictates.
+Protocol parameters (miner scoring weights, audit window size, fee percentages, emission allocations) are controlled by the subnet owner (Djinn Inc.). The arrangement is standard for Bittensor subnets: the subnet owner registers the subnet, deploys the incentive mechanism, and retains authority to update parameters as operational data dictates.
 
-This approach is pragmatic, not ideological. Early-stage protocols require rapid iteration. Scoring weights that look correct on paper may need adjustment after observing real miner behavior. Fee structures may need rebalancing as volume scales. Decentralizing parameter control before the protocol has production data risks ossifying bad defaults.
+The approach is pragmatic, not ideological. Early-stage protocols require rapid iteration. Scoring weights that look correct on paper may need adjustment after observing real miner behavior. Fee structures may need rebalancing as volume scales. Decentralizing parameter control before the protocol has production data risks ossifying bad defaults.
 
 Smart contracts on Base are immutable once deployed. Contract upgrades follow standard proxy patterns with timelock delays, giving users visibility into pending changes before they take effect.
 
-As the protocol matures and operational data stabilizes, governance authority can progressively decentralize — either through on-chain governance mechanisms or delegation to the validator set. The timeline for this transition depends on protocol maturity, not a predetermined schedule.
+As the protocol matures and operational data stabilizes, governance authority can progressively decentralize, either through on-chain governance mechanisms or delegation to the validator set. The timeline for this transition depends on protocol maturity, not a predetermined schedule.
 
 ---
 
@@ -878,7 +878,7 @@ Each share is individually encrypted to its assigned validator's public key befo
 
 ### Multi-Party Computation for Executability
 
-The MPC protocol enables validators to jointly determine whether the real signal is among the lines reported as available by miners — without any validator learning which line is real.
+The MPC protocol enables validators to jointly determine whether the real signal is among the lines reported as available by miners, without any validator learning which line is real.
 
 The protocol operates as follows:
 
@@ -888,7 +888,7 @@ The protocol operates as follows:
 4. The computation requires two communication rounds among the 7+ participating validators.
 5. The output is a single bit: available or not. No validator learns the secret index.
 
-The MPC is lightweight because the computation is simple (set membership of a single integer). This is not general-purpose MPC — it is a narrow, optimized protocol for this specific operation, keeping latency within the 3–5 second purchase window.
+The MPC is lightweight because the computation is simple (set membership of a single integer). It is not general-purpose MPC but a narrow, optimized protocol for this specific operation, keeping latency within the 3–5 second purchase window.
 
 ### Zero-Knowledge Proofs
 
