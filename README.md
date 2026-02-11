@@ -17,7 +17,8 @@ Bittensor Subnet 103 · Base Chain · USDC
 [Whitepaper](docs/whitepaper.md) · [djinn.gg](https://djinn.gg)
 </div>
 
-> **Heads up:** Nothing here runs yet. The whitepaper is real, the code is scaffolding. Don't try to spin up miners or validators. We'll make noise when it's time.
+> [!WARNING]
+> **This repo is pre-release.** The whitepaper is published but miner and validator code is not functional yet. Do not attempt to run anything against the network. Watch this repo for launch updates.
 
 ---
 
