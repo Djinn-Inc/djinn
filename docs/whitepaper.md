@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="images/djinn-logo.png" alt="Djinn" width="200">
-</p>
+![](images/djinn-logo.png){width=150px}
 
 # Djinn Protocol: Whitepaper
 
@@ -73,7 +71,7 @@ The separation benefits all parties:
 
 2. **Track records are verifiable forever.** Cryptographic proof confirms ROI and performance without revealing individual picks.
 
-![Figure 1: Protocol overview. Geniuses encrypt signals, commit them on-chain, and distribute key shares to validators. Idiots pay USDC and decrypt locally.](images/fig1-protocol-overview.png)
+![Protocol overview. Geniuses encrypt signals, commit them on-chain, and distribute key shares to validators. Idiots pay USDC and decrypt locally.](images/fig1-protocol-overview.png)
 
 ---
 
@@ -92,6 +90,7 @@ Geniuses deposit real money as collateral. After 10 signals with a given buyer, 
 ### True Blindness
 
 Signal creation involves:
+
 - Client-side encryption
 - Encryption key split via Shamir's Secret Sharing across validators
 - Decoy lines that mask the actual signal
@@ -128,7 +127,7 @@ ZK circuits remain lightweight, involving only hash preimage openings, index che
 
 ## 5. Life of a Signal
 
-![Figure 2: Signal lifecycle. A signal flows through eight stages from creation to audit settlement.](images/fig2-signal-lifecycle.png)
+![Signal lifecycle. A signal flows through eight stages from creation to audit settlement.](images/fig2-signal-lifecycle.png)
 
 ### Creation
 
@@ -144,6 +143,7 @@ MP%, SLA%, and expiry are set per signal. Alice can post her next signal with co
 2. **Validator health:** Are 10 validators online and responsive? If the validator set is degraded, the client warns the user and waits for a healthy quorum.
 
 If both checks pass, the browser:
+
 - Encrypts the signal
 - Splits the encryption key into 10 pieces via Shamir's Secret Sharing (7+ needed for reconstruction)
 - Splits the real signal's index into 10 pieces via a separate Shamir sharing (for the MPC executability check)
@@ -171,13 +171,14 @@ The Genius selects nine decoy lines to accompany the real signal (10 lines total
 
 Observers see ten lines and a commitment hash. The real signal could be any of them.
 
-![Figure 3: Decoy masking system. Ten lines are committed on-chain. Only the Genius knows which is real. Validators, miners, and buyers (pre-purchase) cannot distinguish the real signal from decoys.](images/fig3-decoy-system.png)
+![Decoy masking system. Ten lines are committed on-chain. Only the Genius knows which is real. Validators, miners, and buyers (pre-purchase) cannot distinguish the real signal from decoys.](images/fig3-decoy-system.png)
 
 ### Discovery
 
 Buyer Bob browses the Djinn marketplace, filtering by sport (NBA). He sees:
 
 **Visible to Buyer:**
+
 - Sport
 - Genius wallet address
 - Track record: ROI, favorable rate, unfavorable rate, void rate, signal count
@@ -189,6 +190,7 @@ Buyer Bob browses the Djinn marketplace, filtering by sport (NBA). He sees:
 - Signal expiry time
 
 **Hidden (encrypted):**
+
 - Game
 - Teams
 - Position
@@ -285,7 +287,7 @@ The score is positive, meaning Alice's methodology delivered value. She keeps th
 
 If only 4 were favorable and 6 were unfavorable, the Quality Score would be −$1,180.
 
-![Figure 4: Audit cycle. Ten signals accumulate outcomes, feed into the Quality Score calculation, and settle on-chain via a zero-knowledge proof.](images/fig4-audit-cycle.png)
+![Audit cycle. Ten signals accumulate outcomes, feed into the Quality Score calculation, and settle on-chain via a zero-knowledge proof.](images/fig4-audit-cycle.png)
 
 ### Settlement via Zero-Knowledge Proof
 
@@ -297,6 +299,7 @@ The smart contract verifies the proof and settles:
 - **Tranche B (Credits):** Excess damages become non-transferable Djinn Credits.
 
 Example: Bob paid $500 in fees (10 × $500 × 10%). The Quality Score is −$1,180. He receives:
+
 - Tranche A: $500 USDC (all fees paid)
 - Tranche B: $680 Credits
 
@@ -406,7 +409,7 @@ As platform volume grows, buyback pressure increases, supporting a higher token 
 5. Better service attracts more Geniuses and Idiots.
 6. More users generate more volume.
 
-![Figure 5: Network flywheel. Volume, fees, token value, participants, service quality, and user growth form a self-reinforcing cycle.](images/fig5-flywheel.png)
+![Network flywheel. Volume, fees, token value, participants, service quality, and user growth form a self-reinforcing cycle.](images/fig5-flywheel.png)
 
 ### Self-Regulating Economics
 
@@ -430,7 +433,7 @@ All user-facing transactions (escrow, collateral, fees, settlements, refunds) ar
 
 ## 9. Architecture
 
-![Figure 6: System architecture. Four layers: client-side browser and wallet, Base chain smart contracts, Bittensor subnet validators and miners, and decentralized data storage.](images/fig6-architecture.png)
+![System architecture. Four layers: client-side browser and wallet, Base chain smart contracts, Bittensor subnet validators and miners, and decentralized data storage.](images/fig6-architecture.png)
 
 ### A Fully Decentralized Protocol
 
@@ -488,6 +491,7 @@ A decentralized subgraph on The Graph indexes public on-chain data for fast quer
 ### Validators
 
 Validators are the trust layer. They:
+
 - Hold encrypted key shares
 - Coordinate MPC for executability checks
 - Release shares after payment
