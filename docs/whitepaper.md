@@ -171,8 +171,8 @@ Buyer Bob browses the Djinn marketplace, filtering by sport (NBA). He sees:
 - Genius wallet address
 - Track record: ROI, favorable rate, unfavorable rate, void rate, signal count
 - Track record by sport
-- Purchase success rate
-- Proof coverage percentage
+- Purchase success rate (fraction of purchase attempts that were not voided for unavailability)
+- Proof coverage percentage (fraction of finalized signals included in the verified track record; see [Track Record Integrity](#track-record-integrity))
 - Max Price (10%)
 - SLA Multiplier (100%)
 - Signal expiry time
