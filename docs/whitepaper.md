@@ -1,10 +1,11 @@
 # Djinn Protocol — Whitepaper v11.1
 
-**Decentralized Sports Analytics Marketplace**
+### Intelligence × Execution
+
+Buy intelligence you can trust. Sell analysis you can prove.
+Signals stay secret forever — even from us.
 
 VERSION 11.1 · FEBRUARY 2026
-
-> Signals stay secret forever. Track records are verifiable forever.
 
 Bittensor Subnet 103 · Base Chain · USDC
 
@@ -830,8 +831,6 @@ Response: { request_id, url, status, proof_hash, arweave_tx, attested_at, miner 
 ---
 
 > Djinn unbundles information from execution.
->
-> Signals stay secret forever. Track records are verifiable forever.
 >
 > The protocol runs itself.
 

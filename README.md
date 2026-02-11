@@ -2,7 +2,11 @@
 
 # **Djinn Protocol** <!-- omit in toc -->
 
-**Decentralized Sports Analytics Marketplace**
+### Intelligence × Execution
+
+Buy intelligence you can trust.
+Sell analysis you can prove.
+Signals stay secret forever — even from us.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
