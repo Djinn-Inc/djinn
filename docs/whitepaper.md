@@ -69,6 +69,8 @@ The separation benefits all parties:
 
 2. **Track records are verifiable forever.** Cryptographic proof confirms ROI and performance without revealing individual picks.
 
+![Figure 1: Protocol overview. Geniuses encrypt signals, commit them on-chain, and distribute key shares to validators. Idiots pay USDC and decrypt locally.](images/fig1-protocol-overview.png)
+
 ---
 
 ## 3. The Accountability Layer
@@ -122,6 +124,8 @@ ZK circuits remain lightweight, involving only hash preimage openings, index che
 
 ## 5. Life of a Signal
 
+![Figure 2: Signal lifecycle. A signal flows through eight stages from creation to audit settlement.](images/fig2-signal-lifecycle.png)
+
 ### Creation
 
 Genius Alice identifies value: Lakers −3 @ −110 (1.91 decimal). She accesses the Djinn dashboard showing estimated liquidity, current collateral ($50,000), and available exposure capacity.
@@ -161,6 +165,8 @@ The Genius selects nine decoy lines to accompany the real signal (10 lines total
 | 10 | Bucks −4.5 @ −120 | |
 
 Observers see ten lines and a commitment hash. The real signal could be any of them.
+
+![Figure 3: Decoy masking system. Ten lines are committed on-chain. Only the Genius knows which is real. Validators, miners, and buyers (pre-purchase) cannot distinguish the real signal from decoys.](images/fig3-decoy-system.png)
 
 ### Discovery
 
@@ -273,6 +279,8 @@ Alice has a 100% SLA Multiplier. Bob bought 10 signals at $500 notional each. Si
 The score is positive, meaning Alice's methodology delivered value. She keeps the fees.
 
 If only 4 were favorable and 6 were unfavorable, the Quality Score would be −$1,180.
+
+![Figure 4: Audit cycle. Ten signals accumulate outcomes, feed into the Quality Score calculation, and settle on-chain via a zero-knowledge proof.](images/fig4-audit-cycle.png)
 
 ### Settlement via Zero-Knowledge Proof
 
@@ -393,6 +401,8 @@ As platform volume grows, buyback pressure increases, supporting a higher token 
 5. Better service attracts more Geniuses and Idiots.
 6. More users generate more volume.
 
+![Figure 5: Network flywheel. Volume, fees, token value, participants, service quality, and user growth form a self-reinforcing cycle.](images/fig5-flywheel.png)
+
 ### Self-Regulating Economics
 
 Network participation is self-regulating. If the token price rises too high relative to revenue, excess miners enter and dilute returns until some exit. If the price drops, marginal miners leave, increasing returns for remaining participants until equilibrium is restored.
@@ -414,6 +424,8 @@ All user-facing transactions (escrow, collateral, fees, settlements, refunds) ar
 ---
 
 ## 9. Architecture
+
+![Figure 6: System architecture. Four layers: client-side browser and wallet, Base chain smart contracts, Bittensor subnet validators and miners, and decentralized data storage.](images/fig6-architecture.png)
 
 ### A Fully Decentralized Protocol
 
@@ -555,7 +567,7 @@ The only rational strategies are to report honestly and submit proof (maximum ea
 
 **Miner collusion:** A majority of miners could falsely report line availability. However, the two-phase TLSNotary model means that honest miners automatically produce cryptographic evidence contradicting false reports. Colluding miners face accuracy score degradation and emission reduction without any formal dispute being needed. Such an attack requires controlling most miners and successfully contradicting verifiable cryptographic evidence from every honest miner.
 
-**Validator collusion:** Seven validators could reconstruct an encryption key, but they would face 10 lines without knowing which is real. Acting on a guess has a 10% success rate, and caught validators lose their staked TAO.
+**Validator collusion:** The protocol defends against validator collusion in layers. During honest protocol execution, the MPC reveals only a single bit (executable or not); no validator learns the secret index or the encryption key. Decoys add ambiguity against partial information leakage. Against active, out-of-band collusion by 7+ validators who pool their Shamir shares to reconstruct secrets, the defense is economic: colluding validators risk their staked TAO, and coordinating a supermajority of independently selected validators is operationally difficult. This is the standard trust model for any threshold cryptographic system.
 
 **Genius front-running:** The Genius already knows their own signal, so this does not harm Idiots. Bad methodology results in SLA damages regardless.
 
