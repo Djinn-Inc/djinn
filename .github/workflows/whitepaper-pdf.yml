@@ -5,7 +5,7 @@ on:
     paths:
       - 'docs/whitepaper.md'
       - 'docs/images/**'
-      - 'docs/pdf-header.tex'
+      - 'docs/pdf-style.css'
       - '.github/workflows/whitepaper-pdf.yml'
   workflow_dispatch:
 
@@ -18,26 +18,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pandoc and LaTeX
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc texlive-xetex texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-fonts-extra fonts-liberation
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install md-to-pdf
+        run: npm install -g md-to-pdf
 
       - name: Generate PDF
         run: |
           cd docs
-          pandoc whitepaper.md \
-            -o whitepaper.pdf \
-            --pdf-engine=xelatex \
-            -H pdf-header.tex \
-            -V geometry:margin=1in \
-            -V fontsize=11pt \
-            -V colorlinks=true \
-            -V linkcolor=blue \
-            -V urlcolor=blue \
-            -V mainfont="Liberation Serif" \
-            -V sansfont="Liberation Sans" \
-            -V monofont="Liberation Mono"
+          md-to-pdf whitepaper.md \
+            --stylesheet pdf-style.css \
+            --pdf-options '{"format": "Letter", "margin": {"top": "1in", "bottom": "1in", "left": "1in", "right": "1in"}, "printBackground": true}' \
+            --launch-options '{"args": ["--no-sandbox"]}'
 
       - name: Commit PDF
         run: |
