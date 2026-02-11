@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/djinn-logo.png" alt="Djinn" width="200">
+</p>
+
 # Djinn Protocol: Whitepaper
 
 ### Intelligence × Execution
