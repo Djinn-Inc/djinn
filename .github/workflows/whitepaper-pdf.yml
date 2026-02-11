@@ -18,13 +18,13 @@ jobs:
       - name: Install pandoc and LaTeX
         run: |
           sudo apt-get update
-          sudo apt-get install -y pandoc texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
+          sudo apt-get install -y pandoc texlive-xetex texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
 
       - name: Generate PDF
         run: |
           pandoc docs/whitepaper.md \
             -o docs/whitepaper.pdf \
-            --pdf-engine=pdflatex \
+            --pdf-engine=xelatex \
             -V geometry:margin=1in \
             -V fontsize=11pt \
             -V colorlinks=true \
