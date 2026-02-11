@@ -1,4 +1,4 @@
-# Djinn Protocol — Whitepaper
+# Djinn Protocol: Whitepaper
 
 ### Intelligence × Execution
 
