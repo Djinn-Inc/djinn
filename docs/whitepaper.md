@@ -1,15 +1,11 @@
-# Djinn Protocol — Whitepaper v11.1
+# Djinn Protocol — Whitepaper
 
 ### Intelligence × Execution
 
 Buy intelligence you can trust. Sell analysis you can prove.
 Signals stay secret forever — even from us.
 
-VERSION 11.1 · FEBRUARY 2026
-
 Bittensor Subnet 103 · Base Chain · USDC
-
-*v11.1 change note: Section 15 (Web Attestation Service) revised to align web attestation economics with the Bittensor emission model. No other sections changed.*
 
 ---
 
@@ -31,8 +27,10 @@ Bittensor Subnet 103 · Base Chain · USDC
 14. [Edge Cases](#14-edge-cases)
 15. [Web Attestation Service](#15-web-attestation-service)
 16. [Beyond Sports](#16-beyond-sports)
+17. [Governance](#17-governance)
 - [Appendix A: API Reference](#appendix-a-api-reference)
 - [Appendix B: Base Contracts](#appendix-b-base-contracts)
+- [Appendix C: Cryptographic Details](#appendix-c-cryptographic-details)
 
 ---
 
@@ -128,7 +126,9 @@ ZK circuits remain lightweight: hash preimage openings, index checks, arithmetic
 
 Genius Alice identifies value: Lakers −3 @ −110 (1.91 decimal). She accesses Djinn dashboard showing estimated liquidity, current collateral ($50,000), and available exposure capacity.
 
-She enters: NBA, Lakers vs Celtics Feb 15, Lakers −3 @ −110, 10% Max Price, 100% SLA Multiplier.
+She enters: NBA, Lakers vs Celtics Feb 15, Lakers −3 @ −110, 10% Max Price, 100% SLA Multiplier, expires 6:00 PM ET. She selects nine decoy lines to accompany her real signal.
+
+MP%, SLA%, and expiry are set per signal. Alice can post her next signal with completely different parameters.
 
 **System checks:**
 
@@ -145,7 +145,7 @@ If checks pass, the browser:
 
 ### Decoys
 
-Signal submission includes 10 lines total — one real, nine decoys:
+The Genius selects nine decoy lines to accompany the real signal — 10 lines total. Decoy quality is the Genius's responsibility. Sophisticated Geniuses choose plausible decoys at similar odds across the same sport to maximize ambiguity:
 
 | Index | Line | Real? |
 |-------|------|-------|
@@ -193,16 +193,20 @@ Track records display per sport. Alice might show +18% ROI across 47 NBA signals
 
 Bob clicks "Buy" with $1,000 notional and FanDuel as his sportsbook.
 
+Notional is the amount of protection Bob is purchasing — the reference amount for both fees and potential SLA damages. It does not need to match the amount Bob actually wagers (or whether he wagers at all). If Bob buys a signal at $1,000 notional but bets $2,000 at a sportsbook, SLA damages cover only $1,000. Excess exposure is Bob's risk.
+
+Bob has previously deposited USDC into the Escrow contract, giving him a platform balance. This pre-funding enables instant purchases without wallet approval delays.
+
 Behind the scenes:
 
 1. Request goes to validator checking if signal remains executable at FanDuel
 2. Validators run MPC: they query miners for available lines at Bob's sportsbook, compute whether real line is available. Output: yes/no. Validators never learn which line is real.
 3. If not executable: signal voided for Bob. No charge. Signal available for other buyers.
-4. If executable: contract deducts $100 from Bob's pre-deposited balance. Validators release key shares.
+4. If executable: Escrow contract deducts $100 (10% MP × $1,000 notional) from Bob's balance. Validators release key shares.
 5. Bob's browser collects 7+ shares, reconstructs key, decrypts locally. Bob sees: "Lakers −3 @ −110."
 6. Browser re-encrypts signal key to Bob's wallet public key, posts on-chain for recovery from any device.
 
-**Time:** 3–5 seconds.
+**Time:** 3–5 seconds. Pre-funded escrow eliminates wallet confirmation steps from the purchase flow.
 
 ### Two-Phase Miner Verification
 
@@ -333,15 +337,19 @@ Either party can exit before 10 signals. Settlement uses current Quality Score b
 
 ### Collateral
 
-Geniuses need collateral covering worst-case damages:
+Geniuses deposit USDC collateral covering worst-case damages across all active buyer relationships:
 
-> Required collateral = Σ (notional × SLA%) for all active signals.
+> Required collateral = Σ (notional × SLA%) across all active signals and all buyers.
 
-If collateral drops below minimum, open signals auto-cancelled.
+Each buyer consumes collateral independently. If Alice posts a signal and three buyers each purchase at $1,000 notional with 100% SLA, Alice needs $3,000 in collateral for that signal alone. Her total collateral determines how much notional is available for buyers to purchase.
+
+Excess collateral can be withdrawn at any time. If Alice has $50,000 deposited but only $30,000 is locked against active positions, she can withdraw $20,000 immediately.
+
+If collateral drops below the minimum required, open signals auto-cancel. Existing audit cycles continue to settlement.
 
 ### Protocol Fee
 
-0.5% of total notional at each audit, paid by Genius, goes to Djinn Protocol for operational costs, platform maintenance, and subnet support. All protocol fees denominated in USDC.
+0.5% of total notional at each audit, paid by Genius, goes to Djinn Protocol. This fee covers all protocol operational costs including Base chain gas fees for signal commitments, audit settlements, track record updates, and ZK verification. Users never pay gas directly. All protocol fees denominated in USDC.
 
 ### Djinn Credits
 
@@ -359,6 +367,8 @@ Example: Signal costs $100. Bob has $30 credits. He pays $70 USDC + $30 credits.
 | $0 | $100 | $40 | $0 | $40 |
 
 Never extract more USDC than put in.
+
+Credits do not expire. They are non-transferable, non-cashable, and cannot be converted to USDC. They function solely as a discount on future purchases. This structure ensures credits are not profits — they are a service credit analogous to store credit after a refund, carrying no cash value outside the platform.
 
 ---
 
@@ -480,15 +490,21 @@ Vulnerable window typically narrow: minutes to hours between creation and purcha
 
 ### Outcome Attestation
 
-Game outcomes are publicly verifiable facts: final scores from official league sources. Validators attest these outcomes, require 2/3+ consensus before writing results on-chain. This consolidates attestation authority with higher-trust, staked validator set rather than miners.
+Game outcomes are publicly verifiable facts: final scores from official league sources (NBA API, NFL API, ESPN, etc.). Validators independently query these sources and attest outcomes, requiring 2/3+ consensus before writing results on-chain. If official sources agree — which is the overwhelming majority of cases — validators converge trivially.
+
+When validators disagree (ambiguous outcomes, stat corrections, suspended games), Bittensor's Yuma Consensus mechanism determines the canonical result. Validators whose attestations align with the consensus-weighted majority receive full credit; outliers are penalized. This creates strong incentive to report accurately and wait for authoritative rulings before attesting, rather than racing to attest ambiguous results.
 
 ### Miners
 
 Miners are line-checking oracles with cryptographic accountability. Focused role: verify real-time executability of betting lines against sportsbook data, prove they did it honestly.
 
-During signal creation or purchase, miners receive 10 candidate lines (not knowing which is real), query odds APIs or sportsbook data sources checking availability at 2+ sportsbooks, report availability to validators. This is Phase 1: fast check gating purchase.
+During signal creation or purchase, miners receive 10 candidate lines (not knowing which is real), query sportsbook data sources checking availability at 2+ sportsbooks, report availability to validators. This is Phase 1: fast check gating purchase.
+
+Miners acquire their own data sources: paid odds APIs (e.g., The Odds API, OddsJam), direct sportsbook integrations, or their own scraping infrastructure. Data acquisition is the miner's responsibility and primary operational cost. Miners without reliable data sources produce inaccurate reports and lose emissions. This mirrors other competitive markets — the cost of participating is the cost of obtaining good data.
 
 Seconds later, miner submits TLSNotary proof of same TLS session (Phase 2). Proof is cryptographically tied to sportsbook's server. Cannot be forged without sportsbook's private key. Verified by validators, updates miner's accuracy score, then discarded. Accuracy score is permanent record. Proof is ephemeral: once score updated, it served purpose.
+
+Because speed accounts for 40% of miner scoring, geographic proximity to sportsbook servers provides a measurable advantage. Miners optimizing for emissions will co-locate near major sportsbook infrastructure, typically in the eastern United States. This is a feature: it ensures the fastest miners serve the regions where most sportsbooks operate, directly improving purchase latency for users.
 
 ### Miner Scoring
 
@@ -548,6 +564,10 @@ Only rational strategies: report honestly and submit proof (maximum earnings), o
 **Signal leakage:** Signals encrypted client-side, split via Shamir, masked by decoys, settled via ZK proofs. No entity, including Djinn, ever sees signal plaintext. Historical signals remain permanently encrypted on-chain. Track records verified without revealing individual picks.
 
 **Client code tampering:** Frontend served from public Git repository. Every deploy is public commit. Build is reproducible. Security researchers, competitors, automated monitors can continuously verify served code matches public source.
+
+**Browser extension attacks:** A malicious browser extension with broad permissions could theoretically observe decrypted signal content in the DOM. This is an inherent limitation of browser-based cryptography, not specific to Djinn. Mitigations: users handling high-value signals should use a dedicated browser profile with extensions disabled, or use the protocol through a standalone application if one becomes available. The protocol's encryption, Shamir sharing, and ZK layers protect signals from every other attack vector — the browser is the last-mile trust boundary.
+
+**TLSNotary and evolving TLS standards:** TLSNotary relies on the structure of TLS sessions to produce verifiable proofs. As TLS evolves (TLS 1.3 Encrypted Client Hello, post-quantum cipher suites), TLSNotary tooling must evolve alongside it. The protocol monitors TLSNotary compatibility with major sportsbook TLS configurations and will adapt proof mechanisms as the TLS landscape changes. If a specific sportsbook becomes incompatible with TLSNotary, miners cannot produce proofs for that sportsbook, and the accuracy scoring system reflects this naturally.
 
 ---
 
@@ -694,6 +714,18 @@ Vision is general-purpose marketplace for accountable intelligence. Sports is pr
 
 ---
 
+## 17. Governance
+
+Protocol parameters — miner scoring weights, audit window size, fee percentages, emission allocations — are controlled by the subnet owner (Djinn Inc.). This is standard for Bittensor subnets: the subnet owner registers the subnet, deploys the incentive mechanism, and retains authority to update parameters as operational data dictates.
+
+This is pragmatic, not ideological. Early-stage protocols require rapid iteration. Scoring weights that look correct on paper may need adjustment after observing real miner behavior. Fee structures may need rebalancing as volume scales. Decentralizing parameter control before the protocol has production data risks ossifying bad defaults.
+
+Smart contracts on Base are immutable once deployed. Contract upgrades follow standard proxy patterns with timelock delays, giving users visibility into pending changes before they take effect.
+
+As the protocol matures and operational data stabilizes, governance authority can progressively decentralize — either through on-chain governance mechanisms or delegation to the validator set. The timeline for this transition depends on protocol maturity, not a predetermined schedule.
+
+---
+
 ## Appendix A: API Reference
 
 ### Validator API
@@ -827,6 +859,50 @@ Response: { request_id, url, status, proof_hash, arweave_tx, attested_at, miner 
 4. First valid proof submitted via `WebAttestation.submitProof()`
 5. Contract verifies proof validity, records attestation, stores proof hash on-chain
 6. Full proof uploaded to Arweave for permanent retrieval
+
+---
+
+## Appendix C: Cryptographic Details
+
+### Signal Encryption
+
+Signals are encrypted client-side using AES-256-GCM with a randomly generated symmetric key. The key is then split via Shamir's Secret Sharing over a prime field (256-bit prime), producing 10 shares with a reconstruction threshold of 7.
+
+Each share is individually encrypted to its assigned validator's public key before transmission. The original symmetric key is also re-encrypted to the Genius's wallet public key and stored on-chain for wallet-based recovery.
+
+### Multi-Party Computation for Executability
+
+The MPC protocol enables validators to jointly determine whether the real signal is among the lines reported as available by miners — without any validator learning which line is real.
+
+The protocol operates as follows:
+
+1. Each validator holds one Shamir share of the real signal's index (an integer 1–10).
+2. Miners report a set of available line indices (e.g., {1, 3, 5, 7, 9}).
+3. Validators execute a secure comparison: they jointly compute whether the secret index is a member of the available set, using additive secret sharing over a finite field.
+4. The computation requires two communication rounds among the 7+ participating validators.
+5. Output is a single bit: available or not. No validator learns the secret index.
+
+The MPC is lightweight because the computation is simple (set membership of a single integer). This is not general-purpose MPC — it is a narrow, optimized protocol for this specific operation, keeping latency within the 3–5 second purchase window.
+
+### Zero-Knowledge Proofs
+
+Audit and track record proofs use a SNARK-based proving system (candidate: Groth16 over BN254 or PLONK, final selection based on proving time benchmarks on consumer hardware).
+
+The ZK circuit for audit settlement performs:
+1. Hash preimage opening: prove knowledge of signal content matching on-chain commitment hashes
+2. Index verification: prove each signal's real index falls within 1–10
+3. Outcome evaluation: compute favorable/unfavorable/void for each signal against public on-chain outcomes
+4. Quality Score arithmetic: sum the weighted outcomes per the published formula
+
+Circuit size is O(n) in the number of signals (10 for audits, up to hundreds for track records). Proof generation targets under 10 seconds on consumer hardware. On-chain verification is constant-time regardless of signal count.
+
+Track record proofs follow the same circuit structure but cover all committed signals with finalized outcomes, not just the current audit window.
+
+### TLSNotary
+
+TLSNotary produces a cryptographic proof that a TLS session between a miner and a sportsbook server contained specific data. The proof is bound to the sportsbook's TLS certificate, making it unforgeable without the sportsbook's private key.
+
+The protocol currently targets TLS 1.2 and TLS 1.3 sessions. As TLS standards evolve, proof generation tooling must track compatibility. The two-phase miner model isolates this risk: Phase 1 (fast response) does not depend on proof generation succeeding, so TLSNotary compatibility issues affect miner scoring but never block user purchases.
 
 ---
 
