@@ -384,7 +384,7 @@ Credits do not expire. They are non-transferable, non-cashable, and cannot be co
 
 Djinn operates as Bittensor Subnet 103. The protocol generates real USDC revenue through a 0.5% fee on notional volume.
 
-This revenue funds protocol development, smart contract maintenance, gas fees, ZK circuit updates, security reviews, documentation, and community support. Any remainder may be used to purchase the subnet's alpha token, creating sustained demand that supports the token price.
+This revenue funds protocol development, smart contract maintenance, gas fees, ZK circuit updates, security reviews, documentation, and community support. A portion may also be used to purchase the subnet's alpha token, creating sustained demand that supports the token price.
 
 ### Revenue-Backed Token Value
 
