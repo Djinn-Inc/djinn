@@ -18,7 +18,7 @@ Bittensor Subnet 103 · Base Chain · USDC
 </div>
 
 > [!WARNING]
-> **This repo is pre-release.** The whitepaper is published but miner and validator code is not functional yet. Do not attempt to run anything against the network. Watch this repo for launch updates.
+> **This repo is pre-release.** The whitepaper describes the protocol design; implementation is in progress. Miner and validator code is not functional yet. Do not attempt to run anything against the network. Watch this repo for launch updates.
 
 ---
 
