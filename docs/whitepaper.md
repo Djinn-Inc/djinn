@@ -142,7 +142,8 @@ MP%, SLA%, and expiry are set per signal. Alice can post her next signal with co
 If both checks pass, the browser:
 - Encrypts the signal
 - Splits the encryption key into 10 pieces via Shamir's Secret Sharing (7+ needed for reconstruction)
-- Distributes shares to different Bittensor validators
+- Splits the real signal's index into 10 pieces via a separate Shamir sharing (for the MPC executability check)
+- Distributes both sets of shares to different Bittensor validators
 - Commits the hash to the Base blockchain with 9 decoy lines
 - Re-encrypts the signal key to Alice's wallet public key
 - Posts an encrypted blob on-chain for wallet-based recovery
@@ -212,7 +213,7 @@ Behind the scenes:
 5. Bob's browser collects 7+ shares, reconstructs the key, and decrypts locally. Bob sees: "Lakers −3 @ −110."
 6. The browser re-encrypts the signal key to Bob's wallet public key and posts it on-chain for recovery from any device.
 
-**Time:** 3–5 seconds. Pre-funded escrow eliminates wallet confirmation steps from the purchase flow.
+**Time:** targeted 3–5 seconds. Pre-funded escrow eliminates wallet confirmation steps from the purchase flow.
 
 ### Two-Phase Miner Verification
 
@@ -395,7 +396,7 @@ As platform volume grows, buyback pressure increases, supporting a higher token 
 ### The Flywheel
 
 1. Volume generates USDC fees.
-2. Fees support the alpha token through buybacks.
+2. Fees support the network and alpha token.
 3. A higher token price attracts more miners and validators.
 4. More participants improve service quality: faster executability checks, more reliable outcome attestation, and better uptime.
 5. Better service attracts more Geniuses and Idiots.
@@ -532,7 +533,7 @@ Miner emissions during active epochs depend on five metrics:
 | History | 10% | All miners |
 | TLSNotary proof submission | 20% | Proof-submitting miners only |
 
-**Speed** ranks miners by response latency. The fastest miner for a given query scores highest, normalized across all responding miners. Speed dominates because purchase latency is the primary user-facing quality metric: the 3–5 second purchase window is determined by miner response time.
+**Speed** ranks miners by response latency. The fastest miner for a given query scores highest, normalized across all responding miners. Speed dominates because purchase latency is the primary user-facing quality metric: the targeted 3–5 second purchase window is determined by miner response time.
 
 **Accuracy** is binary per query: did the miner's Phase 1 report match the TLSNotary ground truth? It is accumulated as a rolling percentage. Its weight is lower than speed because the TLSNotary mechanism already punishes dishonesty directly through proof contradictions; this weight adds emission consequences on top.
 
@@ -900,7 +901,9 @@ The protocol operates as follows:
 4. The computation requires two communication rounds among the 7+ participating validators.
 5. The output is a single bit: available or not. No validator learns the secret index.
 
-The MPC is lightweight because the computation is simple (set membership of a single integer). It is not general-purpose MPC but a narrow, optimized protocol for this specific operation, keeping latency within the 3–5 second purchase window.
+The MPC is lightweight because the computation is simple (set membership of a single integer). It is not general-purpose MPC but a narrow, optimized protocol for this specific operation, keeping latency within the targeted 3–5 second purchase window.
+
+The security model is layered. During honest protocol execution, no validator learns the secret index; the MPC reveals only the single-bit result. Decoys add ambiguity against partial information leakage. Against active out-of-band collusion by 7+ validators who pool their Shamir shares, the defense is economic: colluding validators risk their staked TAO. This is the standard trust model for threshold cryptographic systems.
 
 ### Zero-Knowledge Proofs
 
