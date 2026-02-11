@@ -420,7 +420,7 @@ Miner operating costs are modest: odds API subscriptions, TLSNotary proof genera
 | Validators | 41% |
 | Subnet owner (Djinn) | 18% |
 
-All user-facing transactions (escrow, collateral, fees, settlements, refunds) are denominated in USDC on Base. Users never need to hold or interact with TAO, the subnet alpha token, or any cryptocurrency other than USDC.
+All user-facing transactions (escrow, collateral, fees, settlements, refunds) are denominated in USDC on Base. Users never need to hold or interact with TAO, the subnet's alpha token, or any other cryptocurrency. USDC is the only token users touch.
 
 ---
 
