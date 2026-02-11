@@ -1,4 +1,6 @@
-![](images/djinn-logo.png){width=150px}
+<p align="center">
+  <img src="images/djinn-logo.png" alt="Djinn" width="150">
+</p>
 
 # Djinn Protocol: Whitepaper
 

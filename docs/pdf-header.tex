@@ -49,3 +49,11 @@
 \usepackage{xcolor}
 \definecolor{codebg}{gray}{0.95}
 \usepackage{mdframed}
+
+% Insert logo at start of document
+\AtBeginDocument{%
+  \begin{center}
+    \includegraphics[width=150px]{images/djinn-logo.png}
+  \end{center}
+  \vspace{0.5em}
+}
