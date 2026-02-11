@@ -17,6 +17,8 @@ Bittensor Subnet 103 · Base Chain · USDC
 [Whitepaper](docs/whitepaper.md) · [djinn.gg](https://djinn.gg)
 </div>
 
+> **Heads up:** Nothing here runs yet. The whitepaper is real, the code is scaffolding. Don't try to spin up miners or validators. We'll make noise when it's time.
+
 ---
 
 - [Overview](#overview)
