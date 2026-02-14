@@ -1,0 +1,364 @@
+"""Tests for the line availability checker."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+
+from djinn_miner.api.models import CandidateLine
+from djinn_miner.core.checker import LineChecker
+from djinn_miner.data.odds_api import OddsApiClient
+
+
+@pytest.fixture
+def odds_client(mock_odds_response: list[dict]) -> OddsApiClient:
+    """Create an OddsApiClient backed by mock data."""
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=mock_odds_response)
+        )
+    )
+    return OddsApiClient(
+        api_key="test-key",
+        base_url="https://api.the-odds-api.com",
+        cache_ttl=300,
+        http_client=mock_http,
+    )
+
+
+@pytest.fixture
+def checker(odds_client: OddsApiClient) -> LineChecker:
+    return LineChecker(odds_client=odds_client, line_tolerance=0.5)
+
+
+@pytest.mark.asyncio
+async def test_check_returns_results_for_all_lines(
+    checker: LineChecker, sample_lines: list[CandidateLine]
+) -> None:
+    results = await checker.check(sample_lines)
+    assert len(results) == len(sample_lines)
+    indices = {r.index for r in results}
+    assert indices == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+
+
+@pytest.mark.asyncio
+async def test_exact_spread_match(checker: LineChecker) -> None:
+    """Lakers -3 @ FanDuel should be available (exact match)."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="spreads",
+            line=-3.0,
+            side="Los Angeles Lakers",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is True
+    assert any(b.bookmaker == "FanDuel" for b in results[0].bookmakers)
+
+
+@pytest.mark.asyncio
+async def test_spread_within_tolerance(checker: LineChecker) -> None:
+    """Lakers -3.5 @ DraftKings is within 0.5 tolerance of -3.0 request."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="spreads",
+            line=-3.0,
+            side="Los Angeles Lakers",
+        ),
+    ]
+    # DraftKings has -3.5, which is within 0.5 of -3.0
+    results = await checker.check(lines)
+    bookmaker_names = [b.bookmaker for b in results[0].bookmakers]
+    assert "FanDuel" in bookmaker_names
+    assert "DraftKings" in bookmaker_names
+
+
+@pytest.mark.asyncio
+async def test_spread_outside_tolerance(checker: LineChecker) -> None:
+    """Lakers -5 is too far from -3 (FanDuel) and -3.5 (DraftKings)."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="spreads",
+            line=-5.0,
+            side="Los Angeles Lakers",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is False
+    assert len(results[0].bookmakers) == 0
+
+
+@pytest.mark.asyncio
+async def test_h2h_match(checker: LineChecker) -> None:
+    """H2H (moneyline) match requires no line, just team name."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="h2h",
+            line=None,
+            side="Los Angeles Lakers",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is True
+
+
+@pytest.mark.asyncio
+async def test_totals_match(checker: LineChecker) -> None:
+    """Over 218.5 should match FanDuel (exact) and DraftKings (219, within tolerance)."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="totals",
+            line=218.5,
+            side="Over",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is True
+    assert len(results[0].bookmakers) >= 1
+
+
+@pytest.mark.asyncio
+async def test_wrong_side_does_not_match(checker: LineChecker) -> None:
+    """A spread line for the wrong team should not match."""
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="spreads",
+            line=-3.0,
+            side="Boston Celtics",  # Celtics have +3.0, not -3.0
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_full_10_line_check(
+    checker: LineChecker, sample_lines: list[CandidateLine]
+) -> None:
+    """Full 10-line check produces the expected available/unavailable split."""
+    results = await checker.check(sample_lines)
+
+    available = {r.index for r in results if r.available}
+    unavailable = {r.index for r in results if not r.available}
+
+    # Line 1: Lakers -5 spread -> outside tolerance -> unavailable
+    assert 1 not in available
+    # Line 2: Celtics +3 spread -> exact match at FanDuel -> available
+    assert 2 in available
+    # Line 3: Lakers h2h -> available
+    assert 3 in available
+    # Line 4: Over 218.5 -> available
+    assert 4 in available
+    # Line 5: Lakers -3 spread -> exact match -> available
+    assert 5 in available
+    # Line 6: Under 218.5 -> available
+    assert 6 in available
+    # Line 7: Celtics +5 spread -> outside tolerance from +3/+3.5 -> unavailable
+    assert 7 not in available
+    # Line 8: Heat -2 spread -> exact match at FanDuel -> available
+    assert 8 in available
+    # Line 9: Warriors h2h -> available
+    assert 9 in available
+    # Line 10: Lakers -4.5 spread -> outside tolerance from -3 and -3.5 -> unavailable
+    assert 10 not in available
+
+
+@pytest.mark.asyncio
+async def test_check_with_api_failure() -> None:
+    """If the odds API fails, lines should be reported as unavailable."""
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(500, json={"error": "internal"})
+        )
+    )
+    odds_client = OddsApiClient(api_key="test", http_client=mock_http)
+    chk = LineChecker(odds_client=odds_client, line_tolerance=0.5)
+
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="spreads",
+            line=-3.0,
+            side="Los Angeles Lakers",
+        ),
+    ]
+    results = await chk.check(lines)
+    assert results[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_check_multiple_sports() -> None:
+    """Lines from different sports trigger separate API calls."""
+    nba_data = [
+        {
+            "id": "nba-001",
+            "sport_key": "basketball_nba",
+            "home_team": "Los Angeles Lakers",
+            "away_team": "Boston Celtics",
+            "bookmakers": [
+                {
+                    "key": "fanduel",
+                    "title": "FanDuel",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": "Los Angeles Lakers", "price": 1.45},
+                                {"name": "Boston Celtics", "price": 2.80},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    nfl_data = [
+        {
+            "id": "nfl-001",
+            "sport_key": "americanfootball_nfl",
+            "home_team": "Kansas City Chiefs",
+            "away_team": "Buffalo Bills",
+            "bookmakers": [
+                {
+                    "key": "draftkings",
+                    "title": "DraftKings",
+                    "markets": [
+                        {
+                            "key": "spreads",
+                            "outcomes": [
+                                {"name": "Kansas City Chiefs", "price": 1.91, "point": -3.0},
+                                {"name": "Buffalo Bills", "price": 1.91, "point": 3.0},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "basketball_nba" in url:
+            return httpx.Response(200, json=nba_data)
+        if "americanfootball_nfl" in url:
+            return httpx.Response(200, json=nfl_data)
+        return httpx.Response(404)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    odds_client = OddsApiClient(api_key="test", http_client=mock_http)
+    chk = LineChecker(odds_client=odds_client, line_tolerance=0.5)
+
+    lines = [
+        CandidateLine(
+            index=1,
+            sport="basketball_nba",
+            event_id="nba-001",
+            home_team="Los Angeles Lakers",
+            away_team="Boston Celtics",
+            market="h2h",
+            line=None,
+            side="Los Angeles Lakers",
+        ),
+        CandidateLine(
+            index=2,
+            sport="football_nfl",
+            event_id="nfl-001",
+            home_team="Kansas City Chiefs",
+            away_team="Buffalo Bills",
+            market="spreads",
+            line=-3.0,
+            side="Kansas City Chiefs",
+        ),
+    ]
+
+    results = await chk.check(lines)
+    assert len(results) == 2
+    assert results[0].available is True  # NBA h2h
+    assert results[1].available is True  # NFL spread
+
+
+@pytest.mark.asyncio
+async def test_strict_tolerance() -> None:
+    """With tolerance=0, only exact line matches should work."""
+    mock_data = [
+        {
+            "id": "ev-001",
+            "home_team": "Los Angeles Lakers",
+            "away_team": "Boston Celtics",
+            "bookmakers": [
+                {
+                    "key": "fanduel",
+                    "title": "FanDuel",
+                    "markets": [
+                        {
+                            "key": "spreads",
+                            "outcomes": [
+                                {"name": "Los Angeles Lakers", "price": 1.91, "point": -3.0},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=mock_data))
+    )
+    odds_client = OddsApiClient(api_key="test", http_client=mock_http)
+    chk = LineChecker(odds_client=odds_client, line_tolerance=0.0)
+
+    exact = [
+        CandidateLine(
+            index=1, sport="basketball_nba", event_id="ev-001",
+            home_team="Los Angeles Lakers", away_team="Boston Celtics",
+            market="spreads", line=-3.0, side="Los Angeles Lakers",
+        ),
+    ]
+    close = [
+        CandidateLine(
+            index=2, sport="basketball_nba", event_id="ev-001",
+            home_team="Los Angeles Lakers", away_team="Boston Celtics",
+            market="spreads", line=-3.5, side="Los Angeles Lakers",
+        ),
+    ]
+
+    res_exact = await chk.check(exact)
+    res_close = await chk.check(close)
+    assert res_exact[0].available is True
+    assert res_close[0].available is False
