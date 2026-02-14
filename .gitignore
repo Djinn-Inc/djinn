@@ -163,3 +163,32 @@ testing/
 
 # Editors
 .vscode/settings.json
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/cache_hardhat/
+
+# ZK Circuits
+circuits/build/
+circuits/*.ptau
+circuits/*.zkey
+circuits/*.wtns
+circuits/*.r1cs
+circuits/*.wasm
+circuits/*.sym
+
+# Web
+web/.next/
+web/node_modules/
+web/out/
+
+# Subgraph
+subgraph/build/
+subgraph/generated/
+subgraph/node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
