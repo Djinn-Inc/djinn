@@ -1,0 +1,44 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "purchaseId", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "signalCount", "type": "uint256" }
+    ],
+    "name": "PurchaseRecorded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "purchaseId", "type": "uint256" },
+      { "indexed": false, "internalType": "uint8", "name": "outcome", "type": "uint8" }
+    ],
+    "name": "OutcomeRecorded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "newCycle", "type": "uint256" }
+    ],
+    "name": "NewCycleStarted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "bool", "name": "settled", "type": "bool" }
+    ],
+    "name": "SettledChanged",
+    "type": "event"
+  }
+]

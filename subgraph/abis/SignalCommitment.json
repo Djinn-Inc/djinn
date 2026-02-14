@@ -1,0 +1,33 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "signalId", "type": "uint256" },
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "sport", "type": "string" },
+      { "indexed": false, "internalType": "uint256", "name": "maxPriceBps", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "slaMultiplierBps", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "expiresAt", "type": "uint256" }
+    ],
+    "name": "SignalCommitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "signalId", "type": "uint256" },
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" }
+    ],
+    "name": "SignalVoided",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "signalId", "type": "uint256" },
+      { "indexed": false, "internalType": "uint8", "name": "newStatus", "type": "uint8" }
+    ],
+    "name": "SignalStatusUpdated",
+    "type": "event"
+  }
+]

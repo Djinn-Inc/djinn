@@ -1,0 +1,38 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "cycle", "type": "uint256" }
+    ],
+    "name": "AuditTriggered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "cycle", "type": "uint256" },
+      { "indexed": false, "internalType": "int256", "name": "qualityScore", "type": "int256" },
+      { "indexed": false, "internalType": "uint256", "name": "trancheA", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "trancheB", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "protocolFee", "type": "uint256" }
+    ],
+    "name": "AuditSettled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "idiot", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "cycle", "type": "uint256" },
+      { "indexed": false, "internalType": "int256", "name": "qualityScore", "type": "int256" },
+      { "indexed": false, "internalType": "uint256", "name": "creditsAwarded", "type": "uint256" }
+    ],
+    "name": "EarlyExitSettled",
+    "type": "event"
+  }
+]
