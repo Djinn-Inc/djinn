@@ -53,6 +53,9 @@ contract Escrow is Ownable {
     /// @notice Address authorised to call refund() (the Audit contract)
     address public auditContract;
 
+    /// @notice Addresses authorised to call setOutcome() (e.g. Account contract or oracle)
+    mapping(address => bool) public authorizedCallers;
+
     /// @notice Auto-incrementing purchase counter (next ID to assign)
     uint256 public nextPurchaseId;
 
@@ -91,8 +94,14 @@ contract Escrow is Ownable {
     /// @notice Emitted when the Audit contract triggers a refund to an Idiot
     event Refunded(address indexed genius, address indexed idiot, uint256 cycle, uint256 amount);
 
+    /// @notice Emitted when a purchase outcome is updated
+    event OutcomeUpdated(uint256 indexed purchaseId, Outcome outcome);
+
     /// @notice Emitted when a protocol contract address is updated
     event ContractAddressUpdated(string name, address addr);
+
+    /// @notice Emitted when an authorized caller is set
+    event AuthorizedCallerSet(address indexed caller, bool authorized);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -170,6 +179,23 @@ contract Escrow is Ownable {
         if (_addr == address(0)) revert ZeroAddress();
         auditContract = _addr;
         emit ContractAddressUpdated("Audit", _addr);
+    }
+
+    /// @notice Authorize or deauthorize a caller for setOutcome
+    /// @param caller The address to authorize or deauthorize
+    /// @param _authorized Whether the address should be authorized
+    function setAuthorizedCaller(address caller, bool _authorized) external onlyOwner {
+        authorizedCallers[caller] = _authorized;
+        emit AuthorizedCallerSet(caller, _authorized);
+    }
+
+    /// @notice Update the outcome of a purchase. Called by authorized contracts (e.g. oracle/validator).
+    /// @param purchaseId The purchase to update
+    /// @param outcome The new outcome
+    function setOutcome(uint256 purchaseId, Outcome outcome) external {
+        if (!authorizedCallers[msg.sender]) revert Unauthorized();
+        _purchases[purchaseId].outcome = outcome;
+        emit OutcomeUpdated(purchaseId, outcome);
     }
 
     // -------------------------------------------------------------------------
