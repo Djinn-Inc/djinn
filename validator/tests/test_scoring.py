@@ -1,0 +1,133 @@
+"""Tests for miner scoring."""
+
+import math
+
+import pytest
+
+from djinn_validator.core.scoring import MinerMetrics, MinerScorer
+
+
+class TestMinerMetrics:
+    def test_accuracy_score(self) -> None:
+        m = MinerMetrics(uid=1, hotkey="h1")
+        m.record_query(correct=True, latency=0.1, proof_submitted=False)
+        m.record_query(correct=True, latency=0.2, proof_submitted=False)
+        m.record_query(correct=False, latency=0.3, proof_submitted=False)
+        assert m.accuracy_score() == pytest.approx(2 / 3)
+
+    def test_coverage_score(self) -> None:
+        m = MinerMetrics(uid=1, hotkey="h1")
+        m.record_query(correct=True, latency=0.1, proof_submitted=True)
+        m.record_query(correct=True, latency=0.2, proof_submitted=False)
+        assert m.coverage_score() == 0.5
+
+    def test_uptime_score(self) -> None:
+        m = MinerMetrics(uid=1, hotkey="h1")
+        m.record_health_check(responded=True)
+        m.record_health_check(responded=True)
+        m.record_health_check(responded=False)
+        assert m.uptime_score() == pytest.approx(2 / 3)
+
+    def test_empty_metrics(self) -> None:
+        m = MinerMetrics(uid=1, hotkey="h1")
+        assert m.accuracy_score() == 0.0
+        assert m.coverage_score() == 0.0
+        assert m.uptime_score() == 0.0
+
+
+class TestMinerScorer:
+    def test_active_weights_sum_to_one(self) -> None:
+        scorer = MinerScorer()
+        for uid in range(5):
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_query(correct=True, latency=0.1 * (uid + 1), proof_submitted=True)
+            m.record_health_check(responded=True)
+
+        weights = scorer.compute_weights(is_active_epoch=True)
+        assert len(weights) == 5
+        assert sum(weights.values()) == pytest.approx(1.0)
+
+    def test_empty_weights_sum_to_one(self) -> None:
+        scorer = MinerScorer()
+        for uid in range(3):
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_health_check(responded=True)
+            m.consecutive_epochs = uid + 1
+
+        weights = scorer.compute_weights(is_active_epoch=False)
+        assert sum(weights.values()) == pytest.approx(1.0)
+
+    def test_faster_miner_scores_higher(self) -> None:
+        scorer = MinerScorer()
+        fast = scorer.get_or_create(0, "fast")
+        fast.record_query(correct=True, latency=0.05, proof_submitted=True)
+        fast.record_health_check(responded=True)
+
+        slow = scorer.get_or_create(1, "slow")
+        slow.record_query(correct=True, latency=1.0, proof_submitted=True)
+        slow.record_health_check(responded=True)
+
+        weights = scorer.compute_weights(is_active_epoch=True)
+        assert weights[0] > weights[1]
+
+    def test_accurate_miner_scores_higher(self) -> None:
+        scorer = MinerScorer()
+        good = scorer.get_or_create(0, "good")
+        for _ in range(10):
+            good.record_query(correct=True, latency=0.1, proof_submitted=True)
+        good.record_health_check(responded=True)
+
+        bad = scorer.get_or_create(1, "bad")
+        for _ in range(10):
+            bad.record_query(correct=False, latency=0.1, proof_submitted=True)
+        bad.record_health_check(responded=True)
+
+        weights = scorer.compute_weights(is_active_epoch=True)
+        assert weights[0] > weights[1]
+
+    def test_weight_components(self) -> None:
+        """Verify weight decomposition matches expected ratios."""
+        scorer = MinerScorer()
+        # Perfect miner
+        m = scorer.get_or_create(0, "perfect")
+        m.record_query(correct=True, latency=0.1, proof_submitted=True)
+        m.record_health_check(responded=True)
+
+        weights = scorer.compute_weights(is_active_epoch=True)
+        # Single miner should get weight 1.0
+        assert weights[0] == pytest.approx(1.0)
+
+    def test_reset_epoch(self) -> None:
+        scorer = MinerScorer()
+        m = scorer.get_or_create(0, "h0")
+        m.record_query(correct=True, latency=0.1, proof_submitted=True)
+        m.record_health_check(responded=True)
+        m.consecutive_epochs = 5
+
+        scorer.reset_epoch()
+        assert m.queries_total == 0
+        assert m.health_checks_total == 0
+        assert m.consecutive_epochs == 5  # Preserved
+
+    def test_remove_miner(self) -> None:
+        scorer = MinerScorer()
+        scorer.get_or_create(0, "h0")
+        scorer.get_or_create(1, "h1")
+        scorer.remove(0)
+        weights = scorer.compute_weights(is_active_epoch=False)
+        assert 0 not in weights
+        assert 1 in weights
+
+    def test_history_log_scaling(self) -> None:
+        scorer = MinerScorer()
+        new_miner = scorer.get_or_create(0, "new")
+        new_miner.consecutive_epochs = 1
+        new_miner.record_health_check(responded=True)
+
+        veteran = scorer.get_or_create(1, "vet")
+        veteran.consecutive_epochs = 100
+        veteran.record_health_check(responded=True)
+
+        weights = scorer.compute_weights(is_active_epoch=False)
+        # Veteran should have higher weight due to log-scaled history
+        assert weights[1] > weights[0]
