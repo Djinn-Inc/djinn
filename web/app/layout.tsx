@@ -7,9 +7,21 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Djinn Protocol",
+  title: "Djinn | Sports Intelligence Marketplace",
   description:
-    "Unbundling information from execution in sports betting. Encrypted predictions, cryptographic verification, settled in USDC on Base.",
+    "Analysts sell encrypted predictions. Buyers purchase access. Signals stay secret forever. Track records are cryptographically verifiable. Built on Bittensor Subnet 103, settled in USDC on Base.",
+  openGraph: {
+    title: "Djinn | Sports Intelligence Marketplace",
+    description:
+      "Unbundling information from execution. Encrypted predictions, ZK-verified track records, settled in USDC on Base.",
+    siteName: "Djinn",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Djinn | Sports Intelligence Marketplace",
+    description:
+      "Unbundling information from execution. Encrypted predictions, ZK-verified track records, settled in USDC on Base.",
+  },
 };
 
 export default function RootLayout({
