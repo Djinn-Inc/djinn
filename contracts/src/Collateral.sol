@@ -119,7 +119,13 @@ contract Collateral is Ownable {
             revert InsufficientSignalLock(signalLock, amount);
         }
         signalLocks[genius][signalId] -= amount;
-        locked[genius] -= amount;
+        // After slash(), locked may have been capped below the sum of individual signalLocks.
+        // Prevent underflow by capping the decrease.
+        if (amount > locked[genius]) {
+            locked[genius] = 0;
+        } else {
+            locked[genius] -= amount;
+        }
         emit Released(signalId, genius, amount);
     }
 

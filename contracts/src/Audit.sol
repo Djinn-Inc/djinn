@@ -29,6 +29,7 @@ interface IAccountForAudit {
     function getAccountState(address genius, address idiot) external view returns (AccountState memory);
     function settleAudit(address genius, address idiot) external;
     function getCurrentCycle(address genius, address idiot) external view returns (uint256);
+    function getOutcome(address genius, address idiot, uint256 purchaseId) external view returns (Outcome);
 }
 
 /// @notice Minimal interface for the SignalCommitment contract
@@ -232,13 +233,14 @@ contract Audit is Ownable {
         for (uint256 i; i < purchaseIds.length; ++i) {
             Purchase memory p = escrow.getPurchase(purchaseIds[i]);
             Signal memory sig = signalCommitment.getSignal(p.signalId);
+            Outcome outcome = account.getOutcome(genius, idiot, purchaseIds[i]);
 
-            if (p.outcome == Outcome.Favorable) {
+            if (outcome == Outcome.Favorable) {
                 // +notional * (odds - 1e6) / 1e6
                 // odds is 6-decimal fixed point, e.g., 1.91 = 1_910_000
                 int256 gain = int256(p.notional) * (int256(p.odds) - int256(ODDS_PRECISION)) / int256(ODDS_PRECISION);
                 score += gain;
-            } else if (p.outcome == Outcome.Unfavorable) {
+            } else if (outcome == Outcome.Unfavorable) {
                 // -notional * slaMultiplierBps / 10000
                 int256 loss = int256(p.notional) * int256(sig.slaMultiplierBps) / int256(BPS_DENOMINATOR);
                 score -= loss;
@@ -304,15 +306,20 @@ contract Audit is Ownable {
     // -------------------------------------------------------------------------
 
     /// @dev Aggregates totals across purchases in the current cycle
+    /// @param genius The Genius address (needed to read outcomes from Account)
+    /// @param idiot The Idiot address (needed to read outcomes from Account)
     /// @param purchaseIds Array of purchase IDs in the cycle
     /// @return totalNotional Sum of notional for non-void purchases
     /// @return totalUsdcFeesPaid Sum of USDC fees paid across all purchases
     function _aggregatePurchases(
+        address genius,
+        address idiot,
         uint256[] memory purchaseIds
     ) internal view returns (uint256 totalNotional, uint256 totalUsdcFeesPaid) {
         for (uint256 i; i < purchaseIds.length; ++i) {
             Purchase memory p = escrow.getPurchase(purchaseIds[i]);
-            if (p.outcome != Outcome.Void) {
+            Outcome outcome = account.getOutcome(genius, idiot, purchaseIds[i]);
+            if (outcome != Outcome.Void) {
                 totalNotional += p.notional;
             }
             totalUsdcFeesPaid += p.usdcPaid;
@@ -405,7 +412,7 @@ contract Audit is Ownable {
         AccountState memory state = account.getAccountState(genius, idiot);
         uint256[] memory purchaseIds = state.purchaseIds;
 
-        (uint256 totalNotional, uint256 totalUsdcFeesPaid) = _aggregatePurchases(purchaseIds);
+        (uint256 totalNotional, uint256 totalUsdcFeesPaid) = _aggregatePurchases(genius, idiot, purchaseIds);
 
         // Protocol fee: 0.5% of total notional
         uint256 protocolFee = (totalNotional * PROTOCOL_FEE_BPS) / BPS_DENOMINATOR;
