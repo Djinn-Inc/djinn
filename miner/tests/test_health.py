@@ -64,3 +64,27 @@ class TestHealthTracker:
         # Monotonic time always moves forward, so second call should be >= first
         second = tracker.get_status().uptime_seconds
         assert second >= first
+
+    def test_api_success_resets_failure_counter(self) -> None:
+        tracker = HealthTracker(odds_api_connected=True)
+        # Record failures up to threshold - 1
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is True
+        # Success resets counter
+        tracker.record_api_success()
+        # Now even threshold failures won't degrade because counter reset
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is True
+
+    def test_api_failures_degrade_health(self) -> None:
+        tracker = HealthTracker(odds_api_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is False
+
+    def test_api_success_recovers_health(self) -> None:
+        tracker = HealthTracker(odds_api_connected=False)
+        tracker.record_api_success()
+        assert tracker.get_status().odds_api_connected is True

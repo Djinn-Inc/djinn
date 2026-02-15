@@ -18,6 +18,7 @@ Inter-validator MPC endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import TYPE_CHECKING
 
@@ -199,11 +200,18 @@ def create_app(
 
         # Run MPC availability check (multi-validator or single-validator fallback)
         available_set = set(req.available_indices)
-        mpc_result = await _orchestrator.check_availability(
-            signal_id=signal_id,
-            local_share=record.share,
-            available_indices=available_set,
-        )
+        try:
+            mpc_result = await asyncio.wait_for(
+                _orchestrator.check_availability(
+                    signal_id=signal_id,
+                    local_share=record.share,
+                    available_indices=available_set,
+                ),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            PURCHASES_PROCESSED.labels(result="error").inc()
+            raise HTTPException(status_code=504, detail="MPC availability check timed out")
 
         purchase_orch.set_mpc_result(signal_id, req.buyer_address, mpc_result)
 

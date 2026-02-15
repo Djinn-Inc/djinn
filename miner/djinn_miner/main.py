@@ -86,15 +86,16 @@ async def async_main() -> None:
         session_capture=session_capture,
     )
 
-    checker = LineChecker(
-        odds_client=odds_client,
-        line_tolerance=config.line_tolerance,
-    )
-    proof_gen = ProofGenerator(session_capture=session_capture)
-
     health_tracker = HealthTracker(
         odds_api_connected=bool(config.odds_api_key),
     )
+
+    checker = LineChecker(
+        odds_client=odds_client,
+        line_tolerance=config.line_tolerance,
+        health_tracker=health_tracker,
+    )
+    proof_gen = ProofGenerator(session_capture=session_capture)
 
     # Initialize Bittensor neuron
     neuron = DjinnMiner(

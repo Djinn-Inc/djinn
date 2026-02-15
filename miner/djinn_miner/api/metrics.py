@@ -40,6 +40,17 @@ ODDS_API_QUERIES = Counter(
     ["status"],  # success, error, cached
 )
 
+CACHE_OPERATIONS = Counter(
+    "djinn_miner_cache_operations_total",
+    "Cache hit/miss operations",
+    ["result"],  # hit, miss
+)
+
+RATE_LIMIT_REJECTIONS = Counter(
+    "djinn_miner_rate_limit_rejections_total",
+    "Total requests rejected by rate limiter",
+)
+
 UPTIME_SECONDS = Gauge(
     "djinn_miner_uptime_seconds",
     "Miner uptime in seconds",

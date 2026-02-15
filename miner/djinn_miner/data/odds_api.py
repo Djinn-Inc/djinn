@@ -165,9 +165,12 @@ class OddsApiClient:
         api_sport = self._resolve_sport_key(sport)
         cache_key = f"{api_sport}:{markets}"
 
+        from djinn_miner.api.metrics import CACHE_OPERATIONS
+
         # Fast path: check cache without lock
         cached = self._cache.get(cache_key)
         if cached and cached.expires_at > time.monotonic():
+            CACHE_OPERATIONS.labels(result="hit").inc()
             log.debug("odds_cache_hit", sport=api_sport)
             return cached.data
 
@@ -175,8 +178,10 @@ class OddsApiClient:
             # Re-check under lock (another coroutine may have populated it)
             cached = self._cache.get(cache_key)
             if cached and cached.expires_at > time.monotonic():
+                CACHE_OPERATIONS.labels(result="hit").inc()
                 log.debug("odds_cache_hit", sport=api_sport)
                 return cached.data
+            CACHE_OPERATIONS.labels(result="miss").inc()
 
             url = f"{self._base_url}/v4/sports/{api_sport}/odds"
             params = {

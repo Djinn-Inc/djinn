@@ -20,6 +20,7 @@ from djinn_miner.api.models import (
     CandidateLine,
     LineResult,
 )
+from djinn_miner.core.health import HealthTracker
 from djinn_miner.data.odds_api import BookmakerOdds, OddsApiClient
 
 if TYPE_CHECKING:
@@ -35,9 +36,11 @@ class LineChecker:
         self,
         odds_client: OddsApiClient,
         line_tolerance: float = 0.5,
+        health_tracker: HealthTracker | None = None,
     ) -> None:
         self._odds = odds_client
         self._tolerance = line_tolerance
+        self._health = health_tracker
 
     async def check(self, lines: list[CandidateLine]) -> list[LineResult]:
         """Check availability of all candidate lines.
@@ -58,12 +61,20 @@ class LineChecker:
             return_exceptions=True,
         )
 
+        any_success = False
         for sport, result in zip(fetch_tasks.keys(), results_map):
             if isinstance(result, Exception):
                 log.error("sport_fetch_failed", sport=sport, error=str(result))
                 odds_by_sport[sport] = []
             else:
                 odds_by_sport[sport] = result
+                any_success = True
+
+        if self._health:
+            if any_success:
+                self._health.record_api_success()
+            elif sports:  # All fetches failed
+                self._health.record_api_failure()
 
         # Check each line against the odds data
         results: list[LineResult] = []

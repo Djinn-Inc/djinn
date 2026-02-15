@@ -56,6 +56,11 @@ MPC_ACTIVE_SESSIONS = Gauge(
     "Number of active MPC sessions",
 )
 
+RATE_LIMIT_REJECTIONS = Counter(
+    "djinn_validator_rate_limit_rejections_total",
+    "Total requests rejected by rate limiter",
+)
+
 UPTIME_SECONDS = Gauge(
     "djinn_validator_uptime_seconds",
     "Validator uptime in seconds",

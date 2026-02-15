@@ -18,6 +18,8 @@ class HealthTracker:
     to health pings directly affects emissions.
     """
 
+    CONSECUTIVE_FAILURE_THRESHOLD = 3
+
     def __init__(
         self,
         uid: int | None = None,
@@ -29,6 +31,7 @@ class HealthTracker:
         self._bt_connected = bt_connected
         self._start_time = time.monotonic()
         self._ping_count = 0
+        self._consecutive_api_failures = 0
 
     def record_ping(self) -> None:
         """Record a health check ping from a validator."""
@@ -42,6 +45,24 @@ class HealthTracker:
 
     def set_bt_connected(self, connected: bool) -> None:
         self._bt_connected = connected
+
+    def record_api_success(self) -> None:
+        """Record successful Odds API call — reset failure counter."""
+        self._consecutive_api_failures = 0
+        if not self._odds_api_connected:
+            log.info("odds_api_recovered")
+            self._odds_api_connected = True
+
+    def record_api_failure(self) -> None:
+        """Record failed Odds API call — degrade health after threshold."""
+        self._consecutive_api_failures += 1
+        if self._consecutive_api_failures >= self.CONSECUTIVE_FAILURE_THRESHOLD:
+            if self._odds_api_connected:
+                log.warning(
+                    "odds_api_degraded",
+                    consecutive_failures=self._consecutive_api_failures,
+                )
+                self._odds_api_connected = False
 
     def get_status(self) -> HealthResponse:
         """Return current health status."""

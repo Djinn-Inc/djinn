@@ -36,12 +36,19 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
-            duration_ms = round((time.monotonic() - start) * 1000, 1)
-            if request.url.path not in ("/health", "/health/ready", "/metrics"):
+            duration_s = time.monotonic() - start
+            duration_ms = round(duration_s * 1000, 1)
+            path = request.url.path
+            if path not in ("/health", "/health/ready", "/metrics"):
+                from djinn_miner.api.metrics import REQUEST_COUNT, REQUEST_LATENCY
+                REQUEST_COUNT.labels(
+                    method=request.method, endpoint=path, status=response.status_code,
+                ).inc()
+                REQUEST_LATENCY.labels(endpoint=path).observe(duration_s)
                 log.info(
                     "request",
                     method=request.method,
-                    path=request.url.path,
+                    path=path,
                     status=response.status_code,
                     duration_ms=duration_ms,
                     client=request.client.host if request.client else "unknown",
@@ -127,6 +134,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if not self._limiter.allow(client_ip):
+            from djinn_miner.api.metrics import RATE_LIMIT_REJECTIONS
+            RATE_LIMIT_REJECTIONS.inc()
             log.warning("rate_limited", client_ip=client_ip, path=request.url.path)
             return JSONResponse(
                 status_code=429,
