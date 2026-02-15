@@ -38,19 +38,42 @@ class TokenBucket:
 
 
 class RateLimiter:
-    """Per-IP rate limiter."""
+    """Per-IP rate limiter with stale bucket cleanup."""
+
+    _MAX_BUCKETS = 10_000
+    _CLEANUP_INTERVAL = 300  # seconds
 
     def __init__(self, capacity: float = 30, rate: float = 5) -> None:
         self._capacity = capacity
         self._rate = rate
         self._buckets: dict[str, TokenBucket] = {}
+        self._last_cleanup = time.monotonic()
 
     def allow(self, client_ip: str) -> bool:
+        self._maybe_cleanup()
         if client_ip not in self._buckets:
+            if len(self._buckets) >= self._MAX_BUCKETS:
+                self._evict_oldest()
             self._buckets[client_ip] = TokenBucket(
                 capacity=self._capacity, refill_rate=self._rate,
             )
         return self._buckets[client_ip].consume()
+
+    def _maybe_cleanup(self) -> None:
+        now = time.monotonic()
+        if now - self._last_cleanup < self._CLEANUP_INTERVAL:
+            return
+        self._last_cleanup = now
+        stale = [
+            k for k, b in self._buckets.items()
+            if now - b.last_refill > self._CLEANUP_INTERVAL
+        ]
+        for k in stale:
+            del self._buckets[k]
+
+    def _evict_oldest(self) -> None:
+        oldest_key = min(self._buckets, key=lambda k: self._buckets[k].last_refill)
+        del self._buckets[oldest_key]
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

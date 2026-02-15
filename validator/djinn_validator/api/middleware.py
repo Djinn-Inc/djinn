@@ -151,8 +151,13 @@ def verify_hotkey_signature(
         keypair = bt.Keypair(ss58_address=hotkey_ss58)
         return keypair.verify(message, bytes.fromhex(signature))
     except ImportError:
-        # Bittensor not available — skip verification in dev mode
-        log.debug("signature_verification_skipped", reason="bittensor not installed")
+        # Bittensor not available — accept in dev, reject if BT_NETWORK is set to production
+        import os
+        network = os.getenv("BT_NETWORK", "")
+        if network in ("finney", "mainnet"):
+            log.error("signature_verification_impossible", reason="bittensor not installed but production network configured")
+            return False
+        log.warning("signature_verification_skipped", reason="bittensor not installed (dev mode)")
         return True
     except Exception as e:
         log.warning("signature_verification_failed", error=str(e))

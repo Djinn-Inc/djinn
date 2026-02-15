@@ -186,8 +186,10 @@ export default function PurchaseSignal() {
             const parsed = JSON.parse(plaintext);
             setDecryptedPick(parsed);
           }
-        } catch {
-          // Decryption may fail if key format doesn't match — show what we have
+        } catch (decryptErr) {
+          setStepError(
+            `Signal purchased but decryption failed: ${decryptErr instanceof Error ? decryptErr.message : "unknown error"}. The key share may need Shamir reconstruction.`,
+          );
         }
       }
 

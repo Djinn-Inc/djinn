@@ -117,8 +117,11 @@ def create_app(
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:
         """Accept and store an encrypted key share from a Genius."""
-        share = Share(x=req.share_x, y=int(req.share_y, 16))
-        encrypted = bytes.fromhex(req.encrypted_key_share)
+        try:
+            share = Share(x=req.share_x, y=int(req.share_y, 16))
+            encrypted = bytes.fromhex(req.encrypted_key_share)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
 
         share_store.store(
             signal_id=req.signal_id,
@@ -350,10 +353,15 @@ def create_app(
     async def mpc_round1(req: MPCRound1Request, request: Request) -> MPCRound1Response:
         """Accept a Round 1 message for a multiplication gate."""
         await validate_signed_request(request, _get_validator_hotkeys())
+        try:
+            d_val = int(req.d_value, 16)
+            e_val = int(req.e_value, 16)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid hex value: {e}")
         msg = Round1Message(
             validator_x=req.validator_x,
-            d_value=int(req.d_value, 16),
-            e_value=int(req.e_value, 16),
+            d_value=d_val,
+            e_value=e_val,
         )
         ok = _mpc.submit_round1(req.session_id, req.gate_idx, msg)
         return MPCRound1Response(

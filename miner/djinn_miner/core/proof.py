@@ -65,14 +65,25 @@ class SessionCapture:
     """Captures HTTP session data during Odds API queries.
 
     Used by the OddsApiClient to record raw responses for proof generation.
+    Sessions are evicted after TTL to prevent unbounded memory growth.
     """
+
+    _MAX_SESSIONS = 1000
+    _SESSION_TTL = 600  # 10 minutes
 
     def __init__(self) -> None:
         self._sessions: dict[str, CapturedSession] = {}
+        self._timestamps: dict[str, float] = {}
 
     def record(self, session: CapturedSession) -> None:
         """Record a captured HTTP session."""
+        self._evict_expired()
+        if len(self._sessions) >= self._MAX_SESSIONS:
+            oldest = min(self._timestamps, key=self._timestamps.get)  # type: ignore[arg-type]
+            self._sessions.pop(oldest, None)
+            self._timestamps.pop(oldest, None)
         self._sessions[session.query_id] = session
+        self._timestamps[session.query_id] = time.time()
         log.debug("session_captured", query_id=session.query_id)
 
     def get(self, query_id: str) -> CapturedSession | None:
@@ -82,6 +93,17 @@ class SessionCapture:
     def remove(self, query_id: str) -> None:
         """Remove a session after proof generation."""
         self._sessions.pop(query_id, None)
+        self._timestamps.pop(query_id, None)
+
+    def _evict_expired(self) -> None:
+        now = time.time()
+        expired = [
+            k for k, ts in self._timestamps.items()
+            if now - ts > self._SESSION_TTL
+        ]
+        for k in expired:
+            self._sessions.pop(k, None)
+            self._timestamps.pop(k, None)
 
     @property
     def count(self) -> int:

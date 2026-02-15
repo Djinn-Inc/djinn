@@ -80,6 +80,7 @@ class ShareStore:
 
         if buyer_address in record.released_to:
             log.info("share_already_released", signal_id=signal_id, buyer=buyer_address)
+            return record.encrypted_key_share
 
         record.released_to.add(buyer_address)
         log.info("share_released", signal_id=signal_id, buyer=buyer_address)
