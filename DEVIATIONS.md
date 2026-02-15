@@ -42,3 +42,13 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **What we did:** Reduced MAX_SIGNALS from 64 to 20 to fit the Groth16 verifier under the EVM 24KB contract size limit. At 64 signals the verifier had 326 public inputs → 32KB bytecode (exceeds limit). At 20 signals: 106 public inputs → 11KB bytecode.
 **Why:** Groth16 verifier size scales linearly with public inputs. Each public input adds two EC point constants (~100 bytes bytecode). 64 signals is 5.5x over the EVM limit with no way to optimize the generated verifier code.
 **Impact:** Geniuses generating track record proofs for >20 signals must batch into multiple proofs. 20 signals covers ~3 weeks of daily activity. Proofs are composable — aggregate two sub-proofs' statistics off-chain. Non-breaking for users.
+
+## DEV-006: Secure MPC Implemented with Beaver Triples [UPDATES DEV-003]
+
+**Whitepaper Section:** Appendix C — MPC Set-Membership Protocol
+**Whitepaper Says:** 2-round MPC, no validator learns the actual index
+**What we did:** Implemented `SecureMPCSession` using Beaver triple-based multiplication. The protocol computes r * P(s) where P(x) = ∏(x - a_i) for available indices and r is joint randomness. The result is 0 iff the secret is in the available set. No single party reconstructs the secret — only blinded differences (d = x - a, e = y - b) are opened, where a and b are random Beaver triple values.
+**Protocol details:** Sequential multiplication through Beaver triples. For d available indices, requires d multiplications (each 1 communication round). Uses trusted dealer model for triple generation (production would use OT-based offline phase).
+**Communication rounds:** d + 1 (not 2 as whitepaper states). For d ≤ 10, this is at most 11 rounds. Could be reduced to ceil(log2(d)) + 2 ≈ 6 via tree multiplication (not yet implemented).
+**Remaining work:** Inter-validator networking layer needed for multi-validator execution. Currently runs as local simulation. The prototype single-validator mode (`check_availability`) is kept for backward compatibility.
+**Impact:** Security significantly improved — no single aggregator learns the secret index. The core MPC math is production-ready; the networking transport is the remaining piece.

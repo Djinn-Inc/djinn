@@ -173,7 +173,7 @@ class TestProofEndpoint:
         assert data["query_id"] == "test-query-001"
         assert data["status"] == "submitted"
         assert len(data["proof_hash"]) == 64  # SHA-256 hex
-        assert "stub" in data["message"].lower() or "mock" in data["message"].lower()
+        assert "basic hash proof" in data["message"].lower()
 
     def test_proof_different_queries_produce_different_hashes(
         self, app: TestClient

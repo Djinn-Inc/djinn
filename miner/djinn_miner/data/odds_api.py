@@ -7,11 +7,15 @@ from multiple bookmakers. Caches responses for a configurable TTL.
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
+
+if TYPE_CHECKING:
+    from djinn_miner.core.proof import SessionCapture
 
 log = structlog.get_logger()
 
@@ -57,6 +61,7 @@ class OddsApiClient:
         base_url: str = "https://api.the-odds-api.com",
         cache_ttl: int = 30,
         http_client: httpx.AsyncClient | None = None,
+        session_capture: SessionCapture | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -64,6 +69,7 @@ class OddsApiClient:
         self._cache: dict[str, CachedOdds] = {}
         self._client = http_client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = http_client is None
+        self._session_capture = session_capture
 
     async def close(self) -> None:
         """Close the HTTP client if we own it."""
@@ -109,6 +115,24 @@ class OddsApiClient:
         except httpx.RequestError as e:
             log.error("odds_api_request_error", error=str(e), sport=api_sport)
             raise
+
+        # Capture the raw HTTP session for proof generation
+        if self._session_capture is not None:
+            from djinn_miner.core.proof import CapturedSession
+
+            # Strip API key from URL for the proof record
+            safe_url = url  # params are separate, URL itself has no key
+            query_id = f"{api_sport}:{markets}:{uuid.uuid4().hex[:8]}"
+            self._session_capture.record(
+                CapturedSession(
+                    query_id=query_id,
+                    request_url=safe_url,
+                    request_params={k: v for k, v in params.items() if k != "apiKey"},
+                    response_status=resp.status_code,
+                    response_body=resp.content,
+                    response_headers=dict(resp.headers),
+                )
+            )
 
         self._cache[cache_key] = CachedOdds(
             data=data,

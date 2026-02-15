@@ -170,3 +170,78 @@ def test_clear_cache(client: OddsApiClient) -> None:
     assert len(client._cache) == 1
     client.clear_cache()
     assert len(client._cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_odds_captures_session(mock_odds_response: list[dict]) -> None:
+    """When a SessionCapture is provided, get_odds should record the raw response."""
+    from djinn_miner.core.proof import SessionCapture
+
+    capture = SessionCapture()
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=mock_odds_response)
+        )
+    )
+    c = OddsApiClient(
+        api_key="test-key",
+        cache_ttl=0,
+        http_client=mock_http,
+        session_capture=capture,
+    )
+
+    await c.get_odds("basketball_nba")
+    assert capture.count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_odds_no_capture_when_cached(mock_odds_response: list[dict]) -> None:
+    """Cached responses should NOT trigger session capture (no HTTP call made)."""
+    from djinn_miner.core.proof import SessionCapture
+
+    capture = SessionCapture()
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=mock_odds_response)
+        )
+    )
+    c = OddsApiClient(
+        api_key="test-key",
+        cache_ttl=60,
+        http_client=mock_http,
+        session_capture=capture,
+    )
+
+    await c.get_odds("basketball_nba")
+    assert capture.count == 1  # First call captured
+
+    await c.get_odds("basketball_nba")
+    assert capture.count == 1  # Second call used cache, no new capture
+
+
+@pytest.mark.asyncio
+async def test_captured_session_strips_api_key(mock_odds_response: list[dict]) -> None:
+    """The API key should not appear in the captured session params."""
+    from djinn_miner.core.proof import SessionCapture
+
+    capture = SessionCapture()
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=mock_odds_response)
+        )
+    )
+    c = OddsApiClient(
+        api_key="secret-key-123",
+        cache_ttl=0,
+        http_client=mock_http,
+        session_capture=capture,
+    )
+
+    await c.get_odds("basketball_nba")
+
+    # Get the captured session
+    sessions = list(capture._sessions.values())
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert "apiKey" not in session.request_params
+    assert "secret-key-123" not in str(session.request_params)
