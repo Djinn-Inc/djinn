@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_VALID_MARKETS = {"spreads", "totals", "h2h"}
 
 
 class CandidateLine(BaseModel):
@@ -26,6 +28,13 @@ class CandidateLine(BaseModel):
         max_length=256,
         description="Which side: team name for spreads/h2h, 'Over'/'Under' for totals",
     )
+
+    @field_validator("market")
+    @classmethod
+    def validate_market(cls, v: str) -> str:
+        if v not in _VALID_MARKETS:
+            raise ValueError(f"market must be one of {_VALID_MARKETS}, got '{v}'")
+        return v
 
 
 class CheckRequest(BaseModel):

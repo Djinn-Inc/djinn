@@ -37,16 +37,32 @@ class ShareStore:
     Falls back to in-memory SQLite when no db_path is provided (useful for tests).
     """
 
+    _MAX_CONNECT_RETRIES = 3
+
     def __init__(self, db_path: str | Path | None = None) -> None:
         if db_path is not None:
             path = Path(db_path)
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(path), check_same_thread=False)
+            self._conn = self._connect_with_retry(str(path))
         else:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._create_tables()
+
+    @staticmethod
+    def _connect_with_retry(path: str) -> sqlite3.Connection:
+        """Connect to SQLite with retry on OperationalError."""
+        for attempt in range(ShareStore._MAX_CONNECT_RETRIES):
+            try:
+                return sqlite3.connect(path, check_same_thread=False)
+            except sqlite3.OperationalError:
+                if attempt == ShareStore._MAX_CONNECT_RETRIES - 1:
+                    raise
+                delay = 2 ** attempt
+                log.warning("db_connect_retry", attempt=attempt + 1, delay_s=delay, path=path)
+                time.sleep(delay)
+        raise RuntimeError("unreachable")
 
     def _create_tables(self) -> None:
         self._conn.executescript("""

@@ -1,7 +1,9 @@
 """Tests for the ShareStore."""
 
+import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
@@ -64,6 +66,34 @@ class TestShareStore:
         record = self.store.get("sig-1")
         assert record is not None
         assert record.encrypted_key_share == b"first"
+
+
+class TestShareStoreRetry:
+    def test_connect_retries_on_failure(self) -> None:
+        """Verify retry logic calls sqlite3.connect multiple times on failure."""
+        real_connect = sqlite3.connect
+        call_count = 0
+
+        def flaky_connect(path: str, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise sqlite3.OperationalError("database is locked")
+            return real_connect(":memory:", **kwargs)
+
+        with patch("sqlite3.connect", side_effect=flaky_connect):
+            with patch("time.sleep"):  # Skip actual delay
+                conn = ShareStore._connect_with_retry("/fake/path.db")
+        assert call_count == 3
+        conn.close()
+
+    def test_connect_gives_up_after_max_retries(self) -> None:
+        """After max retries, the error is raised."""
+        with patch("sqlite3.connect", side_effect=sqlite3.OperationalError("locked")):
+            with patch("time.sleep"):
+                import pytest
+                with pytest.raises(sqlite3.OperationalError):
+                    ShareStore._connect_with_retry("/fake/path.db")
 
 
 class TestShareStorePersistence:
