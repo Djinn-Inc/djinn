@@ -423,3 +423,176 @@ class TestReadinessEndpoint:
         resp = client_with_chain.get("/health")
         data = resp.json()
         assert data["chain_connected"] is True
+
+
+class TestHealthReflectsState:
+    def test_health_shares_held(self, client: TestClient, share_store: ShareStore) -> None:
+        share_store.store("sig-1", "0xGenius", Share(x=1, y=42), b"key")
+        share_store.store("sig-2", "0xGenius", Share(x=2, y=42), b"key")
+        resp = client.get("/health")
+        assert resp.json()["shares_held"] == 2
+
+    def test_health_no_neuron(self, client: TestClient) -> None:
+        resp = client.get("/health")
+        data = resp.json()
+        assert data["uid"] is None
+        assert data["bt_connected"] is False
+
+
+class TestMPCInitEndpoint:
+    def test_mpc_init_creates_session(self, client: TestClient) -> None:
+        resp = client.post("/v1/mpc/init", json={
+            "session_id": "mpc-001",
+            "signal_id": "sig-001",
+            "available_indices": [1, 2, 3],
+            "coordinator_x": 1,
+            "participant_xs": [2, 3, 4],
+            "threshold": 7,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "mpc-001"
+        assert data["accepted"] is True
+
+    def test_mpc_init_duplicate_returns_existing(self, client: TestClient) -> None:
+        body = {
+            "session_id": "mpc-002",
+            "signal_id": "sig-001",
+            "available_indices": [1, 2],
+            "coordinator_x": 1,
+            "participant_xs": [2, 3],
+            "threshold": 7,
+        }
+        client.post("/v1/mpc/init", json=body)
+        resp = client.post("/v1/mpc/init", json=body)
+        assert resp.status_code == 200
+        assert resp.json()["accepted"] is True
+        assert "already exists" in resp.json()["message"]
+
+    def test_mpc_init_then_status(self, client: TestClient) -> None:
+        client.post("/v1/mpc/init", json={
+            "session_id": "mpc-003",
+            "signal_id": "sig-001",
+            "available_indices": [1, 2, 3],
+            "coordinator_x": 1,
+            "participant_xs": [2, 3],
+            "threshold": 7,
+        })
+        resp = client.get("/v1/mpc/mpc-003/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "mpc-003"
+        assert data["status"] in ("active", "round1_collecting")
+        assert data["total_participants"] == 2
+
+
+class TestMPCResultFlow:
+    def test_result_accepted_for_existing_session(self, client: TestClient) -> None:
+        client.post("/v1/mpc/init", json={
+            "session_id": "mpc-res-001",
+            "signal_id": "sig-001",
+            "available_indices": [1, 2],
+            "coordinator_x": 1,
+            "participant_xs": [2, 3],
+            "threshold": 7,
+        })
+        resp = client.post("/v1/mpc/result", json={
+            "session_id": "mpc-res-001",
+            "signal_id": "sig-001",
+            "available": True,
+            "participating_validators": 3,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["acknowledged"] is True
+
+        # Verify status is now complete
+        status = client.get("/v1/mpc/mpc-res-001/status")
+        assert status.json()["status"] == "complete"
+        assert status.json()["available"] is True
+
+
+class TestRegisterSignal:
+    def test_register_valid_signal(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/sig-001/register", json={
+            "sport": "basketball_nba",
+            "event_id": "event-001",
+            "home_team": "Los Angeles Lakers",
+            "away_team": "Boston Celtics",
+            "pick": "Lakers -3.5 (-110)",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["signal_id"] == "sig-001"
+        assert data["registered"] is True
+
+    def test_register_invalid_signal_id(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/bad%20id/register", json={
+            "sport": "basketball_nba",
+            "event_id": "event-001",
+            "home_team": "A",
+            "away_team": "B",
+            "pick": "A -3.5",
+        })
+        assert resp.status_code == 400
+
+    def test_register_missing_fields(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/sig-001/register", json={
+            "sport": "basketball_nba",
+        })
+        assert resp.status_code == 422
+
+
+class TestResolveSignals:
+    def test_resolve_with_no_pending(self, client: TestClient) -> None:
+        resp = client.post("/v1/signals/resolve")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved_count"] == 0
+        assert data["results"] == []
+
+
+class TestExceptionHandler:
+    def test_unhandled_exception_returns_500(self) -> None:
+        """Unhandled exceptions don't leak stack traces."""
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        app = create_app(store, purchase_orch, outcome_attestor)
+
+        # Close store to trigger error on next operation
+        store.close()
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-001",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "ff",
+            "encrypted_key_share": "abcd",
+        })
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+
+    def test_health_chain_error_handled(self) -> None:
+        """Chain client error during health check is handled gracefully."""
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        mock_chain = AsyncMock()
+        mock_chain.is_connected = AsyncMock(side_effect=RuntimeError("RPC down"))
+        app = create_app(store, purchase_orch, outcome_attestor, chain_client=mock_chain)
+        client = TestClient(app)
+
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["chain_connected"] is False
+
+
+class TestMethodNotAllowed:
+    def test_get_on_post_endpoint(self, client: TestClient) -> None:
+        resp = client.get("/v1/signal")
+        assert resp.status_code == 405
+
+    def test_post_on_get_endpoint(self, client: TestClient) -> None:
+        resp = client.post("/metrics")
+        assert resp.status_code == 405

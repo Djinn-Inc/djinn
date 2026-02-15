@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import httpx
 import pytest
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from djinn_miner.api.models import CandidateLine
 from djinn_miner.api.server import create_app
 from djinn_miner.core.checker import LineChecker
 from djinn_miner.core.health import HealthTracker
-from djinn_miner.core.proof import ProofGenerator
+from djinn_miner.core.proof import ProofGenerator, SessionCapture, CapturedSession
 from djinn_miner.data.odds_api import OddsApiClient
 
 
@@ -348,3 +350,110 @@ class TestReadinessEndpoint:
         resp = app.get("/health/ready")
         data = resp.json()
         assert "odds_api_connected" in data["checks"]
+
+
+class TestUnhandledException:
+    """Unhandled exceptions in routes return 500 with no stack trace."""
+
+    def test_checker_exception_returns_500(self) -> None:
+        """If LineChecker.check() raises, the global handler returns 500."""
+        mock_checker = AsyncMock()
+        mock_checker.check.side_effect = RuntimeError("unexpected crash")
+        proof_gen = ProofGenerator()
+        health = HealthTracker()
+
+        app = create_app(checker=mock_checker, proof_gen=proof_gen, health_tracker=health)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                "event_id": "ev",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+        # No stack trace leaked
+        assert "RuntimeError" not in resp.text
+
+    def test_proof_exception_returns_500(self) -> None:
+        mock_checker = AsyncMock()
+        mock_proof = AsyncMock()
+        mock_proof.generate.side_effect = RuntimeError("proof crash")
+        health = HealthTracker()
+
+        app = create_app(checker=mock_checker, proof_gen=mock_proof, health_tracker=health)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/v1/proof", json={"query_id": "q1"})
+        assert resp.status_code == 500
+        assert "Internal server error" in resp.json()["detail"]
+
+
+class TestProofWithCapturedSession:
+    """Proof endpoint with a real captured session → http_attestation type."""
+
+    def test_proof_with_session_returns_attestation(self, mock_odds_response: list[dict]) -> None:
+        mock_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=mock_odds_response)
+            )
+        )
+        odds_client = OddsApiClient(
+            api_key="test-key", http_client=mock_http, cache_ttl=300,
+        )
+        checker = LineChecker(odds_client=odds_client, line_tolerance=0.5)
+
+        capture = SessionCapture()
+        capture.record(CapturedSession(
+            query_id="my-query-001",
+            request_url="https://api.the-odds-api.com/v4/sports/nba/odds",
+            response_body=json.dumps(mock_odds_response).encode(),
+            captured_at=1700000000.0,
+        ))
+        proof_gen = ProofGenerator(session_capture=capture)
+        health = HealthTracker(odds_api_connected=True)
+
+        app = create_app(checker=checker, proof_gen=proof_gen, health_tracker=health)
+        client = TestClient(app)
+
+        resp = client.post("/v1/proof", json={"query_id": "my-query-001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        msg = json.loads(data["message"])
+        assert msg["type"] == "http_attestation"
+        assert msg["events_found"] > 0
+
+
+class TestCustomRateLimits:
+    """create_app rate_limit_capacity and rate_limit_rate params are wired."""
+
+    def test_custom_capacity_enforced(self) -> None:
+        mock_checker = AsyncMock()
+        mock_checker.check.return_value = []
+        mock_proof = AsyncMock()
+        mock_proof.generate.return_value = type("R", (), {"query_id": "q", "proof_hash": "h", "status": "submitted", "message": "basic"})()
+        health = HealthTracker()
+
+        app = create_app(
+            checker=mock_checker,
+            proof_gen=mock_proof,
+            health_tracker=health,
+            rate_limit_capacity=2,
+            rate_limit_rate=0,
+        )
+        client = TestClient(app)
+
+        # Use /v1/proof (not /health which bypasses rate limits)
+        for _ in range(2):
+            resp = client.post("/v1/proof", json={"query_id": "q1"})
+            assert resp.status_code == 200
+
+        # 3rd should be rate limited
+        resp = client.post("/v1/proof", json={"query_id": "q1"})
+        assert resp.status_code == 429

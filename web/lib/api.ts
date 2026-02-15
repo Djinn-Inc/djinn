@@ -180,33 +180,34 @@ export class MinerClient {
 // Singleton instances (configured from env vars)
 // ---------------------------------------------------------------------------
 
-function getEnvOrDevDefault(envVar: string, devDefault: string): string {
+function getEnvOrDefault(envVar: string, devDefault: string): string {
   const val = process.env[envVar];
   if (val) return val;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(`${envVar} must be set in production`);
-  }
   return devDefault;
 }
 
-const VALIDATOR_URLS = getEnvOrDevDefault(
-  "NEXT_PUBLIC_VALIDATOR_URL",
-  "http://localhost:8421",
-).split(",").filter((u) => u.trim().length > 0);
+function getValidatorUrls(): string[] {
+  return getEnvOrDefault(
+    "NEXT_PUBLIC_VALIDATOR_URL",
+    "http://localhost:8421",
+  ).split(",").filter((u) => u.trim().length > 0);
+}
 
-const MINER_URL = getEnvOrDevDefault(
-  "NEXT_PUBLIC_MINER_URL",
-  "http://localhost:8422",
-);
+function getMinerUrl(): string {
+  return getEnvOrDefault(
+    "NEXT_PUBLIC_MINER_URL",
+    "http://localhost:8422",
+  );
+}
 
 export function getValidatorClients(): ValidatorClient[] {
-  return VALIDATOR_URLS.map((url) => new ValidatorClient(url.trim()));
+  return getValidatorUrls().map((url) => new ValidatorClient(url.trim()));
 }
 
 export function getValidatorClient(): ValidatorClient {
-  return new ValidatorClient(VALIDATOR_URLS[0].trim());
+  return new ValidatorClient(getValidatorUrls()[0].trim());
 }
 
 export function getMinerClient(): MinerClient {
-  return new MinerClient(MINER_URL);
+  return new MinerClient(getMinerUrl());
 }
