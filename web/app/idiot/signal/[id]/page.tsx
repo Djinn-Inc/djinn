@@ -30,8 +30,8 @@ export default function PurchaseSignal() {
   if (!authenticated) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-white mb-4">Purchase Signal</h1>
-        <p className="text-gray-400">
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">Purchase Signal</h1>
+        <p className="text-slate-500">
           Connect your wallet to purchase this signal.
         </p>
       </div>
@@ -41,7 +41,7 @@ export default function PurchaseSignal() {
   if (signalLoading) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-400">Loading signal data...</p>
+        <p className="text-slate-500">Loading signal data...</p>
       </div>
     );
   }
@@ -49,8 +49,8 @@ export default function PurchaseSignal() {
   if (signalError) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-white mb-4">Signal Not Found</h1>
-        <p className="text-gray-400 mb-8">{signalError}</p>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">Signal Not Found</h1>
+        <p className="text-slate-500 mb-8">{signalError}</p>
         <button onClick={() => router.push("/idiot")} className="btn-primary">
           Back to Dashboard
         </button>
@@ -61,7 +61,7 @@ export default function PurchaseSignal() {
   if (!signal) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-400">Signal not found</p>
+        <p className="text-slate-500">Signal not found</p>
       </div>
     );
   }
@@ -88,9 +88,9 @@ export default function PurchaseSignal() {
   if (purchased) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
-        <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
           <svg
-            className="w-8 h-8 text-green-400"
+            className="w-8 h-8 text-green-600"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -103,22 +103,22 @@ export default function PurchaseSignal() {
             />
           </svg>
         </div>
-        <h1 className="text-3xl font-bold text-white mb-4">
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
           Signal Purchased
         </h1>
-        <p className="text-gray-400 mb-6">
+        <p className="text-slate-500 mb-6">
           You now have access to this signal. The decryption key will be
           delivered to your wallet.
         </p>
         <div className="card text-left mb-8">
-          <h3 className="text-sm font-medium text-gray-400 mb-3">
+          <h3 className="text-sm font-medium text-slate-500 mb-3">
             Decoy Lines (one of these is real)
           </h3>
           <div className="space-y-1">
             {signal.decoyLines.map((line, i) => (
               <p
                 key={i}
-                className="text-sm text-gray-300 font-mono bg-gray-900/50 rounded px-3 py-2"
+                className="text-sm text-slate-600 font-mono bg-slate-50 rounded px-3 py-2"
               >
                 {i + 1}. {line}
               </p>
@@ -139,7 +139,7 @@ export default function PurchaseSignal() {
     <div className="max-w-3xl mx-auto">
       <button
         onClick={() => router.back()}
-        className="text-sm text-gray-400 hover:text-white mb-6 transition-colors"
+        className="text-sm text-slate-500 hover:text-slate-900 mb-6 transition-colors"
       >
         &larr; Back
       </button>
@@ -150,18 +150,18 @@ export default function PurchaseSignal() {
           <div className="card">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h1 className="text-2xl font-bold text-white">
+                <h1 className="text-2xl font-bold text-slate-900">
                   Signal #{params.id}
                 </h1>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   by {truncateAddress(signal.genius)}
                 </p>
               </div>
               <span
                 className={`rounded-full px-3 py-1 text-xs font-medium ${
                   isActive
-                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                    : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
+                    ? "bg-green-100 text-green-600 border border-green-200"
+                    : "bg-slate-100 text-slate-500 border border-slate-200"
                 }`}
               >
                 {isActive ? "Active" : signalStatusLabel(signal.status)}
@@ -170,36 +170,36 @@ export default function PurchaseSignal() {
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">
                   Sport
                 </p>
-                <p className="text-sm text-white font-medium mt-1">
+                <p className="text-sm text-slate-900 font-medium mt-1">
                   {signal.sport}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">
                   Max Price
                 </p>
-                <p className="text-sm text-white font-medium mt-1">
+                <p className="text-sm text-slate-900 font-medium mt-1">
                   {formatBps(signal.maxPriceBps)} of notional
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">
                   SLA Multiplier
                 </p>
-                <p className="text-sm text-white font-medium mt-1">
+                <p className="text-sm text-slate-900 font-medium mt-1">
                   {formatBps(signal.slaMultiplierBps)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">
                   Expires
                 </p>
                 <p
                   className={`text-sm font-medium mt-1 ${
-                    isExpired ? "text-red-400" : "text-white"
+                    isExpired ? "text-red-600" : "text-slate-900"
                   }`}
                 >
                   {expiresDate.toLocaleString()}
@@ -209,14 +209,14 @@ export default function PurchaseSignal() {
 
             {/* Decoy Lines */}
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">
                 Decoy Lines (9 decoys + 1 real -- you cannot tell which is which)
               </p>
               <div className="space-y-1">
                 {signal.decoyLines.map((line, i) => (
                   <p
                     key={i}
-                    className="text-xs text-gray-400 font-mono bg-gray-900/50 rounded px-2 py-1.5"
+                    className="text-xs text-slate-500 font-mono bg-slate-50 rounded px-2 py-1.5"
                   >
                     {i + 1}. {line}
                   </p>
@@ -227,14 +227,14 @@ export default function PurchaseSignal() {
 
           {signal.availableSportsbooks.length > 0 && (
             <div className="card">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
                 Available Sportsbooks
               </p>
               <div className="flex flex-wrap gap-2">
                 {signal.availableSportsbooks.map((book) => (
                   <span
                     key={book}
-                    className="rounded-lg bg-gray-700 px-3 py-1 text-sm text-gray-300"
+                    className="rounded-lg bg-slate-200 px-3 py-1 text-sm text-slate-600"
                   >
                     {book}
                   </span>
@@ -247,12 +247,12 @@ export default function PurchaseSignal() {
         {/* Purchase Panel */}
         <div className="space-y-6">
           <div className="card">
-            <h2 className="text-lg font-semibold text-white mb-4">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Purchase Signal
             </h2>
 
             {!isActive ? (
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-slate-500">
                 This signal is no longer available for purchase.
               </p>
             ) : (
@@ -269,7 +269,7 @@ export default function PurchaseSignal() {
                     className="input"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Reference amount for fee calculation
                   </p>
                 </div>
@@ -286,16 +286,16 @@ export default function PurchaseSignal() {
                     className="input"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     e.g. 1.91 = -110 American
                   </p>
                 </div>
 
                 {notional && (
-                  <div className="rounded-lg bg-gray-900 p-3 space-y-1">
+                  <div className="rounded-lg bg-slate-50 p-3 space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">Fee</span>
-                      <span className="text-white">
+                      <span className="text-slate-500">Fee</span>
+                      <span className="text-slate-900">
                         $
                         {(
                           (Number(notional) * Number(signal.maxPriceBps)) /
@@ -304,8 +304,8 @@ export default function PurchaseSignal() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">Collateral locked</span>
-                      <span className="text-white">
+                      <span className="text-slate-500">Collateral locked</span>
+                      <span className="text-slate-900">
                         $
                         {(
                           (Number(notional) * Number(signal.slaMultiplierBps)) /
@@ -317,8 +317,8 @@ export default function PurchaseSignal() {
                 )}
 
                 {purchaseError && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3">
-                    <p className="text-xs text-red-400">{purchaseError}</p>
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                    <p className="text-xs text-red-600">{purchaseError}</p>
                   </div>
                 )}
 
@@ -335,23 +335,23 @@ export default function PurchaseSignal() {
 
           {/* Genius info sidebar */}
           <div className="card">
-            <h3 className="text-sm font-medium text-gray-400 mb-3">
+            <h3 className="text-sm font-medium text-slate-500 mb-3">
               Genius Stats
             </h3>
             <div className="space-y-3">
               <div>
-                <p className="text-xs text-gray-500">Quality Score</p>
+                <p className="text-xs text-slate-500">Quality Score</p>
                 <div className="mt-1">
                   <QualityScore score={0} size="sm" />
                 </div>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Total Signals</p>
-                <p className="text-sm text-white font-medium">--</p>
+                <p className="text-xs text-slate-500">Total Signals</p>
+                <p className="text-sm text-slate-900 font-medium">--</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Audit Count</p>
-                <p className="text-sm text-white font-medium">--</p>
+                <p className="text-xs text-slate-500">Audit Count</p>
+                <p className="text-sm text-slate-900 font-medium">--</p>
               </div>
             </div>
           </div>

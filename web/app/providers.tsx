@@ -11,10 +11,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       appId={PRIVY_APP_ID}
       config={{
         appearance: {
-          theme: "dark",
-          accentColor: "#4c6ef5",
+          theme: "light",
+          accentColor: "#059669",
         },
-        loginMethods: ["wallet"],
+        loginMethods: ["email", "wallet"],
         defaultChain: base,
         supportedChains: [base],
         embeddedWallets: {

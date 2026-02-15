@@ -49,8 +49,8 @@ export default function CreateSignal() {
   if (!authenticated) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-white mb-4">Create Signal</h1>
-        <p className="text-gray-400">
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">Create Signal</h1>
+        <p className="text-slate-500">
           Connect your wallet to create a signal.
         </p>
       </div>
@@ -115,9 +115,9 @@ export default function CreateSignal() {
   if (txHash) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
-        <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
           <svg
-            className="w-8 h-8 text-green-400"
+            className="w-8 h-8 text-green-600"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -130,13 +130,13 @@ export default function CreateSignal() {
             />
           </svg>
         </div>
-        <h1 className="text-3xl font-bold text-white mb-4">
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
           Signal Committed
         </h1>
-        <p className="text-gray-400 mb-6">
+        <p className="text-slate-500 mb-6">
           Your signal has been committed on-chain.
         </p>
-        <p className="text-sm text-gray-500 font-mono break-all mb-8">
+        <p className="text-sm text-slate-500 font-mono break-all mb-8">
           tx: {txHash}
         </p>
         <button
@@ -151,8 +151,8 @@ export default function CreateSignal() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-3xl font-bold text-white mb-2">Create Signal</h1>
-      <p className="text-gray-400 mb-8">
+      <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Signal</h1>
+      <p className="text-slate-500 mb-8">
         Commit an encrypted prediction on-chain with 10 decoy lines.
       </p>
 
@@ -168,7 +168,7 @@ export default function CreateSignal() {
             className="input font-mono text-xs"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Encrypt your signal client-side before pasting. The real prediction
             is hidden inside this blob.
           </p>
@@ -198,7 +198,7 @@ export default function CreateSignal() {
           <div className="space-y-2">
             {decoyLines.map((line, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-mono w-6">
+                <span className="text-xs text-slate-500 font-mono w-6">
                   {i + 1}.
                 </span>
                 <input
@@ -212,7 +212,7 @@ export default function CreateSignal() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             One of these lines should match your real signal. The other 9 are
             decoys to obscure which one is real.
           </p>
@@ -233,7 +233,7 @@ export default function CreateSignal() {
               className="input"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Fee as % of notional (max 50%)
             </p>
           </div>
@@ -249,7 +249,7 @@ export default function CreateSignal() {
               className="input"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Collateral lock as % of notional (min 100%)
             </p>
           </div>
@@ -281,8 +281,8 @@ export default function CreateSignal() {
                 onClick={() => toggleSportsbook(book)}
                 className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                   selectedSportsbooks.includes(book)
-                    ? "bg-djinn-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                 }`}
               >
                 {book}
@@ -292,8 +292,8 @@ export default function CreateSignal() {
         </div>
 
         {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4">
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+            <p className="text-sm text-red-600">{error}</p>
           </div>
         )}
 

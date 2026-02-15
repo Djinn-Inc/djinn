@@ -15,8 +15,8 @@ export default function IdiotDashboard() {
   if (!authenticated) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-white mb-4">Idiot Dashboard</h1>
-        <p className="text-gray-400 mb-8">
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">Idiot Dashboard</h1>
+        <p className="text-slate-500 mb-8">
           Connect your wallet to access the buyer dashboard.
         </p>
       </div>
@@ -27,8 +27,8 @@ export default function IdiotDashboard() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white">Idiot Dashboard</h1>
-          <p className="text-gray-400 mt-1">
+          <h1 className="text-3xl font-bold text-slate-900">Idiot Dashboard</h1>
+          <p className="text-slate-500 mt-1">
             Browse signals, manage your escrow, and track purchases
           </p>
         </div>
@@ -37,39 +37,39 @@ export default function IdiotDashboard() {
       {/* Balances */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="card">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
             Escrow Balance
           </p>
-          <p className="text-2xl font-bold text-white mt-2">
+          <p className="text-2xl font-bold text-slate-900 mt-2">
             {escrowLoading ? "..." : `$${formatUsdc(escrowBalance)}`}
           </p>
-          <p className="text-xs text-gray-500 mt-1">USDC available for purchases</p>
+          <p className="text-xs text-slate-500 mt-1">USDC available for purchases</p>
         </div>
 
         <div className="card">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
             Djinn Credits
           </p>
-          <p className="text-2xl font-bold text-djinn-400 mt-2">
+          <p className="text-2xl font-bold text-idiot-500 mt-2">
             {creditLoading ? "..." : formatUsdc(creditBalance)}
           </p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Credits offset purchase fees
           </p>
         </div>
 
         <div className="card">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
             Total Purchased
           </p>
-          <p className="text-2xl font-bold text-white mt-2">0</p>
-          <p className="text-xs text-gray-500 mt-1">Signals bought</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">0</p>
+          <p className="text-xs text-slate-500 mt-1">Signals bought</p>
         </div>
       </div>
 
       {/* Escrow Management */}
       <section className="mb-8">
-        <h2 className="text-xl font-semibold text-white mb-4">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Escrow Management
         </h2>
         <div className="card">
@@ -86,7 +86,7 @@ export default function IdiotDashboard() {
                   Deposit
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 Deposits require USDC approval first
               </p>
             </div>
@@ -102,7 +102,7 @@ export default function IdiotDashboard() {
                   Withdraw
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 Withdraw unused escrow balance
               </p>
             </div>
@@ -113,7 +113,7 @@ export default function IdiotDashboard() {
       {/* Browse Signals */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">
+          <h2 className="text-xl font-semibold text-slate-900">
             Available Signals
           </h2>
           <div className="flex gap-2">
@@ -128,7 +128,7 @@ export default function IdiotDashboard() {
           </div>
         </div>
         <div className="card">
-          <p className="text-center text-gray-500 py-8">
+          <p className="text-center text-slate-500 py-8">
             No signals available at the moment. Check back soon or watch for new
             SignalCommitted events on-chain.
           </p>
@@ -137,13 +137,13 @@ export default function IdiotDashboard() {
 
       {/* Purchase History */}
       <section>
-        <h2 className="text-xl font-semibold text-white mb-4">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Purchase History
         </h2>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-700">
+              <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="pb-3 font-medium">ID</th>
                 <th className="pb-3 font-medium">Signal</th>
                 <th className="pb-3 font-medium">Genius</th>
@@ -155,7 +155,7 @@ export default function IdiotDashboard() {
             </thead>
             <tbody>
               <tr>
-                <td colSpan={7} className="text-center text-gray-500 py-8">
+                <td colSpan={7} className="text-center text-slate-500 py-8">
                   No purchases yet
                 </td>
               </tr>

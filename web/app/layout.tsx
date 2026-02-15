@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Providers from "./providers";
 import Layout from "@/components/Layout";
+import BetaGate from "@/components/BetaGate";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -30,11 +31,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body className={inter.className}>
-        <Providers>
-          <Layout>{children}</Layout>
-        </Providers>
+        <BetaGate>
+          <Providers>
+            <Layout>{children}</Layout>
+          </Providers>
+        </BetaGate>
       </body>
     </html>
   );

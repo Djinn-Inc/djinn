@@ -6,19 +6,19 @@ interface QualityScoreProps {
 }
 
 function scoreColor(score: number): string {
-  if (score > 5) return "text-green-400";
-  if (score > 0) return "text-green-300";
-  if (score === 0) return "text-gray-400";
-  if (score > -5) return "text-orange-400";
-  return "text-red-400";
+  if (score > 5) return "text-green-600";
+  if (score > 0) return "text-green-500";
+  if (score === 0) return "text-slate-500";
+  if (score > -5) return "text-genius-500";
+  return "text-red-600";
 }
 
 function scoreBg(score: number): string {
-  if (score > 5) return "bg-green-500/10 border-green-500/20";
-  if (score > 0) return "bg-green-500/5 border-green-500/10";
-  if (score === 0) return "bg-gray-500/10 border-gray-500/20";
-  if (score > -5) return "bg-orange-500/10 border-orange-500/20";
-  return "bg-red-500/10 border-red-500/20";
+  if (score > 5) return "bg-green-100 border-green-200";
+  if (score > 0) return "bg-green-50 border-green-100";
+  if (score === 0) return "bg-slate-100 border-slate-200";
+  if (score > -5) return "bg-orange-50 border-orange-100";
+  return "bg-red-100 border-red-200";
 }
 
 function sizeClasses(size: "sm" | "md" | "lg"): string {

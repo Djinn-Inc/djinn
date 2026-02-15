@@ -4,60 +4,14 @@ import { useState } from "react";
 import QualityScore from "@/components/QualityScore";
 import { truncateAddress, type GeniusLeaderboardEntry } from "@/lib/types";
 
-// Placeholder data for UI development
-const MOCK_LEADERBOARD: GeniusLeaderboardEntry[] = [
-  {
-    address: "0x1234567890abcdef1234567890abcdef12345678",
-    qualityScore: 12,
-    totalSignals: 47,
-    auditCount: 4,
-    roi: 8.3,
-  },
-  {
-    address: "0xabcdef1234567890abcdef1234567890abcdef12",
-    qualityScore: 8,
-    totalSignals: 32,
-    auditCount: 3,
-    roi: 5.1,
-  },
-  {
-    address: "0x9876543210fedcba9876543210fedcba98765432",
-    qualityScore: 5,
-    totalSignals: 21,
-    auditCount: 2,
-    roi: 3.7,
-  },
-  {
-    address: "0xfedcba9876543210fedcba9876543210fedcba98",
-    qualityScore: 2,
-    totalSignals: 15,
-    auditCount: 1,
-    roi: 1.2,
-  },
-  {
-    address: "0x1111222233334444555566667777888899990000",
-    qualityScore: -1,
-    totalSignals: 10,
-    auditCount: 1,
-    roi: -0.8,
-  },
-  {
-    address: "0xaaaa bbbbccccddddeeeeffffaaaa bbbbccccdddd",
-    qualityScore: -4,
-    totalSignals: 18,
-    auditCount: 1,
-    roi: -3.2,
-  },
-];
-
 type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi";
 
 export default function Leaderboard() {
   const [sortBy, setSortBy] = useState<SortField>("qualityScore");
   const [sortDesc, setSortDesc] = useState(true);
-  const [showMock, setShowMock] = useState(true);
 
-  const data = showMock ? MOCK_LEADERBOARD : [];
+  // Will be populated from subgraph once signals are live
+  const data: GeniusLeaderboardEntry[] = [];
 
   const sorted = [...data].sort((a, b) => {
     const multiplier = sortDesc ? -1 : 1;
@@ -80,47 +34,39 @@ export default function Leaderboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Leaderboard</h1>
-          <p className="text-gray-400 mt-1">
-            Geniuses ranked by cryptographically verified track records
-          </p>
-        </div>
-        <button
-          onClick={() => setShowMock(!showMock)}
-          className="btn-secondary text-xs"
-        >
-          {showMock ? "Hide" : "Show"} Mock Data
-        </button>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-slate-900">Leaderboard</h1>
+        <p className="text-slate-500 mt-1">
+          Geniuses ranked by cryptographically verified track records
+        </p>
       </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-gray-500 border-b border-gray-700">
+            <tr className="text-left text-slate-500 border-b border-slate-200">
               <th className="pb-3 font-medium w-12">#</th>
               <th className="pb-3 font-medium">Genius</th>
               <th
-                className="pb-3 font-medium cursor-pointer hover:text-white transition-colors"
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("qualityScore")}
               >
                 Quality Score{sortIndicator("qualityScore")}
               </th>
               <th
-                className="pb-3 font-medium cursor-pointer hover:text-white transition-colors"
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("totalSignals")}
               >
                 Total Signals{sortIndicator("totalSignals")}
               </th>
               <th
-                className="pb-3 font-medium cursor-pointer hover:text-white transition-colors"
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("auditCount")}
               >
                 Audits{sortIndicator("auditCount")}
               </th>
               <th
-                className="pb-3 font-medium cursor-pointer hover:text-white transition-colors"
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("roi")}
               >
                 ROI{sortIndicator("roi")}
@@ -130,7 +76,7 @@ export default function Leaderboard() {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-gray-500 py-12">
+                <td colSpan={6} className="text-center text-slate-500 py-12">
                   No leaderboard data available. Genius rankings will appear
                   after signals are committed and audited on-chain.
                 </td>
@@ -139,23 +85,23 @@ export default function Leaderboard() {
               sorted.map((entry, i) => (
                 <tr
                   key={entry.address}
-                  className="border-b border-gray-800 hover:bg-gray-800/30 transition-colors"
+                  className="border-b border-slate-200 hover:bg-slate-50 transition-colors"
                 >
-                  <td className="py-4 text-gray-500 font-mono">{i + 1}</td>
+                  <td className="py-4 text-slate-500 font-mono">{i + 1}</td>
                   <td className="py-4">
-                    <span className="font-mono text-white">
+                    <span className="font-mono text-slate-900">
                       {truncateAddress(entry.address)}
                     </span>
                   </td>
                   <td className="py-4">
                     <QualityScore score={entry.qualityScore} size="sm" />
                   </td>
-                  <td className="py-4 text-white">{entry.totalSignals}</td>
-                  <td className="py-4 text-white">{entry.auditCount}</td>
+                  <td className="py-4 text-slate-900">{entry.totalSignals}</td>
+                  <td className="py-4 text-slate-900">{entry.auditCount}</td>
                   <td className="py-4">
                     <span
                       className={
-                        entry.roi >= 0 ? "text-green-400" : "text-red-400"
+                        entry.roi >= 0 ? "text-green-600" : "text-red-600"
                       }
                     >
                       {entry.roi >= 0 ? "+" : ""}
@@ -171,25 +117,25 @@ export default function Leaderboard() {
 
       {/* Explanation */}
       <div className="mt-8 card">
-        <h2 className="text-lg font-semibold text-white mb-3">
+        <h2 className="text-lg font-semibold text-slate-900 mb-3">
           How Quality Score Works
         </h2>
-        <div className="text-sm text-gray-400 space-y-2">
+        <div className="text-sm text-slate-500 space-y-2">
           <p>
             Quality Score (QS) is the on-chain measure of a Genius&apos;s prediction
             accuracy. It is updated after each signal outcome:
           </p>
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>
-              <span className="text-green-400">+1</span> for each Favorable
+              <span className="text-green-600">+1</span> for each Favorable
               outcome
             </li>
             <li>
-              <span className="text-red-400">-1</span> for each Unfavorable
+              <span className="text-red-600">-1</span> for each Unfavorable
               outcome
             </li>
             <li>
-              <span className="text-gray-500">0</span> for Void outcomes
+              <span className="text-slate-500">0</span> for Void outcomes
             </li>
           </ul>
           <p>
