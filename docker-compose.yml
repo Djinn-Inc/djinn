@@ -43,9 +43,16 @@ services:
       - API_PORT=8421
       - BASE_RPC_URL=http://anvil:8545
       - BT_NETWORK=local
+      - LOG_FORMAT=json
     depends_on:
       anvil:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8421/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   miner:
@@ -60,9 +67,16 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8422
       - BT_NETWORK=local
+      - LOG_FORMAT=json
     depends_on:
       anvil:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8422/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   web:
@@ -78,6 +92,8 @@ services:
       - NEXT_PUBLIC_VALIDATOR_URL=http://localhost:8421
       - NEXT_PUBLIC_MINER_URL=http://localhost:8422
     depends_on:
-      - validator
-      - miner
+      validator:
+        condition: service_healthy
+      miner:
+        condition: service_healthy
     restart: unless-stopped

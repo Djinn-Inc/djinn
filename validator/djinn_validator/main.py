@@ -11,6 +11,10 @@ import signal
 import structlog
 import uvicorn
 
+from djinn_validator.logging import configure_logging
+
+configure_logging()
+
 from djinn_validator.api.server import create_app
 from djinn_validator.bt.neuron import DjinnValidator
 from djinn_validator.chain.contracts import ChainClient

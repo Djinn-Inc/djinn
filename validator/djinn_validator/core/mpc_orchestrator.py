@@ -285,8 +285,12 @@ class MPCOrchestrator:
                                 "participating_validators": session.result.participating_validators,
                             },
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning(
+                            "mpc_result_broadcast_failed",
+                            peer_uid=peer["uid"],
+                            error=str(e),
+                        )
 
             return session.result
 

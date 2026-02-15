@@ -245,3 +245,55 @@ async def test_captured_session_strips_api_key(mock_odds_response: list[dict]) -
     session = sessions[0]
     assert "apiKey" not in session.request_params
     assert "secret-key-123" not in str(session.request_params)
+
+
+@pytest.mark.asyncio
+async def test_retry_on_5xx(mock_odds_response: list[dict]) -> None:
+    """5xx errors should be retried up to max_retries times."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json=mock_odds_response)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    c = OddsApiClient(api_key="test", http_client=mock_http, max_retries=3)
+
+    result = await c.get_odds("basketball_nba")
+    assert len(result) == len(mock_odds_response)
+    assert call_count == 3  # 2 failures + 1 success
+
+
+@pytest.mark.asyncio
+async def test_retry_exhausted_raises() -> None:
+    """When all retries are exhausted, the last error should be raised."""
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(503, json={"error": "unavailable"})
+        )
+    )
+    c = OddsApiClient(api_key="test", http_client=mock_http, max_retries=1)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await c.get_odds("basketball_nba")
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_4xx() -> None:
+    """4xx errors should NOT be retried."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(401, json={"error": "unauthorized"})
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    c = OddsApiClient(api_key="bad", http_client=mock_http, max_retries=3)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await c.get_odds("basketball_nba")
+    assert call_count == 1  # No retry

@@ -6,6 +6,8 @@ from multiple bookmakers. Caches responses for a configurable TTL.
 
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -53,7 +55,11 @@ class BookmakerOdds:
 
 
 class OddsApiClient:
-    """Async client for The Odds API with response caching."""
+    """Async client for The Odds API with response caching and retry."""
+
+    MAX_RETRIES = 3
+    RETRY_BASE_DELAY = 0.5  # seconds
+    RETRY_MAX_DELAY = 8.0  # seconds
 
     def __init__(
         self,
@@ -62,6 +68,7 @@ class OddsApiClient:
         cache_ttl: int = 30,
         http_client: httpx.AsyncClient | None = None,
         session_capture: SessionCapture | None = None,
+        max_retries: int = MAX_RETRIES,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -70,11 +77,63 @@ class OddsApiClient:
         self._client = http_client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = http_client is None
         self._session_capture = session_capture
+        self._max_retries = max_retries
 
     async def close(self) -> None:
         """Close the HTTP client if we own it."""
         if self._owns_client:
             await self._client.aclose()
+
+    async def _request_with_retry(
+        self,
+        url: str,
+        params: dict[str, str],
+        sport: str,
+    ) -> httpx.Response:
+        """Execute an HTTP GET with exponential backoff retry.
+
+        Retries on network errors and 5xx responses. Does NOT retry 4xx
+        (client errors like 401/429 won't fix themselves).
+        """
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                resp = await self._client.get(url, params=params)
+                if resp.status_code < 500:
+                    resp.raise_for_status()
+                    return resp
+                # 5xx: retry
+                log.warning(
+                    "odds_api_server_error",
+                    status=resp.status_code,
+                    sport=sport,
+                    attempt=attempt + 1,
+                )
+                last_exc = httpx.HTTPStatusError(
+                    f"Server error {resp.status_code}",
+                    request=resp.request,
+                    response=resp,
+                )
+            except httpx.HTTPStatusError:
+                raise  # 4xx — don't retry
+            except httpx.RequestError as e:
+                log.warning(
+                    "odds_api_request_error",
+                    error=str(e),
+                    sport=sport,
+                    attempt=attempt + 1,
+                )
+                last_exc = e
+
+            if attempt < self._max_retries:
+                delay = min(
+                    self.RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5),
+                    self.RETRY_MAX_DELAY,
+                )
+                await asyncio.sleep(delay)
+
+        log.error("odds_api_retries_exhausted", sport=sport, attempts=self._max_retries + 1)
+        raise last_exc  # type: ignore[misc]
 
     def _resolve_sport_key(self, sport: str) -> str:
         """Map an internal sport key to The Odds API sport key."""
@@ -105,16 +164,8 @@ class OddsApiClient:
             "oddsFormat": "decimal",
         }
 
-        try:
-            resp = await self._client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPStatusError as e:
-            log.error("odds_api_http_error", status=e.response.status_code, sport=api_sport)
-            raise
-        except httpx.RequestError as e:
-            log.error("odds_api_request_error", error=str(e), sport=api_sport)
-            raise
+        resp = await self._request_with_retry(url, params, api_sport)
+        data = resp.json()
 
         # Capture the raw HTTP session for proof generation
         if self._session_capture is not None:

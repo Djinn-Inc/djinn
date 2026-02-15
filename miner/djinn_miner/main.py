@@ -13,6 +13,10 @@ import signal
 import structlog
 import uvicorn
 
+from djinn_miner.logging import configure_logging
+
+configure_logging()
+
 from djinn_miner.api.server import create_app
 from djinn_miner.bt.neuron import DjinnMiner
 from djinn_miner.config import Config
