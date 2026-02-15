@@ -255,6 +255,17 @@ class TestInputValidation:
         })
         assert resp.status_code == 422
 
+    def test_signal_id_rejects_special_chars(self, client: TestClient) -> None:
+        """Signal IDs with special characters should be rejected by Pydantic."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig/../../../etc/passwd",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "abcdef",
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 422
+
     def test_nonexistent_endpoint_returns_404(self, client: TestClient) -> None:
         resp = client.get("/v1/doesnotexist")
         assert resp.status_code in (404, 405)

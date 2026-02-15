@@ -317,6 +317,63 @@ class TestOutcomeAttestor:
         assert result is None  # Game pending
         assert not meta.resolved
 
+    def test_cleanup_resolved_removes_old_signals(self) -> None:
+        attestor = OutcomeAttestor()
+        meta = SignalMetadata(
+            signal_id="sig1",
+            sport="basketball_nba",
+            event_id="evt1",
+            home_team="Lakers",
+            away_team="Celtics",
+            pick=parse_pick("Lakers -3.5 (-110)"),
+            purchased_at=0.0,  # Very old timestamp
+        )
+        meta.resolved = True
+        attestor.register_signal(meta)
+
+        # Also add an attestation so we verify it gets cleaned too
+        result = EventResult(event_id="evt1", home_score=110, away_score=105, status="final")
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+
+        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        assert removed == 1
+        assert attestor.get_pending_signals() == []
+        assert attestor.check_consensus("sig1", 3) is None  # Attestations gone too
+
+    def test_cleanup_resolved_keeps_recent(self) -> None:
+        attestor = OutcomeAttestor()
+        meta = SignalMetadata(
+            signal_id="sig1",
+            sport="basketball_nba",
+            event_id="evt1",
+            home_team="Lakers",
+            away_team="Celtics",
+            pick=parse_pick("Lakers -3.5 (-110)"),
+            # purchased_at defaults to time.time() — very recent
+        )
+        meta.resolved = True
+        attestor.register_signal(meta)
+
+        removed = attestor.cleanup_resolved(max_age_seconds=86400)
+        assert removed == 0  # Still recent, not cleaned
+
+    def test_cleanup_resolved_ignores_unresolved(self) -> None:
+        attestor = OutcomeAttestor()
+        meta = SignalMetadata(
+            signal_id="sig1",
+            sport="basketball_nba",
+            event_id="evt1",
+            home_team="Lakers",
+            away_team="Celtics",
+            pick=parse_pick("Lakers -3.5 (-110)"),
+            purchased_at=0.0,  # Very old
+        )
+        # Not resolved — should not be cleaned even if old
+        attestor.register_signal(meta)
+
+        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        assert removed == 0
+
     @pytest.mark.asyncio
     async def test_close(self) -> None:
         attestor = OutcomeAttestor()

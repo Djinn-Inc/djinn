@@ -61,6 +61,9 @@ async def epoch_loop(
             if resolved:
                 log.info("outcomes_resolved", count=len(resolved))
 
+            # Prune old resolved signals to prevent memory growth
+            outcome_attestor.cleanup_resolved()
+
             # Determine if this is an active epoch (any signals being processed)
             is_active = share_store.count > 0
 

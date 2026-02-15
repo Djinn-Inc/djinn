@@ -460,5 +460,29 @@ class OutcomeAttestor:
 
         return None
 
+    def cleanup_resolved(self, max_age_seconds: float = 86400) -> int:
+        """Remove resolved signals and old attestations to prevent memory growth.
+
+        Removes signals resolved more than max_age_seconds ago (default: 24h).
+        Returns count of removed entries.
+        """
+        now = time.time()
+        removed = 0
+
+        # Clean resolved signals older than max_age
+        stale_ids = [
+            sid for sid, meta in self._pending_signals.items()
+            if meta.resolved and now - meta.purchased_at > max_age_seconds
+        ]
+        for sid in stale_ids:
+            del self._pending_signals[sid]
+            self._attestations.pop(sid, None)
+            removed += 1
+
+        if removed:
+            log.info("outcomes_cleaned", removed=removed)
+
+        return removed
+
     async def close(self) -> None:
         await self._client.aclose()

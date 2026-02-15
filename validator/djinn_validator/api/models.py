@@ -7,6 +7,7 @@ import re
 from pydantic import BaseModel, Field, field_validator
 
 _HEX_RE = re.compile(r"^(0x)?[0-9a-fA-F]+$")
+_SIGNAL_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 
 
 def _validate_hex(v: str, field_name: str) -> str:
@@ -15,10 +16,16 @@ def _validate_hex(v: str, field_name: str) -> str:
     return v
 
 
+def _validate_signal_id(v: str) -> str:
+    if not _SIGNAL_ID_RE.match(v):
+        raise ValueError("signal_id must be 1-256 alphanumeric chars, hyphens, or underscores")
+    return v
+
+
 class StoreShareRequest(BaseModel):
     """POST /v1/signal — Accept encrypted key share from a Genius."""
 
-    signal_id: str = Field(max_length=256)
+    signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     genius_address: str = Field(max_length=256)
     share_x: int = Field(ge=1, le=10)
     share_y: str = Field(max_length=512)  # Hex-encoded field element
@@ -59,7 +66,7 @@ class PurchaseResponse(BaseModel):
 class OutcomeRequest(BaseModel):
     """POST /v1/signal/{id}/outcome — Submit an outcome attestation."""
 
-    signal_id: str = Field(max_length=256)
+    signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     event_id: str = Field(max_length=256)
     outcome: int = Field(ge=0, le=3)  # 0=Pending, 1=Favorable, 2=Unfavorable, 3=Void
     validator_hotkey: str = Field(max_length=256)
@@ -129,8 +136,8 @@ class AnalyticsRequest(BaseModel):
 class MPCInitRequest(BaseModel):
     """POST /v1/mpc/init — Coordinator invites this validator to an MPC session."""
 
-    session_id: str = Field(max_length=256)
-    signal_id: str = Field(max_length=256)
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     available_indices: list[int] = Field(max_length=10)
     coordinator_x: int = Field(ge=1, le=255)
     participant_xs: list[int] = Field(max_length=20)
@@ -169,8 +176,8 @@ class MPCRound1Response(BaseModel):
 class MPCResultRequest(BaseModel):
     """POST /v1/mpc/result — Coordinator broadcasts the opened result."""
 
-    session_id: str = Field(max_length=256)
-    signal_id: str = Field(max_length=256)
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     available: bool
     participating_validators: int = Field(ge=0, le=255)
 
