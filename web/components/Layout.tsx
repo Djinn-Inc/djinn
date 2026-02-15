@@ -154,8 +154,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center justify-between text-xs text-slate-400 pt-6 border-t border-slate-200">
-            <span>Djinn Protocol</span>
-            <span>Information &times; Execution</span>
+            <span>&copy; {new Date().getFullYear()} Djinn Protocol</span>
+            <div className="flex items-center gap-4">
+              <Link href="/terms" className="hover:text-slate-600 transition-colors">Terms</Link>
+              <Link href="/privacy" className="hover:text-slate-600 transition-colors">Privacy</Link>
+            </div>
           </div>
         </div>
       </footer>
