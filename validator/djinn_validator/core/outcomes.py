@@ -620,4 +620,9 @@ class OutcomeAttestor:
         return removed
 
     async def close(self) -> None:
-        await self._client.aclose()
+        try:
+            await asyncio.wait_for(self._client.aclose(), timeout=5.0)
+        except asyncio.TimeoutError:
+            log.warning("outcome_attestor_close_timeout")
+        except Exception as e:
+            log.warning("outcome_attestor_close_error", error=str(e))

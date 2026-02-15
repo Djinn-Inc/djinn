@@ -457,3 +457,63 @@ class TestCustomRateLimits:
         # 3rd should be rate limited
         resp = client.post("/v1/proof", json={"query_id": "q1"})
         assert resp.status_code == 429
+
+
+class TestEndpointTimeouts:
+    """Verify that slow checker and proof generation trigger 504."""
+
+    def test_check_timeout_returns_504(self) -> None:
+        import asyncio
+
+        async def slow_check(*args, **kwargs):
+            await asyncio.sleep(100)  # Will be cancelled by timeout
+
+        mock_checker = AsyncMock()
+        mock_checker.check = slow_check
+        mock_proof = AsyncMock()
+        health = HealthTracker()
+
+        app = create_app(
+            checker=mock_checker,
+            proof_gen=mock_proof,
+            health_tracker=health,
+        )
+        client = TestClient(app)
+
+        resp = client.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                "event_id": "evt-1",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "line": None,
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["detail"]
+
+    def test_proof_timeout_returns_504(self) -> None:
+        import asyncio
+
+        async def slow_proof(*args, **kwargs):
+            await asyncio.sleep(100)
+
+        mock_checker = AsyncMock()
+        mock_checker.check.return_value = []
+        mock_proof = AsyncMock()
+        mock_proof.generate = slow_proof
+        health = HealthTracker()
+
+        app = create_app(
+            checker=mock_checker,
+            proof_gen=mock_proof,
+            health_tracker=health,
+        )
+        client = TestClient(app)
+
+        resp = client.post("/v1/proof", json={"query_id": "q-timeout"})
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["detail"]

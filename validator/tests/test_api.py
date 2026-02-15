@@ -598,3 +598,54 @@ class TestMethodNotAllowed:
     def test_post_on_get_endpoint(self, client: TestClient) -> None:
         resp = client.post("/metrics")
         assert resp.status_code == 405
+
+
+class TestResolveTimeout:
+    def test_resolve_timeout_returns_504(self) -> None:
+        """If resolve_all_pending exceeds 30s, return 504."""
+        import asyncio
+        from unittest.mock import patch, AsyncMock as AM
+
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        mock_attestor = AM(spec=OutcomeAttestor)
+
+        async def slow_resolve(*args, **kwargs):
+            await asyncio.sleep(100)
+
+        mock_attestor.resolve_all_pending = slow_resolve
+        mock_attestor.get_pending_signals.return_value = []
+
+        app = create_app(store, purchase_orch, mock_attestor)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/v1/signals/resolve")
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["detail"]
+        store.close()
+
+    def test_outcome_fetch_timeout_returns_504(self, share_store: ShareStore) -> None:
+        """If fetch_event_result exceeds 10s, return 504."""
+        import asyncio
+        from unittest.mock import patch, AsyncMock as AM
+
+        mock_attestor = AM(spec=OutcomeAttestor)
+
+        async def slow_fetch(*args, **kwargs):
+            await asyncio.sleep(100)
+
+        mock_attestor.fetch_event_result = slow_fetch
+        mock_attestor.get_pending_signals.return_value = []
+
+        share_store.store("sig-timeout-oc", "0xG", Share(x=1, y=1), b"key")
+
+        purchase_orch = PurchaseOrchestrator(share_store)
+        app = create_app(share_store, purchase_orch, mock_attestor)
+        client = TestClient(app)
+        resp = client.post("/v1/signal/sig-timeout-oc/outcome", json={
+            "signal_id": "sig-timeout-oc",
+            "event_id": "evt-timeout",
+            "outcome": 1,
+            "validator_hotkey": "5xxx",
+        })
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["detail"]
