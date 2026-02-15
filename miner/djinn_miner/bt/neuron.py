@@ -1,0 +1,146 @@
+"""Bittensor neuron integration for the Djinn miner.
+
+Handles:
+- Wallet and subtensor connection
+- Axon setup and serving (so validators can discover this miner)
+- Metagraph sync
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import structlog
+
+log = structlog.get_logger()
+
+try:
+    import bittensor as bt
+except ImportError:
+    bt = None  # type: ignore[assignment]
+    log.warning("bittensor_not_installed", msg="Running without Bittensor SDK")
+
+
+class DjinnMiner:
+    """Bittensor miner neuron for Djinn Protocol subnet 103.
+
+    The miner runs a FastAPI server for line-checking and proof generation.
+    This class handles Bittensor registration so validators can discover
+    the miner's IP/port via the metagraph.
+    """
+
+    def __init__(
+        self,
+        netuid: int = 103,
+        network: str = "finney",
+        wallet_name: str = "default",
+        hotkey_name: str = "default",
+        axon_port: int = 8422,
+        external_ip: str | None = None,
+    ) -> None:
+        self.netuid = netuid
+        self.network = network
+        self._wallet_name = wallet_name
+        self._hotkey_name = hotkey_name
+        self._axon_port = axon_port
+        self._external_ip = external_ip
+
+        self.wallet: Any = None
+        self.subtensor: Any = None
+        self.metagraph: Any = None
+        self.axon: Any = None
+        self.uid: int | None = None
+
+    def setup(self) -> bool:
+        """Initialize wallet, subtensor, metagraph, and axon.
+
+        Returns True if setup succeeded, False otherwise.
+        """
+        if bt is None:
+            log.error("bittensor_required")
+            return False
+
+        try:
+            # Wallet
+            self.wallet = bt.wallet(
+                name=self._wallet_name,
+                hotkey=self._hotkey_name,
+            )
+            log.info("wallet_loaded", hotkey=self.wallet.hotkey.ss58_address)
+
+            # Subtensor connection
+            self.subtensor = bt.subtensor(network=self.network)
+            log.info("subtensor_connected", network=self.network)
+
+            # Metagraph
+            self.metagraph = self.subtensor.metagraph(self.netuid)
+            log.info(
+                "metagraph_synced",
+                netuid=self.netuid,
+                n=self.metagraph.n.item(),
+            )
+
+            # Find our UID
+            hotkey = self.wallet.hotkey.ss58_address
+            if hotkey in self.metagraph.hotkeys:
+                self.uid = self.metagraph.hotkeys.index(hotkey)
+                log.info("miner_uid", uid=self.uid)
+            else:
+                log.warning("not_registered", hotkey=hotkey, netuid=self.netuid)
+                return False
+
+            # Set up axon so validators can discover us
+            self._setup_axon()
+
+            return True
+
+        except Exception as e:
+            log.error("setup_failed", error=str(e))
+            return False
+
+    def _setup_axon(self) -> None:
+        """Create and serve the Bittensor axon.
+
+        The axon advertises our IP/port on the metagraph so validators
+        know where to send line-check requests. The actual request handling
+        is done by the FastAPI server, not the axon — the axon just
+        provides discovery.
+        """
+        if bt is None or self.wallet is None:
+            return
+
+        self.axon = bt.axon(
+            wallet=self.wallet,
+            port=self._axon_port,
+            external_ip=self._external_ip,
+        )
+
+        # Serve the axon to register our IP/port on the network
+        self.subtensor.serve_axon(
+            netuid=self.netuid,
+            axon=self.axon,
+        )
+        log.info(
+            "axon_served",
+            port=self._axon_port,
+            external_ip=self._external_ip or "auto",
+        )
+
+    def sync_metagraph(self) -> None:
+        """Re-sync the metagraph."""
+        if self.subtensor and self.metagraph:
+            self.metagraph.sync(subtensor=self.subtensor)
+            log.debug("metagraph_synced", n=self.metagraph.n.item())
+
+    def is_registered(self) -> bool:
+        """Check if this miner is still registered on the subnet."""
+        if self.metagraph is None or self.wallet is None:
+            return False
+        hotkey = self.wallet.hotkey.ss58_address
+        return hotkey in self.metagraph.hotkeys
+
+    @property
+    def block(self) -> int:
+        if self.subtensor is None:
+            return 0
+        return self.subtensor.block

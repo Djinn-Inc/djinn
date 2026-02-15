@@ -1,0 +1,83 @@
+version: "3.9"
+
+# Djinn Protocol — full local development stack
+#
+# Services:
+#   anvil       — Local Ethereum node (Foundry)
+#   validator   — Bittensor validator API (port 8421)
+#   miner       — Bittensor miner API (port 8422)
+#   web         — Next.js web client (port 3000)
+#
+# Usage:
+#   docker compose up              — Start all services
+#   docker compose up -d           — Start in background
+#   docker compose logs -f miner   — Follow logs for a service
+#
+# Before first run:
+#   1. Copy .env.example files and configure
+#   2. Deploy contracts to Anvil (see scripts/deploy_local.sh)
+#   3. Update contract addresses in env files
+
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337"]
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  validator:
+    build:
+      context: ./validator
+      dockerfile: Dockerfile
+    ports:
+      - "8421:8421"
+    env_file:
+      - ./validator/.env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8421
+      - BASE_RPC_URL=http://anvil:8545
+      - BT_NETWORK=local
+    depends_on:
+      anvil:
+        condition: service_healthy
+    restart: unless-stopped
+
+  miner:
+    build:
+      context: ./miner
+      dockerfile: Dockerfile
+    ports:
+      - "8422:8422"
+    env_file:
+      - ./miner/.env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8422
+      - BT_NETWORK=local
+    depends_on:
+      anvil:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./web/.env
+    environment:
+      - NEXT_PUBLIC_BASE_RPC_URL=http://localhost:8545
+      - NEXT_PUBLIC_VALIDATOR_URL=http://localhost:8421
+      - NEXT_PUBLIC_MINER_URL=http://localhost:8422
+    depends_on:
+      - validator
+      - miner
+    restart: unless-stopped

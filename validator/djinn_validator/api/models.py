@@ -92,3 +92,67 @@ class AnalyticsRequest(BaseModel):
 
     event_type: str
     data: dict = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# MPC Coordination Models (inter-validator communication)
+# ---------------------------------------------------------------------------
+
+
+class MPCInitRequest(BaseModel):
+    """POST /v1/mpc/init — Coordinator invites this validator to an MPC session."""
+
+    session_id: str
+    signal_id: str
+    available_indices: list[int]
+    coordinator_x: int
+    participant_xs: list[int]
+    threshold: int = 7
+    # This validator's Beaver triple shares (one dict per gate)
+    triple_shares: list[dict[str, str]] = Field(default_factory=list)  # hex-encoded
+
+
+class MPCInitResponse(BaseModel):
+    session_id: str
+    accepted: bool
+    message: str = ""
+
+
+class MPCRound1Request(BaseModel):
+    """POST /v1/mpc/round1 — Submit Round 1 message (d, e values) for a gate."""
+
+    session_id: str
+    gate_idx: int
+    validator_x: int
+    d_value: str  # Hex-encoded
+    e_value: str  # Hex-encoded
+
+
+class MPCRound1Response(BaseModel):
+    session_id: str
+    gate_idx: int
+    accepted: bool
+
+
+class MPCResultRequest(BaseModel):
+    """POST /v1/mpc/result — Coordinator broadcasts the opened result."""
+
+    session_id: str
+    signal_id: str
+    available: bool
+    participating_validators: int
+
+
+class MPCResultResponse(BaseModel):
+    session_id: str
+    acknowledged: bool
+
+
+class MPCSessionStatusResponse(BaseModel):
+    """GET /v1/mpc/{session_id}/status — Check MPC session status."""
+
+    session_id: str
+    status: str
+    available: bool | None = None
+    participants_responded: int = 0
+    total_participants: int = 0

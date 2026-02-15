@@ -8,6 +8,12 @@ Endpoints from Appendix A of the whitepaper:
 - POST /v1/signals/resolve           — Resolve all pending signal outcomes
 - POST /v1/analytics/attempt         — Fire-and-forget analytics
 - GET  /health                       — Health check
+
+Inter-validator MPC endpoints:
+- POST /v1/mpc/init                  — Accept MPC session invitation
+- POST /v1/mpc/round1               — Submit Round 1 multiplication messages
+- POST /v1/mpc/result               — Accept coordinator's final result
+- GET  /v1/mpc/{session_id}/status   — Check MPC session status
 """
 
 from __future__ import annotations
@@ -21,6 +27,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from djinn_validator.api.models import (
     AnalyticsRequest,
     HealthResponse,
+    MPCInitRequest,
+    MPCInitResponse,
+    MPCResultRequest,
+    MPCResultResponse,
+    MPCRound1Request,
+    MPCRound1Response,
+    MPCSessionStatusResponse,
     OutcomeRequest,
     OutcomeResponse,
     PurchaseRequest,
@@ -32,9 +45,12 @@ from djinn_validator.api.models import (
     StoreShareResponse,
 )
 from djinn_validator.core.mpc import (
+    MPCResult,
+    Round1Message,
     check_availability,
     compute_local_contribution,
 )
+from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
 from djinn_validator.core.outcomes import (
     Outcome,
     OutcomeAttestor,
@@ -58,6 +74,7 @@ def create_app(
     outcome_attestor: OutcomeAttestor,
     chain_client: "ChainClient | None" = None,
     neuron: "DjinnValidator | None" = None,
+    mpc_coordinator: "MPCCoordinator | None" = None,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     app = FastAPI(
@@ -245,6 +262,101 @@ def create_app(
             pending_outcomes=len(outcome_attestor.get_pending_signals()),
             chain_connected=chain_ok,
             bt_connected=neuron is not None and neuron.uid is not None,
+        )
+
+    # ------------------------------------------------------------------
+    # Inter-validator MPC coordination endpoints
+    # ------------------------------------------------------------------
+    _mpc = mpc_coordinator or MPCCoordinator()
+
+    @app.post("/v1/mpc/init", response_model=MPCInitResponse)
+    async def mpc_init(req: MPCInitRequest) -> MPCInitResponse:
+        """Accept an MPC session invitation from the coordinator."""
+        session = _mpc.get_session(req.session_id)
+        if session is not None:
+            return MPCInitResponse(
+                session_id=req.session_id,
+                accepted=True,
+                message="Session already exists",
+            )
+
+        # Create session locally (participant mirrors coordinator state)
+        session = _mpc.create_session(
+            signal_id=req.signal_id,
+            available_indices=req.available_indices,
+            coordinator_x=req.coordinator_x,
+            participant_xs=req.participant_xs,
+            threshold=req.threshold,
+        )
+        # Override the session_id to match coordinator's
+        _mpc._sessions.pop(session.session_id)
+        session.session_id = req.session_id
+        _mpc._sessions[req.session_id] = session
+
+        return MPCInitResponse(
+            session_id=req.session_id,
+            accepted=True,
+        )
+
+    @app.post("/v1/mpc/round1", response_model=MPCRound1Response)
+    async def mpc_round1(req: MPCRound1Request) -> MPCRound1Response:
+        """Accept a Round 1 message for a multiplication gate."""
+        msg = Round1Message(
+            validator_x=req.validator_x,
+            d_value=int(req.d_value, 16),
+            e_value=int(req.e_value, 16),
+        )
+        ok = _mpc.submit_round1(req.session_id, req.gate_idx, msg)
+        return MPCRound1Response(
+            session_id=req.session_id,
+            gate_idx=req.gate_idx,
+            accepted=ok,
+        )
+
+    @app.post("/v1/mpc/result", response_model=MPCResultResponse)
+    async def mpc_result(req: MPCResultRequest) -> MPCResultResponse:
+        """Accept the coordinator's final MPC result broadcast."""
+        session = _mpc.get_session(req.session_id)
+        if session is None:
+            return MPCResultResponse(
+                session_id=req.session_id,
+                acknowledged=False,
+            )
+
+        session.result = MPCResult(
+            available=req.available,
+            participating_validators=req.participating_validators,
+        )
+        session.status = SessionStatus.COMPLETE
+
+        log.info(
+            "mpc_result_received",
+            session_id=req.session_id,
+            signal_id=req.signal_id,
+            available=req.available,
+        )
+
+        return MPCResultResponse(
+            session_id=req.session_id,
+            acknowledged=True,
+        )
+
+    @app.get("/v1/mpc/{session_id}/status", response_model=MPCSessionStatusResponse)
+    async def mpc_status(session_id: str) -> MPCSessionStatusResponse:
+        """Check the status of an MPC session."""
+        session = _mpc.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="MPC session not found")
+
+        # Count Round 1 responses for the first gate as a proxy
+        responded = len(session.round1_messages.get(0, []))
+
+        return MPCSessionStatusResponse(
+            session_id=session_id,
+            status=session.status.name.lower(),
+            available=session.result.available if session.result else None,
+            participants_responded=responded,
+            total_participants=len(session.participant_xs),
         )
 
     return app
