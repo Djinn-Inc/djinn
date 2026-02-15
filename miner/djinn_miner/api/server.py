@@ -50,6 +50,15 @@ def create_app(
 
     app = FastAPI(title="Djinn Miner", version="0.1.0")
 
+    # Catch unhandled exceptions — never leak stack traces to clients
+    @app.exception_handler(Exception)
+    async def _unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
+        log.error("unhandled_exception", error=str(exc), exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
     cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))
     app.add_middleware(
         CORSMiddleware,

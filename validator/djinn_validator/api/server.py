@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from djinn_validator.api.metrics import (
     ACTIVE_SHARES,
@@ -98,6 +99,15 @@ def create_app(
         version="0.1.0",
         description="Djinn Protocol Bittensor Validator API",
     )
+
+    # Catch unhandled exceptions — never leak stack traces to clients
+    @app.exception_handler(Exception)
+    async def _unhandled_error(_request: Request, exc: Exception) -> StarletteJSONResponse:
+        log.error("unhandled_exception", error=str(exc), exc_info=True)
+        return StarletteJSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
 
     # CORS — restricted in production, open in dev
     cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))

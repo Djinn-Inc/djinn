@@ -51,7 +51,10 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
 
 async def run_server(app: object, host: str, port: int) -> None:
     """Run uvicorn as an async task."""
-    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    config = uvicorn.Config(
+        app, host=host, port=port, log_level="info",
+        timeout_graceful_shutdown=10,
+    )
     server = uvicorn.Server(config)
     await server.serve()
 

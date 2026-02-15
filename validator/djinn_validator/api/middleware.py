@@ -31,21 +31,33 @@ log = structlog.get_logger()
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Assign a unique request ID to every request.
+    """Assign a unique request ID and log every request.
 
     - Reads ``X-Request-ID`` from the incoming request (forwarded by a
       reverse-proxy) or generates a new UUID4.
     - Binds the ID to structlog contextvars so every log line emitted
       during the request includes ``request_id``.
     - Returns the ID in the ``X-Request-ID`` response header.
+    - Logs method, path, status code, and duration for every request.
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
         structlog.contextvars.bind_contextvars(request_id=request_id)
+        start = time.monotonic()
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
+            duration_ms = round((time.monotonic() - start) * 1000, 1)
+            if request.url.path not in ("/health", "/metrics"):
+                log.info(
+                    "request",
+                    method=request.method,
+                    path=request.url.path,
+                    status=response.status_code,
+                    duration_ms=duration_ms,
+                    client=request.client.host if request.client else "unknown",
+                )
             return response
         finally:
             structlog.contextvars.unbind_contextvars("request_id")
