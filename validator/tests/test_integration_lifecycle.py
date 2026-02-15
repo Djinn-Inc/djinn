@@ -72,7 +72,7 @@ class TestSignalLifecycle:
 
         # Purchase — available_indices includes the real index (3)
         resp = client.post(f"/v1/signal/{signal_id}/purchase", json={
-            "buyer_address": "0xBuyerLifecycle",
+            "buyer_address": "0x" + "b1" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 2, 3, 5, 7],
         })
@@ -105,7 +105,7 @@ class TestSignalLifecycle:
 
         # Purchase — available_indices does NOT include the real index (5)
         resp = client.post(f"/v1/signal/{signal_id}/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 2, 3, 4, 7, 8, 9],
         })
@@ -133,7 +133,7 @@ class TestSignalLifecycle:
 
         # First purchase
         resp1 = client.post(f"/v1/signal/{signal_id}/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 2, 3],
         })
@@ -141,7 +141,7 @@ class TestSignalLifecycle:
 
         # Second purchase (same buyer)
         resp2 = client.post(f"/v1/signal/{signal_id}/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 2, 3],
         })
@@ -171,7 +171,7 @@ class TestSignalLifecycle:
     def test_purchase_nonexistent_signal(self, client: TestClient) -> None:
         """Purchasing a nonexistent signal returns 404."""
         resp = client.post("/v1/signal/nonexistent/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1],
         })

@@ -44,7 +44,7 @@ class PurchaseRequest:
     status: PurchaseStatus = PurchaseStatus.PENDING
     mpc_result: MPCResult | None = None
     tx_hash: str | None = None
-    created_at: float = field(default_factory=time.time)
+    created_at: float = field(default_factory=time.monotonic)
     completed_at: float | None = None
 
 
@@ -158,7 +158,7 @@ class PurchaseOrchestrator:
         Prevents unbounded growth of the in-memory _active dict.
         Returns count of removed entries.
         """
-        now = time.time()
+        now = time.monotonic()
         terminal = (PurchaseStatus.SHARES_RELEASED, PurchaseStatus.FAILED, PurchaseStatus.VOIDED, PurchaseStatus.UNAVAILABLE)
         stale = [
             k for k, p in self._active.items()

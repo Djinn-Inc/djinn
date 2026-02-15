@@ -183,8 +183,12 @@ class ShareStore:
             self._conn.execute("COMMIT")
             log.info("share_released", signal_id=signal_id, buyer=buyer_address)
             return encrypted_key_share
-        except Exception:
-            self._conn.execute("ROLLBACK")
+        except Exception as e:
+            log.error("share_release_error", signal_id=signal_id, buyer=buyer_address, error=str(e))
+            try:
+                self._conn.execute("ROLLBACK")
+            except Exception:
+                log.error("share_release_rollback_failed", signal_id=signal_id)
             raise
 
     def remove(self, signal_id: str) -> None:

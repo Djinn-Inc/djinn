@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 _HEX_RE = re.compile(r"^(0x)?[0-9a-fA-F]+$")
 _SIGNAL_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
+_ETH_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+_EVENT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]{1,256}$")
 
 
 def _validate_hex(v: str, field_name: str) -> str:
@@ -54,12 +56,21 @@ class PurchaseRequest(BaseModel):
     sportsbook: str = Field(max_length=256)
     available_indices: list[int] = Field(min_length=1, max_length=10)
 
+    @field_validator("buyer_address")
+    @classmethod
+    def validate_buyer_address(cls, v: str) -> str:
+        if not _ETH_ADDRESS_RE.match(v):
+            raise ValueError("buyer_address must be a valid Ethereum address (0x + 40 hex chars)")
+        return v
+
     @field_validator("available_indices")
     @classmethod
     def validate_indices_range(cls, v: list[int]) -> list[int]:
         for idx in v:
             if idx < 1 or idx > 10:
                 raise ValueError(f"available_indices values must be 1-10, got {idx}")
+        if len(set(v)) != len(v):
+            raise ValueError("available_indices must not contain duplicates")
         return v
 
 
@@ -75,7 +86,7 @@ class OutcomeRequest(BaseModel):
     """POST /v1/signal/{id}/outcome — Submit an outcome attestation."""
 
     signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
-    event_id: str = Field(max_length=256)
+    event_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-:.]+$")
     outcome: int = Field(ge=0, le=3)  # 0=Pending, 1=Favorable, 2=Unfavorable, 3=Void
     validator_hotkey: str = Field(max_length=256)
 
@@ -91,7 +102,7 @@ class RegisterSignalRequest(BaseModel):
     """POST /v1/signal/{id}/register — Register a purchased signal for outcome tracking."""
 
     sport: str = Field(max_length=128)  # The Odds API sport key, e.g., "basketball_nba"
-    event_id: str = Field(max_length=256)  # The Odds API event ID
+    event_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-:.]+$")  # The Odds API event ID
     home_team: str = Field(max_length=256)
     away_team: str = Field(max_length=256)
     pick: str = Field(max_length=512)  # e.g., "Lakers -3.5 (-110)"

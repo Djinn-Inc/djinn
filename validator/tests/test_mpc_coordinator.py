@@ -57,7 +57,7 @@ class TestGetSession:
     def test_expired_session(self) -> None:
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
-        session.created_at = time.time() - 200  # Force expiry
+        session.created_at = time.monotonic() - 200  # Force expiry
         # Expired sessions return None (removed from internal dict)
         retrieved = coord.get_session(session.session_id)
         assert retrieved is None
@@ -161,7 +161,7 @@ class TestSubmitRound1EdgeCases:
         """Round 1 submission to an expired session should be rejected."""
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
-        session.created_at = time.time() - 200  # Force expiry
+        session.created_at = time.monotonic() - 200  # Force expiry
         # get_session marks it EXPIRED and removes it from dict
         coord.get_session(session.session_id)
         msg = Round1Message(validator_x=1, d_value=42, e_value=99)
@@ -234,7 +234,7 @@ class TestConcurrentAccess:
         coord = MPCCoordinator()
         for i in range(10):
             s = coord.create_session(f"sig-{i}", [1], 1, [1, 2, 3], 3)
-            s.created_at = time.time() - 200  # All expired
+            s.created_at = time.monotonic() - 200  # All expired
         errors = []
 
         def cleanup() -> None:
@@ -255,7 +255,7 @@ class TestCleanup:
     def test_cleanup_expired(self) -> None:
         coord = MPCCoordinator()
         s1 = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
-        s1.created_at = time.time() - 200  # Expired
+        s1.created_at = time.monotonic() - 200  # Expired
         coord.create_session("sig-2", [2], 1, [1, 2, 3], 3)  # Fresh
 
         removed = coord.cleanup_expired()
@@ -275,7 +275,7 @@ class TestExpiryRemovesFromDict:
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
         assert coord.active_session_count == 1
-        session.created_at = time.time() - 200
+        session.created_at = time.monotonic() - 200
         coord.get_session(session.session_id)
         assert coord.active_session_count == 0
 
@@ -283,13 +283,39 @@ class TestExpiryRemovesFromDict:
         """Already removed by get_session, so cleanup finds nothing."""
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
-        session.created_at = time.time() - 200
+        session.created_at = time.monotonic() - 200
         coord.get_session(session.session_id)  # Removes it
         assert coord.cleanup_expired() == 0
 
     def test_triple_shares_for_expired_session(self) -> None:
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
-        session.created_at = time.time() - 200
+        session.created_at = time.monotonic() - 200
         coord.get_session(session.session_id)  # Removes it
         assert coord.get_triple_shares_for_participant(session.session_id, 1) is None
+
+
+class TestMaxSessionsEviction:
+    """Verify that MAX_SESSIONS limit is enforced."""
+
+    def test_evicts_expired_when_at_capacity(self) -> None:
+        coord = MPCCoordinator()
+        coord.MAX_SESSIONS = 3
+        s1 = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        coord.create_session("sig-2", [1], 1, [1, 2, 3], 3)
+        coord.create_session("sig-3", [1], 1, [1, 2, 3], 3)
+        s1.created_at = time.monotonic() - 200  # Expire s1
+        # Creating a 4th should evict the expired s1
+        coord.create_session("sig-4", [1], 1, [1, 2, 3], 3)
+        assert coord.get_session(s1.session_id) is None
+        assert len(coord._sessions) == 3
+
+    def test_evicts_oldest_when_all_fresh(self) -> None:
+        coord = MPCCoordinator()
+        coord.MAX_SESSIONS = 2
+        s1 = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        coord.create_session("sig-2", [1], 1, [1, 2, 3], 3)
+        # s1 is oldest but not expired
+        coord.create_session("sig-3", [1], 1, [1, 2, 3], 3)
+        assert coord.get_session(s1.session_id) is None
+        assert len(coord._sessions) == 2

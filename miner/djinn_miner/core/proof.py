@@ -83,7 +83,7 @@ class SessionCapture:
             self._sessions.pop(oldest, None)
             self._timestamps.pop(oldest, None)
         self._sessions[session.query_id] = session
-        self._timestamps[session.query_id] = time.time()
+        self._timestamps[session.query_id] = time.monotonic()
         log.debug("session_captured", query_id=session.query_id)
 
     def get(self, query_id: str) -> CapturedSession | None:
@@ -96,7 +96,7 @@ class SessionCapture:
         self._timestamps.pop(query_id, None)
 
     def _evict_expired(self) -> None:
-        now = time.time()
+        now = time.monotonic()
         expired = [
             k for k, ts in self._timestamps.items()
             if now - ts > self._SESSION_TTL

@@ -62,7 +62,7 @@ class TestSessionCapture:
         cap._SESSION_TTL = 0  # Expire immediately
         cap.record(_make_session("q-1"))
         # Force eviction on next record
-        cap._timestamps["q-1"] = time.time() - 1
+        cap._timestamps["q-1"] = time.monotonic() - 1
         cap.record(_make_session("q-2"))
         assert cap.get("q-1") is None
         assert cap.get("q-2") is not None

@@ -73,7 +73,7 @@ class TestSessionCapture:
         old_session = CapturedSession(query_id="old", request_url="https://example.com")
         capture.record(old_session)
         # Backdate the timestamp
-        capture._timestamps["old"] = time.time() - capture._SESSION_TTL - 1
+        capture._timestamps["old"] = time.monotonic() - capture._SESSION_TTL - 1
 
         # Recording a new session triggers eviction
         capture.record(CapturedSession(query_id="new", request_url="https://example.com/new"))
@@ -361,7 +361,7 @@ class TestSessionCaptureEdgeCases:
         assert capture.count == 5
 
         # Backdate all timestamps after recording
-        stale_time = time.time() - capture._SESSION_TTL - 1
+        stale_time = time.monotonic() - capture._SESSION_TTL - 1
         for i in range(5):
             capture._timestamps[f"old-{i}"] = stale_time
 
@@ -378,9 +378,9 @@ class TestSessionCaptureEdgeCases:
         capture._MAX_SESSIONS = 3
         # Insert out of order to ensure min() picks correct one
         capture.record(CapturedSession(query_id="mid", request_url="https://example.com/mid"))
-        capture._timestamps["mid"] = time.time() - 10  # 10s ago
+        capture._timestamps["mid"] = time.monotonic() - 10  # 10s ago
         capture.record(CapturedSession(query_id="oldest", request_url="https://example.com/oldest"))
-        capture._timestamps["oldest"] = time.time() - 20  # 20s ago
+        capture._timestamps["oldest"] = time.monotonic() - 20  # 20s ago
         capture.record(CapturedSession(query_id="recent", request_url="https://example.com/recent"))
         assert capture.count == 3
 

@@ -12,6 +12,7 @@ Outcome determination logic:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from dataclasses import dataclass, field
@@ -73,7 +74,7 @@ class SignalMetadata:
     home_team: str
     away_team: str
     pick: ParsedPick
-    purchased_at: float = field(default_factory=time.time)
+    purchased_at: float = field(default_factory=time.monotonic)
     resolved: bool = False
 
 
@@ -280,14 +281,21 @@ def _team_matches(pick_team: str, full_name: str) -> bool:
 class OutcomeAttestor:
     """Manages outcome attestation and consensus building."""
 
+    MAX_PENDING_SIGNALS = 10_000
+    MAX_ATTESTATIONS_PER_SIGNAL = 100
+
     def __init__(self, sports_api_key: str = "") -> None:
         self._api_key = sports_api_key
         self._client = httpx.AsyncClient(timeout=30.0)
         self._attestations: dict[str, list[OutcomeAttestation]] = {}
         self._pending_signals: dict[str, SignalMetadata] = {}
+        self._lock = asyncio.Lock()
 
     def register_signal(self, metadata: SignalMetadata) -> None:
         """Register a purchased signal for outcome tracking."""
+        if len(self._pending_signals) >= self.MAX_PENDING_SIGNALS:
+            log.warning("pending_signals_at_capacity", max=self.MAX_PENDING_SIGNALS)
+            self.cleanup_resolved(max_age_seconds=3600)  # Aggressive cleanup
         self._pending_signals[metadata.signal_id] = metadata
         log.info(
             "signal_registered_for_outcome",
@@ -368,14 +376,17 @@ class OutcomeAttestor:
         """Fetch scores and determine outcome for a registered signal.
 
         Returns the attestation if the game is complete, None if still pending.
+        Uses a lock to prevent concurrent resolve_signal calls from
+        double-resolving the same signal.
         """
-        meta = self._pending_signals.get(signal_id)
-        if meta is None:
-            log.warning("signal_not_registered", signal_id=signal_id)
-            return None
+        async with self._lock:
+            meta = self._pending_signals.get(signal_id)
+            if meta is None:
+                log.warning("signal_not_registered", signal_id=signal_id)
+                return None
 
-        if meta.resolved:
-            return None
+            if meta.resolved:
+                return None
 
         result = await self.fetch_event_result(meta.event_id, meta.sport)
 
@@ -392,8 +403,11 @@ class OutcomeAttestor:
         if outcome == Outcome.PENDING:
             return None
 
-        meta.resolved = True
-        return self.attest(signal_id, validator_hotkey, outcome, result)
+        async with self._lock:
+            if meta.resolved:
+                return None  # Another coroutine resolved it while we were fetching
+            meta.resolved = True
+            return self.attest(signal_id, validator_hotkey, outcome, result)
 
     async def resolve_all_pending(self, validator_hotkey: str) -> list[OutcomeAttestation]:
         """Check all pending signals and resolve any with completed games."""
@@ -421,7 +435,8 @@ class OutcomeAttestor:
 
         if signal_id not in self._attestations:
             self._attestations[signal_id] = []
-        self._attestations[signal_id].append(attestation)
+        if len(self._attestations[signal_id]) < self.MAX_ATTESTATIONS_PER_SIGNAL:
+            self._attestations[signal_id].append(attestation)
 
         log.info(
             "outcome_attested",
@@ -473,7 +488,7 @@ class OutcomeAttestor:
         Removes signals resolved more than max_age_seconds ago (default: 24h).
         Returns count of removed entries.
         """
-        now = time.time()
+        now = time.monotonic()
         removed = 0
 
         # Clean resolved signals older than max_age

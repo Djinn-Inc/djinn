@@ -126,7 +126,7 @@ class TestStoreShare:
 class TestPurchase:
     def test_purchase_nonexistent_signal(self, client: TestClient) -> None:
         resp = client.post("/v1/signal/unknown/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 3, 5],
         })
@@ -143,7 +143,7 @@ class TestPurchase:
         )
 
         resp = client.post("/v1/signal/sig-1/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DraftKings",
             "available_indices": [1, 3, 5, 7, 9],  # 5 is available
         })
@@ -242,7 +242,7 @@ class TestInputValidation:
 
     def test_purchase_empty_indices(self, client: TestClient) -> None:
         resp = client.post("/v1/signal/sig-1/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DK",
             "available_indices": [],
         })
@@ -288,7 +288,7 @@ class TestInputValidation:
     def test_purchase_path_rejects_special_chars(self, client: TestClient) -> None:
         """Signal IDs with spaces/special chars in path should be rejected."""
         resp = client.post("/v1/signal/sig id with spaces/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DK",
             "available_indices": [1, 3, 5],
         })
@@ -308,7 +308,7 @@ class TestInputValidation:
         long_id = "a" * 256
         share_store.store(long_id, "0xG", Share(x=1, y=1), b"key")
         resp = client.post(f"/v1/signal/{long_id}/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DK",
             "available_indices": [1, 3, 5],
         })
@@ -319,7 +319,7 @@ class TestInputValidation:
         """A 257-char signal ID exceeds the limit."""
         long_id = "a" * 257
         resp = client.post(f"/v1/signal/{long_id}/purchase", json={
-            "buyer_address": "0xBuyer",
+            "buyer_address": "0x" + "b0" * 20,
             "sportsbook": "DK",
             "available_indices": [1, 3, 5],
         })
@@ -353,7 +353,7 @@ class TestMPCTimeout:
         ):
             client = TestClient(app)
             resp = client.post("/v1/signal/sig-timeout/purchase", json={
-                "buyer_address": "0xBuyer",
+                "buyer_address": "0x" + "b0" * 20,
                 "sportsbook": "DK",
                 "available_indices": [1, 3, 5],
             })

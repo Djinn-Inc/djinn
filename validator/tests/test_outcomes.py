@@ -376,7 +376,7 @@ class TestOutcomeAttestor:
             home_team="Lakers",
             away_team="Celtics",
             pick=parse_pick("Lakers -3.5 (-110)"),
-            # purchased_at defaults to time.time() — very recent
+            # purchased_at defaults to time.monotonic() — very recent
         )
         meta.resolved = True
         attestor.register_signal(meta)

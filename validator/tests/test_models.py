@@ -16,6 +16,8 @@ from djinn_validator.api.models import (
     StoreShareRequest,
 )
 
+VALID_ETH_ADDR = "0x" + "a1" * 20  # Valid 40-hex-char Ethereum address
+
 
 class TestStoreShareRequest:
     def test_valid_request(self) -> None:
@@ -72,7 +74,7 @@ class TestStoreShareRequest:
 class TestPurchaseRequest:
     def test_valid_request(self) -> None:
         req = PurchaseRequest(
-            buyer_address="0xBuyer",
+            buyer_address=VALID_ETH_ADDR,
             sportsbook="draftkings",
             available_indices=[1, 3, 5],
         )
@@ -81,7 +83,7 @@ class TestPurchaseRequest:
     def test_empty_available_indices(self) -> None:
         with pytest.raises(ValidationError, match="available_indices"):
             PurchaseRequest(
-                buyer_address="0xBuyer",
+                buyer_address=VALID_ETH_ADDR,
                 sportsbook="draftkings",
                 available_indices=[],
             )
@@ -89,7 +91,7 @@ class TestPurchaseRequest:
     def test_too_many_available_indices(self) -> None:
         with pytest.raises(ValidationError, match="available_indices"):
             PurchaseRequest(
-                buyer_address="0xBuyer",
+                buyer_address=VALID_ETH_ADDR,
                 sportsbook="draftkings",
                 available_indices=list(range(1, 12)),  # 11 items
             )
@@ -97,7 +99,7 @@ class TestPurchaseRequest:
     def test_index_out_of_range_zero(self) -> None:
         with pytest.raises(ValidationError, match="1-10"):
             PurchaseRequest(
-                buyer_address="0xBuyer",
+                buyer_address=VALID_ETH_ADDR,
                 sportsbook="draftkings",
                 available_indices=[0],
             )
@@ -105,18 +107,72 @@ class TestPurchaseRequest:
     def test_index_out_of_range_high(self) -> None:
         with pytest.raises(ValidationError, match="1-10"):
             PurchaseRequest(
-                buyer_address="0xBuyer",
+                buyer_address=VALID_ETH_ADDR,
                 sportsbook="draftkings",
                 available_indices=[11],
             )
 
     def test_index_boundary_values(self) -> None:
         req = PurchaseRequest(
-            buyer_address="0xBuyer",
+            buyer_address=VALID_ETH_ADDR,
             sportsbook="draftkings",
             available_indices=[1, 10],
         )
         assert req.available_indices == [1, 10]
+
+    def test_duplicate_indices_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="duplicates"):
+            PurchaseRequest(
+                buyer_address=VALID_ETH_ADDR,
+                sportsbook="draftkings",
+                available_indices=[3, 3, 5],
+            )
+
+    def test_invalid_buyer_address_format(self) -> None:
+        with pytest.raises(ValidationError, match="Ethereum"):
+            PurchaseRequest(
+                buyer_address="not-an-address",
+                sportsbook="draftkings",
+                available_indices=[1],
+            )
+
+    def test_valid_buyer_address(self) -> None:
+        req = PurchaseRequest(
+            buyer_address="0x" + "ab" * 20,
+            sportsbook="draftkings",
+            available_indices=[1],
+        )
+        assert req.buyer_address == "0x" + "ab" * 20
+
+
+class TestEventIdValidation:
+    def test_valid_event_id_in_outcome(self) -> None:
+        req = OutcomeRequest(
+            signal_id="sig-1",
+            event_id="abc123_def-456:789.0",
+            outcome=1,
+            validator_hotkey="hk1",
+        )
+        assert req.event_id == "abc123_def-456:789.0"
+
+    def test_invalid_event_id_in_outcome(self) -> None:
+        with pytest.raises(ValidationError):
+            OutcomeRequest(
+                signal_id="sig-1",
+                event_id="ev id with spaces!",
+                outcome=1,
+                validator_hotkey="hk1",
+            )
+
+    def test_invalid_event_id_in_register(self) -> None:
+        with pytest.raises(ValidationError):
+            RegisterSignalRequest(
+                sport="nba",
+                event_id="<script>alert(1)</script>",
+                home_team="A",
+                away_team="B",
+                pick="Lakers -3.5 (-110)",
+            )
 
 
 class TestMPCRound1Request:
