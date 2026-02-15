@@ -98,6 +98,30 @@ export default function CreateSignal() {
       return;
     }
 
+    // Validate all lines are filled in
+    const emptyLines = decoyLines.filter((l) => !l.trim());
+    if (emptyLines.length > 0) {
+      setStepError(`All 10 lines must be filled in (${emptyLines.length} empty)`);
+      return;
+    }
+
+    // Check for duplicate lines (at most 2 identical allowed)
+    const lineCounts = new Map<string, number>();
+    for (const line of decoyLines) {
+      const normalized = line.trim().toLowerCase();
+      lineCounts.set(normalized, (lineCounts.get(normalized) || 0) + 1);
+    }
+    const maxDupes = Math.max(...lineCounts.values());
+    if (maxDupes > 2) {
+      setStepError("Too many duplicate lines — decoy lines should be distinct to protect your real pick");
+      return;
+    }
+
+    if (selectedSportsbooks.length === 0) {
+      setStepError("Select at least one sportsbook");
+      return;
+    }
+
     try {
       // Step 1: Generate AES key and encrypt the real pick
       setStep("committing");

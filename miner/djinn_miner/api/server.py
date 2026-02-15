@@ -115,6 +115,12 @@ def create_app(
                 status_code=504,
                 content={"detail": "Line check timed out"},
             )
+        except asyncio.CancelledError:
+            log.info("check_lines_cancelled")
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service shutting down"},
+            )
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         available_indices = [r.index for r in results if r.available]
@@ -154,6 +160,12 @@ def create_app(
                 status_code=504,
                 content={"detail": "Proof generation timed out"},
             )
+        except asyncio.CancelledError:
+            log.info("proof_generation_cancelled", query_id=request.query_id)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service shutting down"},
+            )
         proof_type = "tlsnotary" if "tlsnotary" in (result.message or "") else "http_attestation"
         PROOFS_GENERATED.labels(type=proof_type).inc()
         log.info("proof_generated", query_id=request.query_id, status=result.status, type=proof_type)
@@ -165,13 +177,16 @@ def create_app(
         health_tracker.record_ping()
         return health_tracker.get_status()
 
+    # Cache Config for readiness checks (avoid re-loading dotenv on every probe)
+    from djinn_miner.config import Config as _ConfigCls
+    _readiness_config = _ConfigCls()
+
     @app.get("/health/ready", response_model=ReadinessResponse)
     async def readiness() -> ReadinessResponse:
         """Deep readiness probe — checks API key and dependencies."""
         checks: dict[str, bool] = {}
         try:
-            from djinn_miner.config import Config
-            cfg = Config()
+            cfg = _readiness_config
             checks["odds_api_key"] = bool(cfg.odds_api_key)
         except Exception as e:
             log.warning("readiness_config_error", error=str(e))

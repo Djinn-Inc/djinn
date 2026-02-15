@@ -187,11 +187,11 @@ class TestContractCallErrors:
 
     @pytest.mark.asyncio
     async def test_is_signal_active_rpc_error(self, client: ChainClient) -> None:
-        """RPC failure returns True (permissive)."""
+        """RPC failure returns False (fail-safe: don't release shares)."""
         mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
         client._signal.functions.isActive.return_value.call = mock_call
         result = await client.is_signal_active(1)
-        assert result is True
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_get_signal_rpc_error(self, client: ChainClient) -> None:

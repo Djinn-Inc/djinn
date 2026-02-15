@@ -348,6 +348,41 @@ class TestAttestationProof:
 
 
 # ---------------------------------------------------------------------------
+# SessionCapture thread safety
+# ---------------------------------------------------------------------------
+
+
+class TestSessionCaptureThreadSafety:
+    def test_concurrent_records_do_not_crash(self) -> None:
+        """Multiple threads recording sessions concurrently should not crash."""
+        import threading
+
+        capture = SessionCapture()
+        capture._MAX_SESSIONS = 50
+        errors: list[Exception] = []
+
+        def worker(start: int) -> None:
+            try:
+                for i in range(start, start + 20):
+                    capture.record(CapturedSession(
+                        query_id=f"q-{i}",
+                        request_url=f"https://example.com/{i}",
+                    ))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(i * 20,)) for i in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Thread errors: {errors}"
+        # All sessions should be stored (cap at 50)
+        assert capture.count <= 50
+
+
+# ---------------------------------------------------------------------------
 # SessionCapture — additional edge cases
 # ---------------------------------------------------------------------------
 

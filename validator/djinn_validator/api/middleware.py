@@ -153,7 +153,11 @@ class RateLimiter:
         for k in stale:
             del self._buckets[k]
         if force and len(self._buckets) > self._MAX_BUCKETS:
-            log.warning("rate_limiter_bucket_overflow", count=len(self._buckets))
+            # Evict oldest until under limit
+            while len(self._buckets) > self._MAX_BUCKETS and self._buckets:
+                oldest = min(self._buckets, key=lambda k: self._buckets[k].last_refill)
+                del self._buckets[oldest]
+            log.warning("rate_limiter_bucket_overflow_evicted", count=len(self._buckets))
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -218,6 +222,26 @@ def verify_hotkey_signature(
         return False
 
 
+# Nonce deduplication to prevent replay attacks (bounded, auto-evicting)
+_NONCE_CACHE: dict[str, float] = {}
+_NONCE_CACHE_MAX = 10_000
+_NONCE_TTL = 120  # 2x the timestamp window
+
+
+def _check_nonce(nonce: str) -> bool:
+    """Return True if nonce is fresh (not seen before), False if replayed."""
+    now = time.time()
+    # Evict old nonces periodically
+    if len(_NONCE_CACHE) > _NONCE_CACHE_MAX:
+        stale = [k for k, ts in _NONCE_CACHE.items() if now - ts > _NONCE_TTL]
+        for k in stale:
+            del _NONCE_CACHE[k]
+    if nonce in _NONCE_CACHE:
+        return False
+    _NONCE_CACHE[nonce] = now
+    return True
+
+
 def create_signature_message(
     endpoint: str,
     body_hash: str,
@@ -270,6 +294,10 @@ async def validate_signed_request(
     now = int(time.time())
     if abs(now - timestamp) > 60:
         raise HTTPException(status_code=401, detail="Request timestamp too old")
+
+    # Prevent replay attacks
+    if not _check_nonce(nonce):  # type: ignore[arg-type]
+        raise HTTPException(status_code=401, detail="Nonce already used")
 
     # Check hotkey allowlist
     if allowed_hotkeys and hotkey not in allowed_hotkeys:

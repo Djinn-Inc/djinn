@@ -381,6 +381,10 @@ def create_app(
             bt_connected=neuron is not None and neuron.uid is not None,
         )
 
+    # Cache Config for readiness checks (avoid re-loading dotenv on every probe)
+    from djinn_validator.config import Config as _ConfigCls
+    _readiness_config = _ConfigCls()
+
     @app.get("/health/ready", response_model=ReadinessResponse)
     async def readiness() -> ReadinessResponse:
         """Deep readiness probe — checks RPC, contracts, and dependencies."""
@@ -398,8 +402,7 @@ def create_app(
 
         # Check contract addresses are configured (non-zero)
         try:
-            from djinn_validator.config import Config
-            cfg = Config()
+            cfg = _readiness_config
             zero = "0" * 40
             checks["escrow_configured"] = bool(cfg.escrow_address) and zero not in cfg.escrow_address
             checks["signal_configured"] = bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address

@@ -128,9 +128,13 @@ class TestBtSyncLoop:
         with patch("djinn_miner.main.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await bt_sync_loop(neuron, health)
 
-        # 3 errors → 3 backoff sleeps, each larger than the last
+        # 3 errors → 3 backoff sleeps with jitter
         assert mock_sleep.call_count == 3
         backoffs = [c[0][0] for c in mock_sleep.call_args_list]
-        assert backoffs[0] < backoffs[1] < backoffs[2]
-        # Cap at 600
-        assert all(b <= 600 for b in backoffs)
+        # Each backoff should be within jitter range (50-150% of base)
+        # Base values: 60*2^1=120, 60*2^2=240, 60*2^3=480
+        assert 60 <= backoffs[0] <= 180   # 120 * [0.5, 1.5]
+        assert 120 <= backoffs[1] <= 360  # 240 * [0.5, 1.5]
+        assert 240 <= backoffs[2] <= 720  # 480 * [0.5, 1.5]
+        # All within absolute cap (600 * 1.5 = 900 max with jitter)
+        assert all(b <= 900 for b in backoffs)

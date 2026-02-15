@@ -116,6 +116,8 @@ class RateLimiter:
             del self._buckets[k]
 
     def _evict_oldest(self) -> None:
+        if not self._buckets:
+            return
         oldest_key = min(self._buckets, key=lambda k: self._buckets[k].last_refill)
         del self._buckets[oldest_key]
 

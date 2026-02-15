@@ -230,3 +230,11 @@ class TestRateLimiterCleanup:
         # Don't force cleanup time
         limiter._maybe_cleanup()
         assert "1.1.1.1" in limiter._buckets  # Not cleaned because interval not reached
+
+
+class TestEvictOldestGuard:
+    def test_evict_oldest_on_empty_dict(self) -> None:
+        """_evict_oldest should not crash on empty buckets dict."""
+        limiter = RateLimiter(capacity=5, rate=1)
+        limiter._buckets.clear()
+        limiter._evict_oldest()  # Should not raise

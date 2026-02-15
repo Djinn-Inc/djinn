@@ -118,15 +118,19 @@ class ChainClient:
                     log.error("invalid_contract_address", contract=label, address=addr)
 
     async def is_signal_active(self, signal_id: int) -> bool:
-        """Check if a signal is still active on-chain."""
+        """Check if a signal is still active on-chain.
+
+        Returns False on error (fail-safe: don't release shares if chain is unreachable).
+        Returns True only when contract is unconfigured (dev mode).
+        """
         if self._signal is None:
             log.warning("signal_contract_not_configured")
-            return True  # Permissive in dev mode
+            return True  # Permissive in dev mode (no contract)
         try:
             return await self._signal.functions.isActive(signal_id).call()
         except Exception as e:
             log.error("is_signal_active_failed", signal_id=signal_id, error=str(e))
-            return True  # Permissive on error — don't block share release
+            return False  # Fail-safe: don't release shares when chain is unreachable
 
     async def get_signal(self, signal_id: int) -> dict[str, Any]:
         """Read signal metadata from SignalCommitment contract."""

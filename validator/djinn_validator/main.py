@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import signal
 
 import structlog
@@ -92,8 +93,9 @@ async def epoch_loop(
             return
         except Exception as e:
             consecutive_errors += 1
-            backoff = min(12 * (2 ** consecutive_errors), 300)
-            log.error("epoch_error", error=str(e), consecutive=consecutive_errors, backoff_s=backoff, exc_info=True)
+            base = min(12 * (2 ** consecutive_errors), 300)
+            backoff = base * (0.5 + random.random())  # jitter: 50-150% of base
+            log.error("epoch_error", error=str(e), consecutive=consecutive_errors, backoff_s=round(backoff, 1), exc_info=True)
             await asyncio.sleep(backoff)
             continue
 

@@ -18,8 +18,10 @@ HTTP attestation when the Rust binary is not installed.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -74,27 +76,31 @@ class SessionCapture:
     def __init__(self) -> None:
         self._sessions: dict[str, CapturedSession] = {}
         self._timestamps: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def record(self, session: CapturedSession) -> None:
         """Record a captured HTTP session."""
-        self._evict_expired()
-        if len(self._sessions) >= self._MAX_SESSIONS and self._timestamps:
-            oldest = min(self._timestamps, key=self._timestamps.get)  # type: ignore[arg-type]
-            self._sessions.pop(oldest, None)
-            self._timestamps.pop(oldest, None)
-        self._sessions[session.query_id] = session
-        self._timestamps[session.query_id] = time.monotonic()
-        log.debug("session_captured", query_id=session.query_id)
+        with self._lock:
+            self._evict_expired()
+            if len(self._sessions) >= self._MAX_SESSIONS and self._timestamps:
+                oldest = min(self._timestamps, key=self._timestamps.get)  # type: ignore[arg-type]
+                self._sessions.pop(oldest, None)
+                self._timestamps.pop(oldest, None)
+            self._sessions[session.query_id] = session
+            self._timestamps[session.query_id] = time.monotonic()
+            log.debug("session_captured", query_id=session.query_id)
 
     def get(self, query_id: str) -> CapturedSession | None:
         """Retrieve a captured session by query ID."""
-        self._evict_expired()
-        return self._sessions.get(query_id)
+        with self._lock:
+            self._evict_expired()
+            return self._sessions.get(query_id)
 
     def remove(self, query_id: str) -> None:
         """Remove a session after proof generation."""
-        self._sessions.pop(query_id, None)
-        self._timestamps.pop(query_id, None)
+        with self._lock:
+            self._sessions.pop(query_id, None)
+            self._timestamps.pop(query_id, None)
 
     def _evict_expired(self) -> None:
         now = time.monotonic()

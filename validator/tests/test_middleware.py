@@ -14,6 +14,8 @@ from djinn_validator.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
     TokenBucket,
+    _check_nonce,
+    _NONCE_CACHE,
     create_signature_message,
     get_cors_origins,
     validate_signed_request,
@@ -314,3 +316,58 @@ class TestRateLimiterStaleCleanup:
         limiter._maybe_cleanup()
         assert any("fresh" in k for k in limiter._buckets)
         assert not any("stale" in k for k in limiter._buckets)
+
+
+class TestBucketOverflowEviction:
+    def test_overflow_evicts_to_max(self) -> None:
+        """When bucket count exceeds MAX, eviction brings it back to MAX."""
+        limiter = RateLimiter(default_capacity=5, default_rate=1)
+        limiter._MAX_BUCKETS = 10  # Lower for testing
+        # Fill up
+        for i in range(15):
+            limiter.allow(f"ip-{i}", "/test")
+        # Force cleanup (make all buckets stale so cleanup triggers eviction path)
+        limiter._last_cleanup = 0
+        limiter._maybe_cleanup()
+        assert len(limiter._buckets) <= 10
+
+
+class TestNonceReplay:
+    def setup_method(self) -> None:
+        _NONCE_CACHE.clear()
+
+    def test_fresh_nonce_accepted(self) -> None:
+        assert _check_nonce("nonce-fresh-1") is True
+
+    def test_replayed_nonce_rejected(self) -> None:
+        _check_nonce("nonce-replay-1")
+        assert _check_nonce("nonce-replay-1") is False
+
+    def test_different_nonces_accepted(self) -> None:
+        assert _check_nonce("a") is True
+        assert _check_nonce("b") is True
+        assert _check_nonce("c") is True
+
+    def test_nonce_replay_in_auth_flow(self) -> None:
+        """Full auth flow rejects replayed nonces."""
+        app = FastAPI()
+
+        @app.post("/v1/mpc/test")
+        async def mpc_test(request: Request) -> dict:
+            hotkey = await validate_signed_request(request)
+            return {"hotkey": hotkey}
+
+        client = TestClient(app)
+        ts = str(int(time.time()))
+        headers = {
+            "X-Hotkey": "5FakeKey",
+            "X-Signature": "abcd",
+            "X-Timestamp": ts,
+            "X-Nonce": "unique-nonce-1",
+        }
+        # First request — nonce check passes (may fail on signature, that's fine)
+        resp1 = client.post("/v1/mpc/test", json={}, headers=headers)
+        # Second request with same nonce — should be rejected with 401
+        resp2 = client.post("/v1/mpc/test", json={}, headers=headers)
+        assert resp2.status_code == 401
+        assert "Nonce already used" in resp2.json()["detail"]

@@ -115,12 +115,12 @@ async def generate_proof(
         log.error("tlsn_proof_timeout", timeout=timeout)
         try:
             proc.kill()
-        except (ProcessLookupError, OSError):
-            pass
+        except (ProcessLookupError, OSError) as kill_err:
+            log.debug("tlsn_process_kill_failed", error=str(kill_err))
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except (asyncio.TimeoutError, OSError):
-            pass
+        except (asyncio.TimeoutError, OSError) as wait_err:
+            log.warning("tlsn_process_wait_failed", error=str(wait_err), pid=proc.pid)
         _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
