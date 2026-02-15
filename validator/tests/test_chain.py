@@ -166,5 +166,20 @@ class TestIsConnected:
         assert result is False
 
 
+class TestClose:
+    @pytest.mark.asyncio
+    async def test_close_with_session(self, client: ChainClient) -> None:
+        mock_session = AsyncMock()
+        client._w3.provider._request_session = mock_session
+        await client.close()
+        mock_session.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_without_session(self, client: ChainClient) -> None:
+        """close() should not raise even if provider has no session."""
+        client._w3.provider = MagicMock(spec=[])  # No _request_session attr
+        await client.close()  # Should not raise
+
+
 async def _async_value(val: int) -> int:
     return val

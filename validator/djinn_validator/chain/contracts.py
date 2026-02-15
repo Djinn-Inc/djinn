@@ -165,6 +165,12 @@ class ChainClient:
             self._w3.to_checksum_address(idiot),
         ).call()
 
+    async def close(self) -> None:
+        """Close the underlying HTTP provider session."""
+        provider = self._w3.provider
+        if hasattr(provider, "_request_session") and provider._request_session:
+            await provider._request_session.close()
+
     async def is_connected(self) -> bool:
         """Check Base chain RPC connectivity."""
         try:
