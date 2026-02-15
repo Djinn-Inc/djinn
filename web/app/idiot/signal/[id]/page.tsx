@@ -6,6 +6,8 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
 import { getValidatorClient, getMinerClient } from "@/lib/api";
 import { decrypt, fromHex, bigIntToKey } from "@/lib/crypto";
+import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import QualityScore from "@/components/QualityScore";
 import {
   SignalStatus,
@@ -33,6 +35,15 @@ export default function PurchaseSignal() {
     useSignal(signalId);
   const { purchase, loading: purchaseLoading, error: purchaseError } =
     usePurchaseSignal();
+
+  // Fetch genius stats for sidebar
+  const geniusAddress = signal?.genius;
+  const { signals: geniusSignals } = useActiveSignals(
+    undefined,
+    geniusAddress,
+  );
+  const { audits: geniusAudits, aggregateQualityScore } =
+    useAuditHistory(geniusAddress);
 
   const [notional, setNotional] = useState("");
   const [odds, setOdds] = useState("");
@@ -533,16 +544,20 @@ export default function PurchaseSignal() {
               <div>
                 <p className="text-xs text-slate-500">Quality Score</p>
                 <div className="mt-1">
-                  <QualityScore score={0} size="sm" />
+                  <QualityScore score={Number(aggregateQualityScore)} size="sm" />
                 </div>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Total Signals</p>
-                <p className="text-sm text-slate-900 font-medium">--</p>
+                <p className="text-sm text-slate-900 font-medium">
+                  {geniusSignals.length}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Audit Count</p>
-                <p className="text-sm text-slate-900 font-medium">--</p>
+                <p className="text-sm text-slate-900 font-medium">
+                  {geniusAudits.length}
+                </p>
               </div>
             </div>
           </div>
