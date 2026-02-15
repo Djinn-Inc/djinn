@@ -43,6 +43,14 @@ class CachedOdds:
 
 
 @dataclass
+class CachedError:
+    """A cached error response — re-raised on cache hit to prevent retry storms."""
+
+    error: Exception
+    expires_at: float
+
+
+@dataclass
 class BookmakerOdds:
     """Parsed odds from a single bookmaker for a single outcome."""
 
@@ -61,6 +69,7 @@ class OddsApiClient:
     RETRY_BASE_DELAY = 0.5  # seconds
     RETRY_MAX_DELAY = 8.0  # seconds
     MAX_CACHE_ENTRIES = 100
+    ERROR_CACHE_TTL = 10  # seconds — short TTL for failed responses
 
     def __init__(
         self,
@@ -75,6 +84,7 @@ class OddsApiClient:
         self._base_url = base_url.rstrip("/")
         self._cache_ttl = cache_ttl
         self._cache: dict[str, CachedOdds] = {}
+        self._error_cache: dict[str, CachedError] = {}
         self._cache_lock = asyncio.Lock()
         self._client = http_client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = http_client is None
@@ -92,6 +102,9 @@ class OddsApiClient:
         stale = [k for k, v in self._cache.items() if v.expires_at <= now]
         for k in stale:
             del self._cache[k]
+        stale_errors = [k for k, v in self._error_cache.items() if v.expires_at <= now]
+        for k in stale_errors:
+            del self._error_cache[k]
         if len(self._cache) > self.MAX_CACHE_ENTRIES:
             oldest = sorted(self._cache, key=lambda k: self._cache[k].expires_at)
             for k in oldest[: len(self._cache) - self.MAX_CACHE_ENTRIES]:
@@ -173,20 +186,34 @@ class OddsApiClient:
 
         from djinn_miner.api.metrics import CACHE_OPERATIONS
 
+        now = time.monotonic()
+
         # Fast path: check cache without lock
         cached = self._cache.get(cache_key)
-        if cached and cached.expires_at > time.monotonic():
+        if cached and cached.expires_at > now:
             CACHE_OPERATIONS.labels(result="hit").inc()
             log.debug("odds_cache_hit", sport=api_sport)
             return cached.data
 
+        # Fast path: check error cache — re-raise to avoid retry storms
+        cached_err = self._error_cache.get(cache_key)
+        if cached_err and cached_err.expires_at > now:
+            CACHE_OPERATIONS.labels(result="hit").inc()
+            log.debug("odds_error_cache_hit", sport=api_sport)
+            raise cached_err.error
+
         async with self._cache_lock:
+            now = time.monotonic()
             # Re-check under lock (another coroutine may have populated it)
             cached = self._cache.get(cache_key)
-            if cached and cached.expires_at > time.monotonic():
+            if cached and cached.expires_at > now:
                 CACHE_OPERATIONS.labels(result="hit").inc()
                 log.debug("odds_cache_hit", sport=api_sport)
                 return cached.data
+            cached_err = self._error_cache.get(cache_key)
+            if cached_err and cached_err.expires_at > now:
+                CACHE_OPERATIONS.labels(result="hit").inc()
+                raise cached_err.error
             CACHE_OPERATIONS.labels(result="miss").inc()
 
             url = f"{self._base_url}/v4/sports/{api_sport}/odds"
@@ -197,11 +224,24 @@ class OddsApiClient:
                 "oddsFormat": "decimal",
             }
 
-            resp = await self._request_with_retry(url, params, api_sport)
+            try:
+                resp = await self._request_with_retry(url, params, api_sport)
+            except Exception as exc:
+                self._evict_stale_cache()
+                self._error_cache[cache_key] = CachedError(
+                    error=exc,
+                    expires_at=time.monotonic() + self.ERROR_CACHE_TTL,
+                )
+                raise
             try:
                 data = resp.json()
             except Exception as exc:
                 log.error("odds_api_json_decode_error", sport=api_sport, error=str(exc))
+                self._evict_stale_cache()
+                self._error_cache[cache_key] = CachedError(
+                    error=exc,
+                    expires_at=time.monotonic() + self.ERROR_CACHE_TTL,
+                )
                 raise
 
             # Capture the raw HTTP session for proof generation
@@ -305,3 +345,4 @@ class OddsApiClient:
     def clear_cache(self) -> None:
         """Clear all cached data."""
         self._cache.clear()
+        self._error_cache.clear()

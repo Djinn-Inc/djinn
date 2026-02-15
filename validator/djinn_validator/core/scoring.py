@@ -163,14 +163,18 @@ class MinerScorer:
         return self._normalize(raw)
 
     def _normalize_speed(self, miners: list[MinerMetrics]) -> dict[int, float]:
-        """Normalize speed scores: fastest miner gets 1.0, slowest gets 0.0."""
+        """Normalize speed scores: fastest miner gets 1.0, slowest gets 0.0.
+
+        Returns uniform 1.0 scores for all miners when no latencies are recorded,
+        so that speed doesn't unfairly penalize miners during low-activity epochs.
+        """
         avg_latencies: dict[int, float] = {}
         for m in miners:
             if m.latencies:
                 avg_latencies[m.uid] = sum(m.latencies) / len(m.latencies)
 
         if not avg_latencies:
-            return {}
+            return {m.uid: 1.0 for m in miners}
 
         min_lat = min(avg_latencies.values())
         max_lat = max(avg_latencies.values())
@@ -186,9 +190,13 @@ class MinerScorer:
 
     @staticmethod
     def _normalize(raw: dict[int, float]) -> dict[int, float]:
-        """Normalize weights to sum to 1.0."""
+        """Normalize weights to sum to 1.0.
+
+        Uses epsilon comparison to avoid division by near-zero floating point sums
+        that could produce Infinity or extremely large weights.
+        """
         total = sum(raw.values())
-        if total == 0:
+        if total < 1e-12:
             n = len(raw)
             return {uid: 1.0 / n for uid in raw} if n > 0 else {}
         return {uid: score / total for uid, score in raw.items()}

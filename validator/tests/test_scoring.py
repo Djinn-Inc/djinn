@@ -170,3 +170,32 @@ class TestMinerScorer:
         weights = scorer.compute_weights(is_active_epoch=False)
         # Veteran should have higher weight due to log-scaled history
         assert weights[1] > weights[0]
+
+    def test_speed_scores_uniform_when_no_latencies(self) -> None:
+        """When no miners have latencies, all get speed score 1.0."""
+        scorer = MinerScorer()
+        for uid in range(3):
+            scorer.get_or_create(uid, f"h{uid}")
+            # No queries recorded → no latencies
+        scores = scorer._normalize_speed(list(scorer._miners.values()))
+        assert len(scores) == 3
+        for uid in range(3):
+            assert scores[uid] == 1.0
+
+    def test_normalize_near_zero_total(self) -> None:
+        """Near-zero total should produce uniform weights, not Inf."""
+        raw = {0: 1e-15, 1: 1e-15, 2: 1e-15}
+        result = MinerScorer._normalize(raw)
+        assert len(result) == 3
+        for uid in range(3):
+            assert result[uid] == pytest.approx(1.0 / 3)
+            assert math.isfinite(result[uid])
+
+    def test_normalize_negative_scores_handled(self) -> None:
+        """Negative raw scores that sum near zero use uniform fallback."""
+        raw = {0: 0.5, 1: -0.5}
+        result = MinerScorer._normalize(raw)
+        # Total is ~0 so should fall back to uniform
+        assert len(result) == 2
+        for uid in range(2):
+            assert result[uid] == pytest.approx(0.5)

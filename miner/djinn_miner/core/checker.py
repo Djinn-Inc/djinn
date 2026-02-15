@@ -11,6 +11,7 @@ session. Handled by proof.py (stub for now).
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import TYPE_CHECKING
 
 import structlog
@@ -159,6 +160,8 @@ class LineChecker:
 
         if line.market in ("spreads", "totals"):
             if line.line is None or odds.point is None:
+                return False
+            if not math.isfinite(line.line) or not math.isfinite(odds.point):
                 return False
             if abs(line.line - odds.point) > self._tolerance:
                 return False

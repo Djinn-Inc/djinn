@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from unittest.mock import AsyncMock
 
 import httpx
@@ -10,7 +11,7 @@ import pytest
 from djinn_miner.api.models import CandidateLine
 from djinn_miner.core.checker import LineChecker
 from djinn_miner.core.health import HealthTracker
-from djinn_miner.data.odds_api import OddsApiClient
+from djinn_miner.data.odds_api import BookmakerOdds, OddsApiClient
 
 
 @pytest.fixture
@@ -493,3 +494,63 @@ async def test_check_preserves_line_order(checker: LineChecker) -> None:
     results = await checker.check(lines)
     assert results[0].index == 5
     assert results[1].index == 2
+
+
+class TestNaNGuard:
+    """NaN values in line or point must not produce false matches."""
+
+    def _make_checker(self) -> LineChecker:
+        mock_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
+        )
+        client = OddsApiClient(api_key="test", http_client=mock_http)
+        return LineChecker(odds_client=client, line_tolerance=0.5)
+
+    def _make_line(self, line_val: float | None = -3.0) -> CandidateLine:
+        return CandidateLine(
+            index=1, sport="basketball_nba", event_id="ev-1",
+            home_team="A", away_team="B",
+            market="spreads", line=line_val, side="A",
+        )
+
+    def _make_odds(self, point: float | None = -3.0) -> BookmakerOdds:
+        return BookmakerOdds(
+            bookmaker_key="fanduel", bookmaker_title="FanDuel",
+            market="spreads", name="A", price=1.91, point=point,
+        )
+
+    def test_nan_line_does_not_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(float("nan"))
+        odds = self._make_odds(-3.0)
+        assert chk._line_matches(line, odds) is False
+
+    def test_nan_point_does_not_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(-3.0)
+        odds = self._make_odds(float("nan"))
+        assert chk._line_matches(line, odds) is False
+
+    def test_both_nan_does_not_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(float("nan"))
+        odds = self._make_odds(float("nan"))
+        assert chk._line_matches(line, odds) is False
+
+    def test_inf_line_does_not_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(float("inf"))
+        odds = self._make_odds(-3.0)
+        assert chk._line_matches(line, odds) is False
+
+    def test_neg_inf_point_does_not_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(-3.0)
+        odds = self._make_odds(float("-inf"))
+        assert chk._line_matches(line, odds) is False
+
+    def test_finite_values_still_match(self) -> None:
+        chk = self._make_checker()
+        line = self._make_line(-3.0)
+        odds = self._make_odds(-3.0)
+        assert chk._line_matches(line, odds) is True

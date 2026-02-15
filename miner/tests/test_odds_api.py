@@ -8,7 +8,7 @@ import time
 import httpx
 import pytest
 
-from djinn_miner.data.odds_api import BookmakerOdds, CachedOdds, OddsApiClient
+from djinn_miner.data.odds_api import BookmakerOdds, CachedOdds, CachedError, OddsApiClient
 
 
 @pytest.fixture
@@ -423,3 +423,106 @@ def test_parse_bookmaker_odds_non_dict_bookmaker() -> None:
     events = [{"id": "ev-1", "bookmakers": ["not-a-dict", 42]}]
     result = c.parse_bookmaker_odds(events)
     assert len(result) == 0
+
+
+class TestErrorCaching:
+    """Failed API responses are cached with short TTL to prevent request storms.
+
+    Error cache re-raises the original exception immediately (no retries),
+    so callers still see failures — we just avoid redundant retry cycles.
+    """
+
+    @pytest.mark.asyncio
+    async def test_5xx_failure_is_cached(self) -> None:
+        """After a 5xx failure, subsequent requests re-raise without new API call."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(503, json={"error": "down"})
+
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c = OddsApiClient(api_key="test", http_client=mock_http, max_retries=0)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+
+        first_call_count = call_count
+
+        # Second request should hit error cache — re-raises, no new API call
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+        assert call_count == first_call_count
+
+    @pytest.mark.asyncio
+    async def test_4xx_failure_is_cached(self) -> None:
+        """4xx errors also get cached to prevent hammering."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(401, json={"error": "unauthorized"})
+
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c = OddsApiClient(api_key="bad", http_client=mock_http, max_retries=0)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+
+        first_call_count = call_count
+
+        # Second request hits error cache — re-raises
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+        assert call_count == first_call_count
+
+    @pytest.mark.asyncio
+    async def test_error_cache_expires(self) -> None:
+        """Error cache entries expire after ERROR_CACHE_TTL."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(503, json={"error": "down"})
+
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c = OddsApiClient(api_key="test", http_client=mock_http, max_retries=0)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+
+        # Expire the error cache entry
+        for entry in c._error_cache.values():
+            entry.expires_at = 0
+
+        # Next request should make a new API call
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.get_odds("basketball_nba")
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_json_decode_error_is_cached(self) -> None:
+        """Non-JSON responses get cached as errors too."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, content=b"not json", headers={"content-type": "text/plain"})
+
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c = OddsApiClient(api_key="test", http_client=mock_http, cache_ttl=60)
+
+        with pytest.raises(Exception):
+            await c.get_odds("basketball_nba")
+
+        first_call_count = call_count
+
+        # Second request should hit error cache — re-raises
+        with pytest.raises(Exception):
+            await c.get_odds("basketball_nba")
+        assert call_count == first_call_count
