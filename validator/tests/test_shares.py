@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
 
@@ -140,3 +142,82 @@ class TestShareStorePersistence:
             assert not store2.has("sig-1")
             assert store2.count == 0
             store2.close()
+
+
+class TestShareStoreInputValidation:
+    """Input validation on store and release."""
+
+    def setup_method(self) -> None:
+        self.store = ShareStore()
+
+    def test_store_empty_signal_id_raises(self) -> None:
+        with pytest.raises(ValueError, match="signal_id"):
+            self.store.store("", "0xG", Share(x=1, y=1), b"key")
+
+    def test_store_whitespace_signal_id_raises(self) -> None:
+        with pytest.raises(ValueError, match="signal_id"):
+            self.store.store("   ", "0xG", Share(x=1, y=1), b"key")
+
+    def test_store_empty_genius_address_raises(self) -> None:
+        with pytest.raises(ValueError, match="genius_address"):
+            self.store.store("sig-1", "", Share(x=1, y=1), b"key")
+
+    def test_store_empty_encrypted_key_raises(self) -> None:
+        with pytest.raises(ValueError, match="encrypted_key_share"):
+            self.store.store("sig-1", "0xG", Share(x=1, y=1), b"")
+
+    def test_release_empty_signal_id_returns_none(self) -> None:
+        assert self.store.release("", "0xBuyer") is None
+
+    def test_release_empty_buyer_returns_none(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        assert self.store.release("sig-1", "") is None
+
+
+class TestShareStoreCloseSafety:
+    """Verify close is idempotent and sets connection to None."""
+
+    def test_close_idempotent(self) -> None:
+        store = ShareStore()
+        store.close()
+        store.close()  # Should not raise
+
+    def test_close_sets_conn_none(self) -> None:
+        store = ShareStore()
+        store.close()
+        assert store._conn is None
+
+
+class TestShareStoreReleaseAtomicity:
+    """Verify release transaction atomicity."""
+
+    def test_release_to_multiple_buyers(self) -> None:
+        """Different buyers can each get the share."""
+        store = ShareStore()
+        store.store("sig-1", "0xG", Share(x=1, y=1), b"secret")
+        assert store.release("sig-1", "0xBuyer1") == b"secret"
+        assert store.release("sig-1", "0xBuyer2") == b"secret"
+        record = store.get("sig-1")
+        assert record is not None
+        assert record.released_to == {"0xBuyer1", "0xBuyer2"}
+
+    def test_release_records_buyer_in_released_to(self) -> None:
+        store = ShareStore()
+        store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        store.release("sig-1", "0xBuyer")
+        record = store.get("sig-1")
+        assert record is not None
+        assert "0xBuyer" in record.released_to
+
+    def test_remove_cascades_releases(self) -> None:
+        """Removing a share should also remove its release records."""
+        store = ShareStore()
+        store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        store.release("sig-1", "0xBuyer")
+        store.remove("sig-1")
+        assert not store.has("sig-1")
+        # Re-add and verify no stale releases
+        store.store("sig-1", "0xG", Share(x=2, y=2), b"new")
+        record = store.get("sig-1")
+        assert record is not None
+        assert record.released_to == set()

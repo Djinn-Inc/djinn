@@ -182,5 +182,64 @@ class TestClose:
         await client.close()  # Should not raise
 
 
+class TestContractCallErrors:
+    """Verify contract methods handle RPC errors gracefully."""
+
+    @pytest.mark.asyncio
+    async def test_is_signal_active_rpc_error(self, client: ChainClient) -> None:
+        """RPC failure returns True (permissive)."""
+        mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
+        client._signal.functions.isActive.return_value.call = mock_call
+        result = await client.is_signal_active(1)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_get_signal_rpc_error(self, client: ChainClient) -> None:
+        """RPC failure returns empty dict."""
+        mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
+        client._signal.functions.getSignal.return_value.call = mock_call
+        result = await client.get_signal(1)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_verify_purchase_rpc_error(self, client: ChainClient) -> None:
+        """RPC failure returns zero values."""
+        mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
+        client._escrow.functions.purchases.return_value.call = mock_call
+        result = await client.verify_purchase(1, "0xBuyer")
+        assert result["notional"] == 0
+        assert result["pricePaid"] == 0
+        assert result["sportsbook"] == ""
+
+    @pytest.mark.asyncio
+    async def test_is_audit_ready_rpc_error(self, client: ChainClient) -> None:
+        """RPC failure returns False."""
+        mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
+        client._account.functions.isAuditReady.return_value.call = mock_call
+        result = await client.is_audit_ready("0xGenius", "0xIdiot")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_close_timeout(self, client: ChainClient) -> None:
+        """close() handles timeout gracefully."""
+        import asyncio
+
+        async def slow_close():
+            await asyncio.sleep(10)
+
+        mock_session = MagicMock()
+        mock_session.aclose = slow_close
+        client._w3.provider._request_session = mock_session
+        # Should complete within timeout, not hang forever
+        await asyncio.wait_for(client.close(), timeout=10.0)
+
+    @pytest.mark.asyncio
+    async def test_close_idempotent(self, client: ChainClient) -> None:
+        """Calling close twice should not raise."""
+        client._w3.provider = MagicMock(spec=[])
+        await client.close()
+        await client.close()
+
+
 async def _async_value(val: int) -> int:
     return val

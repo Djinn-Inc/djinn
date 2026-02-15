@@ -92,6 +92,12 @@ class ShareStore:
         encrypted_key_share: bytes,
     ) -> None:
         """Store a new key share for a signal."""
+        if not signal_id or not signal_id.strip():
+            raise ValueError("signal_id must not be empty")
+        if not genius_address or not genius_address.strip():
+            raise ValueError("genius_address must not be empty")
+        if not encrypted_key_share:
+            raise ValueError("encrypted_key_share must not be empty")
         try:
             self._conn.execute(
                 "INSERT INTO shares (signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at) "
@@ -142,21 +148,25 @@ class ShareStore:
 
         Returns the encrypted key share bytes, or None if not found.
         Records the release to prevent double-claiming.
-        Uses a transaction to ensure atomicity of check+insert.
+        Uses a transaction to ensure atomicity of lookup+check+insert.
         """
-        row = self._conn.execute(
-            "SELECT encrypted_key_share FROM shares WHERE signal_id = ?",
-            (signal_id,),
-        ).fetchone()
-        if row is None:
-            log.warning("share_not_found", signal_id=signal_id)
+        if not signal_id or not buyer_address:
             return None
 
-        encrypted_key_share = row[0]
-
-        # Atomic check+insert within a transaction
         try:
             self._conn.execute("BEGIN IMMEDIATE")
+
+            row = self._conn.execute(
+                "SELECT encrypted_key_share FROM shares WHERE signal_id = ?",
+                (signal_id,),
+            ).fetchone()
+            if row is None:
+                self._conn.execute("COMMIT")
+                log.warning("share_not_found", signal_id=signal_id)
+                return None
+
+            encrypted_key_share = row[0]
+
             existing = self._conn.execute(
                 "SELECT 1 FROM releases WHERE signal_id = ? AND buyer_address = ?",
                 (signal_id, buyer_address),
@@ -195,4 +205,9 @@ class ShareStore:
 
     def close(self) -> None:
         """Close the database connection."""
-        self._conn.close()
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None

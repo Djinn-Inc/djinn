@@ -124,46 +124,62 @@ class ChainClient:
         if self._signal is None:
             log.warning("signal_contract_not_configured")
             return True  # Permissive in dev mode
-        return await self._signal.functions.isActive(signal_id).call()
+        try:
+            return await self._signal.functions.isActive(signal_id).call()
+        except Exception as e:
+            log.error("is_signal_active_failed", signal_id=signal_id, error=str(e))
+            return True  # Permissive on error — don't block share release
 
     async def get_signal(self, signal_id: int) -> dict[str, Any]:
         """Read signal metadata from SignalCommitment contract."""
         if self._signal is None:
             return {}
-        result = await self._signal.functions.getSignal(signal_id).call()
-        return {
-            "genius": result[0],
-            "commitHash": result[1],
-            "encryptedBlob": result[2],
-            "maxPriceBps": result[3],
-            "slaBps": result[4],
-            "status": result[5],
-            "timestamp": result[6],
-        }
+        try:
+            result = await self._signal.functions.getSignal(signal_id).call()
+            return {
+                "genius": result[0],
+                "commitHash": result[1],
+                "encryptedBlob": result[2],
+                "maxPriceBps": result[3],
+                "slaBps": result[4],
+                "status": result[5],
+                "timestamp": result[6],
+            }
+        except Exception as e:
+            log.error("get_signal_failed", signal_id=signal_id, error=str(e))
+            return {}
 
     async def verify_purchase(self, signal_id: int, buyer: str) -> dict[str, Any]:
         """Verify a purchase exists on-chain."""
         if self._escrow is None:
             log.warning("escrow_contract_not_configured")
             return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
-        result = await self._escrow.functions.purchases(
-            signal_id,
-            self._w3.to_checksum_address(buyer),
-        ).call()
-        return {
-            "notional": result[0],
-            "pricePaid": result[1],
-            "sportsbook": result[2],
-        }
+        try:
+            result = await self._escrow.functions.purchases(
+                signal_id,
+                self._w3.to_checksum_address(buyer),
+            ).call()
+            return {
+                "notional": result[0],
+                "pricePaid": result[1],
+                "sportsbook": result[2],
+            }
+        except Exception as e:
+            log.error("verify_purchase_failed", signal_id=signal_id, buyer=buyer, error=str(e))
+            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
 
     async def is_audit_ready(self, genius: str, idiot: str) -> bool:
         """Check if a Genius-Idiot pair has completed a cycle."""
         if self._account is None:
             return False
-        return await self._account.functions.isAuditReady(
-            self._w3.to_checksum_address(genius),
-            self._w3.to_checksum_address(idiot),
-        ).call()
+        try:
+            return await self._account.functions.isAuditReady(
+                self._w3.to_checksum_address(genius),
+                self._w3.to_checksum_address(idiot),
+            ).call()
+        except Exception as e:
+            log.error("is_audit_ready_failed", genius=genius, idiot=idiot, error=str(e))
+            return False
 
     async def close(self) -> None:
         """Close the underlying HTTP provider session."""

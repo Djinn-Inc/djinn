@@ -371,7 +371,7 @@ class TestShareReleasePipeline:
         stores: list[ShareStore] = []
         for i, share in enumerate(shares[:7]):
             store = ShareStore()
-            store.store(f"sig-recon", f"0xGenius", share, b"")
+            store.store(f"sig-recon", f"0xGenius", share, b"placeholder")
             stores.append(store)
 
         # Buyer collects shares from each validator
