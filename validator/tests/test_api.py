@@ -111,6 +111,17 @@ class TestStoreShare:
         })
         assert resp.status_code == 422
 
+    def test_share_y_zero_accepted(self, client: TestClient) -> None:
+        """share_y = 0 is a valid field element."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-zero-y",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "0",
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 200
+
 
 class TestPurchase:
     def test_purchase_nonexistent_signal(self, client: TestClient) -> None:
@@ -284,9 +295,62 @@ class TestInputValidation:
         })
         assert resp.status_code == 400
 
+    def test_signal_id_at_max_length_accepted(self, client: TestClient, share_store: ShareStore) -> None:
+        """A 256-char signal ID should be accepted (at the limit)."""
+        long_id = "a" * 256
+        share_store.store(long_id, "0xG", Share(x=1, y=1), b"key")
+        resp = client.post(f"/v1/signal/{long_id}/purchase", json={
+            "buyer_address": "0xBuyer",
+            "sportsbook": "DK",
+            "available_indices": [1, 3, 5],
+        })
+        # Should reach the handler (200 with result, not 400 for format)
+        assert resp.status_code == 200
+
+    def test_signal_id_over_max_length_rejected(self, client: TestClient) -> None:
+        """A 257-char signal ID exceeds the limit."""
+        long_id = "a" * 257
+        resp = client.post(f"/v1/signal/{long_id}/purchase", json={
+            "buyer_address": "0xBuyer",
+            "sportsbook": "DK",
+            "available_indices": [1, 3, 5],
+        })
+        assert resp.status_code == 400
+
     def test_nonexistent_endpoint_returns_404(self, client: TestClient) -> None:
         resp = client.get("/v1/doesnotexist")
         assert resp.status_code in (404, 405)
+
+
+class TestMPCTimeout:
+    def test_purchase_mpc_timeout_returns_504(
+        self, share_store: ShareStore,
+    ) -> None:
+        """If MPC check_availability exceeds 15s, return 504."""
+        import asyncio
+        from unittest.mock import patch, AsyncMock
+
+        share_store.store("sig-timeout", "0xG", Share(x=1, y=42), b"key")
+
+        async def slow_mpc(*args, **kwargs):
+            await asyncio.sleep(100)  # Will be cancelled by timeout
+
+        purchase_orch = PurchaseOrchestrator(share_store)
+        outcome_attestor = OutcomeAttestor()
+        app = create_app(share_store, purchase_orch, outcome_attestor)
+
+        with patch(
+            "djinn_validator.core.mpc_orchestrator.MPCOrchestrator.check_availability",
+            new=slow_mpc,
+        ):
+            client = TestClient(app)
+            resp = client.post("/v1/signal/sig-timeout/purchase", json={
+                "buyer_address": "0xBuyer",
+                "sportsbook": "DK",
+                "available_indices": [1, 3, 5],
+            })
+            assert resp.status_code == 504
+            assert "timed out" in resp.json()["detail"]
 
 
 class TestMPCEndpoints:

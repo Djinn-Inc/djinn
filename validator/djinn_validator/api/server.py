@@ -117,8 +117,14 @@ def create_app(
 
     # Catch unhandled exceptions — never leak stack traces to clients
     @app.exception_handler(Exception)
-    async def _unhandled_error(_request: Request, exc: Exception) -> StarletteJSONResponse:
-        log.error("unhandled_exception", error=str(exc), exc_info=True)
+    async def _unhandled_error(request: Request, exc: Exception) -> StarletteJSONResponse:
+        log.error(
+            "unhandled_exception",
+            error=str(exc),
+            path=request.url.path,
+            method=request.method,
+            exc_info=True,
+        )
         return StarletteJSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
@@ -165,6 +171,8 @@ def create_app(
         except (ValueError, TypeError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
 
+        if share_y < 0:
+            raise HTTPException(status_code=400, detail="share_y must be non-negative")
         if share_y >= BN254_PRIME:
             raise HTTPException(status_code=400, detail="share_y must be less than BN254 prime")
 
@@ -370,7 +378,8 @@ def create_app(
         if chain_client:
             try:
                 checks["rpc"] = await chain_client.is_connected()
-            except Exception:
+            except Exception as e:
+                log.warning("readiness_check_failed", check="rpc", error=str(e))
                 checks["rpc"] = False
         else:
             checks["rpc"] = False

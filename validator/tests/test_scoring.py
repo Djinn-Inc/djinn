@@ -118,6 +118,45 @@ class TestMinerScorer:
         assert 0 not in weights
         assert 1 in weights
 
+    def test_all_same_latency_scores_equal(self) -> None:
+        """When all miners have the same latency, speed scores should be 1.0."""
+        scorer = MinerScorer()
+        for uid in range(3):
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_query(correct=True, latency=0.5, proof_submitted=True)
+            m.record_health_check(responded=True)
+        weights = scorer.compute_weights(is_active_epoch=True)
+        # All identical → equal weights
+        for uid in range(3):
+            assert weights[uid] == pytest.approx(1.0 / 3)
+
+    def test_speed_scores_bounded_zero_to_one(self) -> None:
+        """Speed normalization must always produce values in [0, 1]."""
+        scorer = MinerScorer()
+        for uid, lat in enumerate([0.001, 0.5, 1.0, 2.0, 10.0]):
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_query(correct=True, latency=lat, proof_submitted=True)
+            m.record_health_check(responded=True)
+        scores = scorer._normalize_speed(list(scorer._miners.values()))
+        for uid, score in scores.items():
+            assert 0.0 <= score <= 1.0, f"uid={uid} score={score} out of bounds"
+
+    def test_no_miners_returns_empty(self) -> None:
+        scorer = MinerScorer()
+        assert scorer.compute_weights(is_active_epoch=True) == {}
+        assert scorer.compute_weights(is_active_epoch=False) == {}
+
+    def test_zero_total_weight_distributes_evenly(self) -> None:
+        """When all raw scores are 0, weights should be distributed evenly."""
+        scorer = MinerScorer()
+        for uid in range(3):
+            scorer.get_or_create(uid, f"h{uid}")
+            # No queries, no health checks → all scores 0
+        weights = scorer.compute_weights(is_active_epoch=True)
+        assert len(weights) == 3
+        for uid in range(3):
+            assert weights[uid] == pytest.approx(1.0 / 3)
+
     def test_history_log_scaling(self) -> None:
         scorer = MinerScorer()
         new_miner = scorer.get_or_create(0, "new")

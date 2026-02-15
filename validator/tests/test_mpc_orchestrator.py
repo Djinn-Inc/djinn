@@ -95,6 +95,198 @@ class TestPeerDiscovery:
         orch = MPCOrchestrator(coordinator=coord, neuron=neuron)
         assert len(orch._get_peer_validators()) == 0
 
+    def test_skips_empty_ip(self) -> None:
+        coord = MPCCoordinator()
+        neuron = MagicMock()
+        neuron.uid = 0
+        neuron.metagraph.n.item.return_value = 2
+        neuron.metagraph.validator_permit = [
+            MagicMock(item=MagicMock(return_value=True)),
+            MagicMock(item=MagicMock(return_value=True)),
+        ]
+        neuron.metagraph.hotkeys = ["key0", "key1"]
+        neuron.metagraph.axons = [
+            MagicMock(ip="1.1.1.1", port=8421),
+            MagicMock(ip="", port=8421),
+        ]
+        orch = MPCOrchestrator(coordinator=coord, neuron=neuron)
+        assert len(orch._get_peer_validators()) == 0
+
+
+class TestCollectPeerShares:
+    """Test _collect_peer_shares with various failure modes."""
+
+    @pytest.mark.asyncio
+    async def test_collects_shares_from_peers(self, httpx_mock) -> None:
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [
+            {"uid": 1, "url": "http://peer1:8421"},
+            {"uid": 2, "url": "http://peer2:8421"},
+        ]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            json={"share_x": 1, "share_y": "ff"},
+        )
+        httpx_mock.add_response(
+            url="http://peer2:8421/v1/signal/sig-1/share_info",
+            json={"share_x": 2, "share_y": "1a"},
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 2
+        assert shares[0].x == 1
+        assert shares[0].y == 0xFF
+
+    @pytest.mark.asyncio
+    async def test_partial_peer_failure(self, httpx_mock) -> None:
+        """One peer returns 500, the other succeeds."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [
+            {"uid": 1, "url": "http://peer1:8421"},
+            {"uid": 2, "url": "http://peer2:8421"},
+        ]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            status_code=500,
+        )
+        httpx_mock.add_response(
+            url="http://peer2:8421/v1/signal/sig-1/share_info",
+            json={"share_x": 2, "share_y": "ab"},
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 1
+        assert shares[0].x == 2
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_response(self, httpx_mock) -> None:
+        """Peer returns JSON missing required fields."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [{"uid": 1, "url": "http://peer1:8421"}]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            json={"share_x": 1},  # Missing share_y
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_hex_in_share_y(self, httpx_mock) -> None:
+        """Peer returns non-hex share_y."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [{"uid": 1, "url": "http://peer1:8421"}]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            json={"share_x": 1, "share_y": "not-hex!"},
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 0
+
+    @pytest.mark.asyncio
+    async def test_all_peers_fail(self, httpx_mock) -> None:
+        """All peers fail — returns empty list."""
+        import httpx as httpx_lib
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [
+            {"uid": 1, "url": "http://peer1:8421"},
+            {"uid": 2, "url": "http://peer2:8421"},
+        ]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            status_code=503,
+        )
+        httpx_mock.add_response(
+            url="http://peer2:8421/v1/signal/sig-1/share_info",
+            status_code=503,
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 0
+
+    @pytest.mark.asyncio
+    async def test_empty_peers_returns_empty(self) -> None:
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        shares = await orch._collect_peer_shares([], "sig-1")
+        assert shares == []
+
+
+class TestDistributedMPC:
+    """Test _distributed_mpc with various scenarios."""
+
+    def _make_peers(self, count: int) -> list[dict]:
+        return [
+            {"uid": i + 1, "url": f"http://peer{i + 1}:8421"}
+            for i in range(count)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_insufficient_participants_returns_none(self) -> None:
+        """When deduplicated participant_xs < threshold, return None."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=7)
+
+        # Only 3 peers (+ self = 4 participants, below threshold 7)
+        peers = self._make_peers(3)
+        share = Share(x=1, y=42)
+
+        result = await orch._distributed_mpc("sig-1", share, {1, 3, 5}, peers)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_all_peers_reject_init_returns_none(self, httpx_mock) -> None:
+        """When all peers reject MPC init, returns None."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
+
+        peers = self._make_peers(5)
+        share = Share(x=1, y=42)
+
+        # All peers reject
+        for i in range(5):
+            httpx_mock.add_response(
+                url=f"http://peer{i + 1}:8421/v1/mpc/init",
+                json={"accepted": False},
+            )
+
+        result = await orch._distributed_mpc("sig-1", share, {1, 3}, peers)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_peer_init_http_error_handled(self, httpx_mock) -> None:
+        """HTTP errors during init are caught gracefully."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
+
+        peers = self._make_peers(5)
+        share = Share(x=1, y=42)
+
+        # All peers return 500
+        for i in range(5):
+            httpx_mock.add_response(
+                url=f"http://peer{i + 1}:8421/v1/mpc/init",
+                status_code=500,
+            )
+
+        result = await orch._distributed_mpc("sig-1", share, {1}, peers)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_duplicate_x_coords_deduplicated(self) -> None:
+        """When local share.x equals a peer uid+1, duplicates are removed."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=7)
+
+        # local_share.x = 2, peer uid=1 → uid+1=2, same x-coordinate
+        peers = [{"uid": 1, "url": "http://peer1:8421"}]
+        share = Share(x=2, y=42)
+
+        # Only 1 unique participant (x=2), well below threshold 7
+        result = await orch._distributed_mpc("sig-1", share, {1}, peers)
+        assert result is None
+
 
 class TestFallbackBehavior:
     """Test that orchestrator correctly falls back when peers unavailable."""
