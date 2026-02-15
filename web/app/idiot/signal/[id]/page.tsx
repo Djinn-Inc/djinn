@@ -304,7 +304,7 @@ export default function PurchaseSignal() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Collateral locked</span>
+                      <span className="text-slate-500">Genius collateral locked</span>
                       <span className="text-slate-900">
                         $
                         {(

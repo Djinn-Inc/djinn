@@ -36,8 +36,8 @@ export default function CreateSignal() {
   const { commit, loading, error } = useCommitSignal();
 
   const [sport, setSport] = useState<string>(SPORTS[0]);
-  const [maxPriceBps, setMaxPriceBps] = useState("500");
-  const [slaMultiplier, setSlaMultiplier] = useState("150");
+  const [maxPriceBps, setMaxPriceBps] = useState("10");
+  const [slaMultiplier, setSlaMultiplier] = useState("100");
   const [expiresIn, setExpiresIn] = useState("24");
   const [decoyLines, setDecoyLines] = useState<string[]>(
     Array(10).fill("")
@@ -243,14 +243,14 @@ export default function CreateSignal() {
               type="number"
               value={slaMultiplier}
               onChange={(e) => setSlaMultiplier(e.target.value)}
-              placeholder="150"
+              placeholder="100"
               min="100"
               step="1"
               className="input"
               required
             />
             <p className="text-xs text-slate-500 mt-1">
-              Collateral lock as % of notional (min 100%)
+              Damages rate if signal is unfavorable (min 100%)
             </p>
           </div>
         </div>

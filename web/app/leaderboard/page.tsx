@@ -123,25 +123,24 @@ export default function Leaderboard() {
         <div className="text-sm text-slate-500 space-y-2">
           <p>
             Quality Score (QS) is the on-chain measure of a Genius&apos;s prediction
-            accuracy. It is updated after each signal outcome:
+            accuracy, computed across each 10-signal audit cycle:
           </p>
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>
-              <span className="text-green-600">+1</span> for each Favorable
-              outcome
+              <span className="text-green-600">Favorable:</span> +Notional &times; (odds &minus; 1)
             </li>
             <li>
-              <span className="text-red-600">-1</span> for each Unfavorable
-              outcome
+              <span className="text-red-600">Unfavorable:</span> &minus;Notional &times; SLA%
             </li>
             <li>
-              <span className="text-slate-500">0</span> for Void outcomes
+              <span className="text-slate-500">Void:</span> does not count
             </li>
           </ul>
           <p>
             After every 10 signals between a Genius-Idiot pair, a ZK audit
-            verifies the track record. Geniuses with negative QS have their
-            collateral slashed and Idiots receive Djinn Credits as compensation.
+            verifies the Quality Score on-chain. If the score is negative, the
+            Genius&apos;s collateral is slashed: the Idiot receives a USDC refund
+            (up to fees paid) plus Djinn Credits for excess damages.
           </p>
         </div>
       </div>

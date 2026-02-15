@@ -29,7 +29,7 @@ export default function IdiotDashboard() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Idiot Dashboard</h1>
           <p className="text-slate-500 mt-1">
-            Browse signals, manage your escrow, and track purchases
+            Browse signals, manage your balance, and track purchases
           </p>
         </div>
       </div>
@@ -38,7 +38,7 @@ export default function IdiotDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="card">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            Escrow Balance
+            USDC Balance
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-2">
             {escrowLoading ? "..." : `$${formatUsdc(escrowBalance)}`}
@@ -70,7 +70,7 @@ export default function IdiotDashboard() {
       {/* Escrow Management */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
-          Escrow Management
+          Balance Management
         </h2>
         <div className="card">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -103,7 +103,7 @@ export default function IdiotDashboard() {
                 </button>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Withdraw unused escrow balance
+                Withdraw available balance
               </p>
             </div>
           </div>
