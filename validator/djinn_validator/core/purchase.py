@@ -128,6 +128,11 @@ class PurchaseOrchestrator:
         if req is None:
             return None
 
+        # Guard: reject if already confirmed or released
+        if req.status in (PurchaseStatus.PAYMENT_CONFIRMED, PurchaseStatus.SHARES_RELEASED):
+            log.warning("purchase_already_confirmed", signal_id=signal_id, buyer=buyer_address)
+            return req
+
         req.tx_hash = tx_hash
         req.status = PurchaseStatus.PAYMENT_CONFIRMED
 

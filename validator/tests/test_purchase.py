@@ -95,3 +95,49 @@ class TestPurchaseOrchestrator:
 
         removed = self.orch.cleanup_completed(max_age_seconds=1)
         assert removed == 0  # Not terminal, should not be cleaned
+
+    def test_double_confirm_payment_returns_early(self) -> None:
+        """Second confirm_payment returns existing request without re-releasing."""
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"secret")
+        self.orch.initiate("sig-1", "0xBuyer", "DK")
+        self.orch.set_mpc_result(
+            "sig-1", "0xBuyer",
+            MPCResult(available=True, participating_validators=7),
+        )
+        req1 = self.orch.confirm_payment("sig-1", "0xBuyer", "0xTx1")
+        assert req1 is not None
+        assert req1.status == PurchaseStatus.SHARES_RELEASED
+
+        # Second call should return early with same request
+        req2 = self.orch.confirm_payment("sig-1", "0xBuyer", "0xTx2")
+        assert req2 is not None
+        assert req2.status == PurchaseStatus.SHARES_RELEASED
+        # tx_hash should NOT be overwritten
+        assert req2.tx_hash == "0xTx1"
+
+    def test_confirm_after_confirmed_returns_early(self) -> None:
+        """If status is PAYMENT_CONFIRMED (e.g. release failed), don't re-attempt."""
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"secret")
+        self.orch.initiate("sig-1", "0xBuyer", "DK")
+        self.orch.set_mpc_result(
+            "sig-1", "0xBuyer",
+            MPCResult(available=True, participating_validators=7),
+        )
+        # Manually set to PAYMENT_CONFIRMED as if release didn't happen yet
+        req = self.orch.get("sig-1", "0xBuyer")
+        assert req is not None
+        req.status = PurchaseStatus.PAYMENT_CONFIRMED
+        req.tx_hash = "0xOriginal"
+
+        # Second confirm should return early
+        req2 = self.orch.confirm_payment("sig-1", "0xBuyer", "0xNew")
+        assert req2 is not None
+        assert req2.tx_hash == "0xOriginal"
+
+    def test_set_mpc_result_nonexistent(self) -> None:
+        result = self.orch.set_mpc_result("nope", "0x", MPCResult(available=True, participating_validators=1))
+        assert result is None
+
+    def test_confirm_payment_nonexistent(self) -> None:
+        result = self.orch.confirm_payment("nope", "0x", "0xTx")
+        assert result is None

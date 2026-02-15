@@ -61,6 +61,8 @@ class TestGetSession:
         retrieved = coord.get_session(session.session_id)
         assert retrieved is not None
         assert retrieved.status == SessionStatus.EXPIRED
+        # Expired session should be removed from internal dict
+        assert coord.get_session(session.session_id) is None
 
 
 class TestTripleShares:
@@ -160,9 +162,10 @@ class TestSubmitRound1EdgeCases:
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
         session.created_at = time.time() - 200  # Force expiry
-        # get_session marks it EXPIRED
+        # get_session marks it EXPIRED and removes it from dict
         coord.get_session(session.session_id)
         msg = Round1Message(validator_x=1, d_value=42, e_value=99)
+        # Session is gone, so submit returns False
         assert coord.submit_round1(session.session_id, 0, msg) is False
 
     def test_submit_to_completed_session_rejected(self) -> None:
@@ -263,3 +266,30 @@ class TestCleanup:
         coord = MPCCoordinator()
         coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
         assert coord.cleanup_expired() == 0
+
+
+class TestExpiryRemovesFromDict:
+    """Verify expired sessions are removed from memory by get_session()."""
+
+    def test_expired_session_removed_from_active_count(self) -> None:
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        assert coord.active_session_count == 1
+        session.created_at = time.time() - 200
+        coord.get_session(session.session_id)
+        assert coord.active_session_count == 0
+
+    def test_expired_session_not_in_cleanup(self) -> None:
+        """Already removed by get_session, so cleanup finds nothing."""
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        session.created_at = time.time() - 200
+        coord.get_session(session.session_id)  # Removes it
+        assert coord.cleanup_expired() == 0
+
+    def test_triple_shares_for_expired_session(self) -> None:
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        session.created_at = time.time() - 200
+        coord.get_session(session.session_id)  # Removes it
+        assert coord.get_triple_shares_for_participant(session.session_id, 1) is None
