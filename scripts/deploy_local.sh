@@ -62,6 +62,7 @@ CREDIT_LEDGER=$(parse_address "CreditLedger")
 SIGNAL=$(parse_address "SignalCommitment")
 COLLATERAL=$(parse_address "Collateral")
 ESCROW=$(parse_address "Escrow")
+AUDIT=$(parse_address "Audit")
 
 if [ -z "$USDC" ]; then
     echo "WARNING: Could not parse addresses from forge output."
@@ -79,6 +80,7 @@ if [ -f "$WEB_ENV" ]; then
     sed -i "s|NEXT_PUBLIC_COLLATERAL_ADDRESS=.*|NEXT_PUBLIC_COLLATERAL_ADDRESS=$COLLATERAL|" "$WEB_ENV"
     sed -i "s|NEXT_PUBLIC_CREDIT_LEDGER_ADDRESS=.*|NEXT_PUBLIC_CREDIT_LEDGER_ADDRESS=$CREDIT_LEDGER|" "$WEB_ENV"
     sed -i "s|NEXT_PUBLIC_ACCOUNT_ADDRESS=.*|NEXT_PUBLIC_ACCOUNT_ADDRESS=$ACCOUNT|" "$WEB_ENV"
+    sed -i "s|NEXT_PUBLIC_AUDIT_ADDRESS=.*|NEXT_PUBLIC_AUDIT_ADDRESS=$AUDIT|" "$WEB_ENV"
     sed -i "s|NEXT_PUBLIC_BASE_RPC_URL=.*|NEXT_PUBLIC_BASE_RPC_URL=$RPC_URL|" "$WEB_ENV"
 fi
 
@@ -101,5 +103,6 @@ echo "CreditLedger:     $CREDIT_LEDGER"
 echo "SignalCommitment: $SIGNAL"
 echo "Collateral:       $COLLATERAL"
 echo "Escrow:           $ESCROW"
+echo "Audit:            $AUDIT"
 echo ""
 echo "Done! Start services with: docker compose up"
