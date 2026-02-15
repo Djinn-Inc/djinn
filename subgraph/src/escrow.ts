@@ -102,11 +102,8 @@ export function handleSignalPurchased(event: SignalPurchased): void {
   let signal = Signal.load(signalId);
   if (signal == null) return;
 
-  // Generate a deterministic purchase ID from the transaction hash and log index
-  let purchaseId =
-    event.transaction.hash.toHexString() +
-    "-" +
-    event.logIndex.toString();
+  // Use the on-chain purchaseId for deterministic entity linking
+  let purchaseId = event.params.purchaseId.toString();
 
   let idiot = getOrCreateIdiot(event.params.buyer, event.block.timestamp);
   idiot.totalPurchases = idiot.totalPurchases.plus(BigInt.fromI32(1));
@@ -125,6 +122,7 @@ export function handleSignalPurchased(event: SignalPurchased): void {
   purchase.signal = signalId;
   purchase.idiot = idiot.id;
   purchase.genius = genius.id;
+  purchase.onChainPurchaseId = event.params.purchaseId;
   purchase.notional = event.params.notional;
   purchase.feePaid = event.params.feePaid;
   purchase.creditUsed = event.params.creditUsed;
@@ -152,32 +150,10 @@ export function handleRefunded(event: Refunded): void {
 }
 
 export function handleOutcomeUpdated(event: OutcomeUpdated): void {
-  // The OutcomeUpdated event uses purchaseId as the indexed param.
-  // We need to find the Purchase entity. Since we use tx-logIndex as IDs,
-  // we store a mapping. For now, iterate is not possible in subgraphs,
-  // so we use the purchaseId as a secondary lookup.
-  // NOTE: In production, the purchase ID should be emitted as a separate field
-  // or we can index by purchaseId. Since the Escrow contract emits purchaseId
-  // as the indexed param, we use it directly. The entity ID in our schema
-  // uses tx-logIndex, so we need an alternate approach.
-  //
-  // Resolution: We store Purchase entities with the on-chain purchaseId as a
-  // secondary ID. For OutcomeUpdated, we search by that.
-  // Since The Graph doesn't support secondary indexes, we use the purchaseId
-  // as the entity ID prefix convention: "purchase-{purchaseId}"
-  //
-  // Actually, the cleanest approach: use the on-chain purchaseId as the entity
-  // ID for purchases. The SignalPurchased event doesn't emit the purchaseId
-  // directly. But the Escrow contract auto-increments and returns it.
-  // Without the purchaseId in the event, we cannot deterministically link.
-  //
-  // For now, we log this as a known limitation. The OutcomeUpdated handler
-  // cannot reliably find the Purchase entity without the purchaseId being
-  // stored as a field. This will need a contract event update or an additional
-  // mapping data source.
-  //
-  // WORKAROUND: If the contract is updated to emit purchaseId in SignalPurchased,
-  // we can use that as the entity ID. For now, this handler is a no-op placeholder.
-  // The Account.OutcomeRecorded event provides equivalent data through the
-  // account handler.
+  let purchaseId = event.params.purchaseId.toString();
+  let purchase = Purchase.load(purchaseId);
+  if (purchase == null) return;
+
+  purchase.outcome = outcomeToString(event.params.outcome);
+  purchase.save();
 }

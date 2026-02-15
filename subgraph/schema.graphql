@@ -57,12 +57,14 @@ A signal purchase by an Idiot (buyer).
 Created on SignalPurchased, outcome updated on OutcomeUpdated.
 """
 type Purchase @entity {
-  "Auto-incremented purchaseId (derived from event log index + signal)"
+  "On-chain purchaseId from the Escrow contract"
   id: ID!
   "The signal that was purchased"
   signal: Signal!
   "The buyer (Idiot)"
   idiot: Idiot!
+  "On-chain auto-incremented purchase ID"
+  onChainPurchaseId: BigInt!
   "Reference amount in USDC (6 decimals)"
   notional: BigInt!
   "Total fee (credit + USDC)"

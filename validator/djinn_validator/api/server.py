@@ -18,12 +18,19 @@ Inter-validator MPC endpoints:
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import structlog
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from djinn_validator.api.middleware import (
+    RateLimitMiddleware,
+    RateLimiter,
+    get_cors_origins,
+    validate_signed_request,
+)
 from djinn_validator.api.models import (
     AnalyticsRequest,
     HealthResponse,
@@ -51,6 +58,7 @@ from djinn_validator.core.mpc import (
     compute_local_contribution,
 )
 from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
+from djinn_validator.core.mpc_orchestrator import MPCOrchestrator
 from djinn_validator.core.outcomes import (
     Outcome,
     OutcomeAttestor,
@@ -83,13 +91,21 @@ def create_app(
         description="Djinn Protocol Bittensor Validator API",
     )
 
+    # CORS — restricted in production, open in dev
+    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Rate limiting
+    limiter = RateLimiter(default_capacity=60, default_rate=10)
+    limiter.set_path_limit("/v1/signal", capacity=20, rate=2)  # Share storage: 2/sec
+    limiter.set_path_limit("/v1/mpc/", capacity=100, rate=50)  # MPC: higher for multi-round
+    app.add_middleware(RateLimitMiddleware, limiter=limiter)
 
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:
@@ -130,14 +146,13 @@ def create_app(
                 message="Purchase initiation failed",
             )
 
-        # Run local MPC computation
+        # Run MPC availability check (multi-validator or single-validator fallback)
         available_set = set(req.available_indices)
-        all_xs = [record.share.x]  # Single-validator mode
-        local_contrib = compute_local_contribution(record.share, all_xs)
-
-        # In a full implementation, we'd gather contributions from other validators.
-        # For now, we use just our local contribution (single-validator mode).
-        mpc_result = check_availability([local_contrib], available_set, threshold=1)
+        mpc_result = await _orchestrator.check_availability(
+            signal_id=signal_id,
+            local_share=record.share,
+            available_indices=available_set,
+        )
 
         purchase_orch.set_mpc_result(signal_id, req.buyer_address, mpc_result)
 
@@ -265,13 +280,31 @@ def create_app(
         )
 
     # ------------------------------------------------------------------
-    # Inter-validator MPC coordination endpoints
+    # MPC orchestration
     # ------------------------------------------------------------------
     _mpc = mpc_coordinator or MPCCoordinator()
+    _orchestrator = MPCOrchestrator(
+        coordinator=_mpc,
+        neuron=neuron,
+        threshold=7,
+    )
+
+    # Collect validator hotkeys from metagraph for auth
+    def _get_validator_hotkeys() -> set[str] | None:
+        """Get set of validator hotkeys from metagraph for MPC auth."""
+        if neuron is None or neuron.metagraph is None:
+            return None  # No auth in dev mode
+        hotkeys = set()
+        for uid in range(neuron.metagraph.n.item()):
+            if neuron.metagraph.validator_permit[uid].item():
+                hotkeys.add(neuron.metagraph.hotkeys[uid])
+        return hotkeys if hotkeys else None
 
     @app.post("/v1/mpc/init", response_model=MPCInitResponse)
-    async def mpc_init(req: MPCInitRequest) -> MPCInitResponse:
+    async def mpc_init(req: MPCInitRequest, request: Request) -> MPCInitResponse:
         """Accept an MPC session invitation from the coordinator."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
         session = _mpc.get_session(req.session_id)
         if session is not None:
             return MPCInitResponse(
@@ -299,8 +332,9 @@ def create_app(
         )
 
     @app.post("/v1/mpc/round1", response_model=MPCRound1Response)
-    async def mpc_round1(req: MPCRound1Request) -> MPCRound1Response:
+    async def mpc_round1(req: MPCRound1Request, request: Request) -> MPCRound1Response:
         """Accept a Round 1 message for a multiplication gate."""
+        await validate_signed_request(request, _get_validator_hotkeys())
         msg = Round1Message(
             validator_x=req.validator_x,
             d_value=int(req.d_value, 16),
@@ -314,8 +348,9 @@ def create_app(
         )
 
     @app.post("/v1/mpc/result", response_model=MPCResultResponse)
-    async def mpc_result(req: MPCResultRequest) -> MPCResultResponse:
+    async def mpc_result(req: MPCResultRequest, request: Request) -> MPCResultResponse:
         """Accept the coordinator's final MPC result broadcast."""
+        await validate_signed_request(request, _get_validator_hotkeys())
         session = _mpc.get_session(req.session_id)
         if session is None:
             return MPCResultResponse(

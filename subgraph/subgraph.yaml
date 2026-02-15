@@ -58,7 +58,7 @@ dataSources:
           handler: handleDeposited
         - event: Withdrawn(indexed address,uint256)
           handler: handleWithdrawn
-        - event: SignalPurchased(indexed uint256,indexed address,uint256,uint256,uint256,uint256)
+        - event: SignalPurchased(indexed uint256,indexed address,uint256,uint256,uint256,uint256,uint256)
           handler: handleSignalPurchased
         - event: Refunded(indexed address,indexed address,uint256,uint256)
           handler: handleRefunded

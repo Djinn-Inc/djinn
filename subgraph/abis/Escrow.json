@@ -22,6 +22,7 @@
     "inputs": [
       { "indexed": true, "internalType": "uint256", "name": "signalId", "type": "uint256" },
       { "indexed": true, "internalType": "address", "name": "buyer", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "purchaseId", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "notional", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "feePaid", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "creditUsed", "type": "uint256" },

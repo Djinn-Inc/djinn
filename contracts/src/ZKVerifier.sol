@@ -33,6 +33,7 @@ contract ZKVerifier is Ownable {
     event TrackRecordVerifierUpdated(address indexed verifier);
 
     error ZeroAddress();
+    error VerifierNotSet();
     error VerificationCallFailed();
 
     /// @param _owner Address that will own this contract
@@ -66,7 +67,7 @@ contract ZKVerifier is Ownable {
         uint256[2] calldata _pC,
         uint256[52] calldata _pubSignals
     ) external view returns (bool valid) {
-        if (auditVerifier == address(0)) return true; // Placeholder mode
+        if (auditVerifier == address(0)) revert VerifierNotSet();
 
         (bool success, bytes memory result) = auditVerifier.staticcall(
             abi.encodeWithSignature(
@@ -90,7 +91,7 @@ contract ZKVerifier is Ownable {
         uint256[2] calldata _pC,
         uint256[106] calldata _pubSignals
     ) external view returns (bool valid) {
-        if (trackRecordVerifier == address(0)) return true; // Placeholder mode
+        if (trackRecordVerifier == address(0)) revert VerifierNotSet();
 
         (bool success, bytes memory result) = trackRecordVerifier.staticcall(
             abi.encodeWithSignature(

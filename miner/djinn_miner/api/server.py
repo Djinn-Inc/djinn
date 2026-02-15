@@ -5,9 +5,17 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import os
+
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from djinn_miner.api.middleware import (
+    RateLimitMiddleware,
+    RateLimiter,
+    get_cors_origins,
+)
 
 from djinn_miner.api.models import (
     CheckRequest,
@@ -34,13 +42,16 @@ def create_app(
 
     app = FastAPI(title="Djinn Miner", version="0.1.0")
 
+    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=30, rate=5))
 
     @app.post("/v1/check", response_model=CheckResponse)
     async def check_lines(request: CheckRequest) -> CheckResponse:

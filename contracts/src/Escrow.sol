@@ -85,6 +85,7 @@ contract Escrow is Ownable {
     event SignalPurchased(
         uint256 indexed signalId,
         address indexed buyer,
+        uint256 purchaseId,
         uint256 notional,
         uint256 feePaid,
         uint256 creditUsed,
@@ -295,7 +296,7 @@ contract Escrow is Ownable {
         // --- Notify Account contract ---
         account.recordPurchase(sig.genius, msg.sender, purchaseId);
 
-        emit SignalPurchased(signalId, msg.sender, notional, fee, creditUsed, usdcPaid);
+        emit SignalPurchased(signalId, msg.sender, purchaseId, notional, fee, creditUsed, usdcPaid);
     }
 
     // -------------------------------------------------------------------------
