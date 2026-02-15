@@ -194,3 +194,14 @@ subgraph/node_modules/
 .env
 .env.local
 .env.*.local
+
+# UV lock files
+uv.lock
+*/uv.lock
+
+# Data directories (SQLite, caches)
+validator/data/
+miner/data/
+
+# Next.js build cache (root-level)
+.next/
