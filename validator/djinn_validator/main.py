@@ -6,6 +6,7 @@ Starts the FastAPI server and the Bittensor epoch loop concurrently.
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 
 import structlog
@@ -141,10 +142,15 @@ async def async_main() -> None:
 
     log.info(
         "validator_starting",
+        version="0.1.0",
         host=config.api_host,
         port=config.api_port,
         netuid=config.bt_netuid,
+        bt_network=config.bt_network,
         bt_connected=bt_ok,
+        rpc_url=config.base_rpc_url[:40] + "..." if len(config.base_rpc_url) > 40 else config.base_rpc_url,
+        shares_held=share_store.count,
+        log_format=os.getenv("LOG_FORMAT", "console"),
     )
 
     # Run API server and epoch loop concurrently

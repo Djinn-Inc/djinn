@@ -21,6 +21,7 @@ from djinn_miner.api.metrics import (
 from djinn_miner.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
+    RequestIdMiddleware,
     get_cors_origins,
 )
 
@@ -67,6 +68,9 @@ def create_app(
         return await call_next(request)
 
     app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=30, rate=5))
+
+    # Request ID tracing (outermost — must be added last)
+    app.add_middleware(RequestIdMiddleware)
 
     @app.post("/v1/check", response_model=CheckResponse)
     async def check_lines(request: CheckRequest) -> CheckResponse:

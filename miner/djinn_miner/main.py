@@ -8,6 +8,7 @@ The BT loop keeps the metagraph fresh and re-serves the axon if needed.
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 
 import structlog
@@ -107,11 +108,14 @@ async def async_main() -> None:
 
     log.info(
         "miner_starting",
+        version="0.1.0",
         host=config.api_host,
         port=config.api_port,
         netuid=config.bt_netuid,
+        bt_network=config.bt_network,
         bt_connected=bt_ok,
         odds_api_configured=bool(config.odds_api_key),
+        log_format=os.getenv("LOG_FORMAT", "console"),
     )
 
     # Run API server and BT sync loop concurrently

@@ -1,8 +1,9 @@
-"""Rate limiting middleware for the miner API."""
+"""Rate limiting and request tracing middleware for the miner API."""
 
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -12,6 +13,30 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 log = structlog.get_logger()
+
+
+# ---------------------------------------------------------------------------
+# Request ID Tracing
+# ---------------------------------------------------------------------------
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Assign a unique request ID to every request.
+
+    - Reads ``X-Request-ID`` from the incoming request or generates a UUID4.
+    - Binds the ID to structlog contextvars so all log lines include ``request_id``.
+    - Returns the ID in the ``X-Request-ID`` response header.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            structlog.contextvars.unbind_contextvars("request_id")
 
 
 @dataclass

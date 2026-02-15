@@ -27,8 +27,8 @@ PROVER_BINARY = os.getenv(
     shutil.which("djinn-tlsn-prover") or "djinn-tlsn-prover",
 )
 
-NOTARY_HOST = os.getenv("TLSN_NOTARY_HOST", "127.0.0.1")
-NOTARY_PORT = int(os.getenv("TLSN_NOTARY_PORT", "7047"))
+NOTARY_HOST = os.getenv("TLSN_NOTARY_HOST", "notary.pse.dev")
+NOTARY_PORT = int(os.getenv("TLSN_NOTARY_PORT", "443"))
 
 # Headers whose values should be redacted from the proof
 REDACT_HEADERS = os.getenv(

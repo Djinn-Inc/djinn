@@ -23,6 +23,22 @@ def client(share_store: ShareStore) -> TestClient:
     return TestClient(app)
 
 
+class TestRequestIdMiddleware:
+    def test_response_has_request_id_header(self, client: TestClient) -> None:
+        resp = client.get("/health")
+        assert "x-request-id" in resp.headers
+        assert len(resp.headers["x-request-id"]) == 32  # UUID hex
+
+    def test_forwarded_request_id_is_echoed(self, client: TestClient) -> None:
+        resp = client.get("/health", headers={"X-Request-ID": "my-trace-123"})
+        assert resp.headers["x-request-id"] == "my-trace-123"
+
+    def test_unique_ids_per_request(self, client: TestClient) -> None:
+        r1 = client.get("/health")
+        r2 = client.get("/health")
+        assert r1.headers["x-request-id"] != r2.headers["x-request-id"]
+
+
 class TestHealthEndpoint:
     def test_health_returns_ok(self, client: TestClient) -> None:
         resp = client.get("/health")

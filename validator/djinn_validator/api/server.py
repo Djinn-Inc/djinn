@@ -35,6 +35,7 @@ from djinn_validator.api.metrics import (
 from djinn_validator.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
+    RequestIdMiddleware,
     get_cors_origins,
     validate_signed_request,
 )
@@ -122,6 +123,9 @@ def create_app(
     limiter.set_path_limit("/v1/signal", capacity=20, rate=2)  # Share storage: 2/sec
     limiter.set_path_limit("/v1/mpc/", capacity=100, rate=50)  # MPC: higher for multi-round
     app.add_middleware(RateLimitMiddleware, limiter=limiter)
+
+    # Request ID tracing (outermost — must be added last)
+    app.add_middleware(RequestIdMiddleware)
 
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:

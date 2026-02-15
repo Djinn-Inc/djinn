@@ -40,6 +40,22 @@ def app(mock_odds_response: list[dict]) -> TestClient:
     return TestClient(fastapi_app)
 
 
+class TestRequestIdMiddleware:
+    def test_response_has_request_id_header(self, app: TestClient) -> None:
+        resp = app.get("/health")
+        assert "x-request-id" in resp.headers
+        assert len(resp.headers["x-request-id"]) == 32  # UUID hex
+
+    def test_forwarded_request_id_is_echoed(self, app: TestClient) -> None:
+        resp = app.get("/health", headers={"X-Request-ID": "my-trace-123"})
+        assert resp.headers["x-request-id"] == "my-trace-123"
+
+    def test_unique_ids_per_request(self, app: TestClient) -> None:
+        r1 = app.get("/health")
+        r2 = app.get("/health")
+        assert r1.headers["x-request-id"] != r2.headers["x-request-id"]
+
+
 class TestHealthEndpoint:
     def test_health_returns_ok(self, app: TestClient) -> None:
         resp = app.get("/health")

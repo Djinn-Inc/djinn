@@ -1,6 +1,7 @@
 """Security middleware for the validator API.
 
 Provides:
+- Request ID tracing (binds UUID to structlog contextvars)
 - Token-bucket rate limiting per IP
 - Bittensor hotkey signature verification for inter-validator endpoints
 - CORS configuration helper
@@ -11,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable
@@ -21,6 +23,32 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 log = structlog.get_logger()
+
+
+# ---------------------------------------------------------------------------
+# Request ID Tracing
+# ---------------------------------------------------------------------------
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Assign a unique request ID to every request.
+
+    - Reads ``X-Request-ID`` from the incoming request (forwarded by a
+      reverse-proxy) or generates a new UUID4.
+    - Binds the ID to structlog contextvars so every log line emitted
+      during the request includes ``request_id``.
+    - Returns the ID in the ``X-Request-ID`` response header.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            structlog.contextvars.unbind_contextvars("request_id")
 
 
 # ---------------------------------------------------------------------------
