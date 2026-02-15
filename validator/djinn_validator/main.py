@@ -212,9 +212,18 @@ async def async_main() -> None:
     for t in running_tasks:
         t.cancel()
     await asyncio.gather(*running_tasks, return_exceptions=True)
-    await outcome_attestor.close()
-    await chain_client.close()
-    share_store.close()
+    try:
+        await outcome_attestor.close()
+    except Exception as e:
+        log.warning("outcome_attestor_close_error", error=str(e))
+    try:
+        await chain_client.close()
+    except Exception as e:
+        log.warning("chain_client_close_error", error=str(e))
+    try:
+        share_store.close()
+    except Exception as e:
+        log.warning("share_store_close_error", error=str(e))
     log.info("shutdown_complete")
 
 

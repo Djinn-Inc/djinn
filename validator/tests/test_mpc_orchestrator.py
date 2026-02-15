@@ -212,6 +212,21 @@ class TestCollectPeerShares:
         shares = await orch._collect_peer_shares([], "sig-1")
         assert shares == []
 
+    @pytest.mark.asyncio
+    async def test_json_decode_error_handled(self, httpx_mock) -> None:
+        """Peer returns non-JSON response — should be caught gracefully."""
+        import httpx as httpx_lib
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        peers = [{"uid": 1, "url": "http://peer1:8421"}]
+        httpx_mock.add_response(
+            url="http://peer1:8421/v1/signal/sig-1/share_info",
+            text="not valid json",
+            headers={"content-type": "text/plain"},
+        )
+        shares = await orch._collect_peer_shares(peers, "sig-1")
+        assert len(shares) == 0
+
 
 class TestDistributedMPC:
     """Test _distributed_mpc with various scenarios."""
@@ -268,6 +283,25 @@ class TestDistributedMPC:
             httpx_mock.add_response(
                 url=f"http://peer{i + 1}:8421/v1/mpc/init",
                 status_code=500,
+            )
+
+        result = await orch._distributed_mpc("sig-1", share, {1}, peers)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_peer_init_json_decode_error(self, httpx_mock) -> None:
+        """Non-JSON response during MPC init should be caught gracefully."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
+
+        peers = self._make_peers(5)
+        share = Share(x=1, y=42)
+
+        for i in range(5):
+            httpx_mock.add_response(
+                url=f"http://peer{i + 1}:8421/v1/mpc/init",
+                text="not json",
+                headers={"content-type": "text/plain"},
             )
 
         result = await orch._distributed_mpc("sig-1", share, {1}, peers)

@@ -192,7 +192,7 @@ function getEnvOrDevDefault(envVar: string, devDefault: string): string {
 const VALIDATOR_URLS = getEnvOrDevDefault(
   "NEXT_PUBLIC_VALIDATOR_URL",
   "http://localhost:8421",
-).split(",");
+).split(",").filter((u) => u.trim().length > 0);
 
 const MINER_URL = getEnvOrDevDefault(
   "NEXT_PUBLIC_MINER_URL",

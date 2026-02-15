@@ -75,9 +75,15 @@ export function formatUsdc(amount: bigint): string {
 }
 
 export function parseUsdc(amount: string): bigint {
-  const [whole, frac = ""] = amount.split(".");
+  const trimmed = amount.trim();
+  if (!trimmed || !/^\d+(\.\d*)?$/.test(trimmed)) {
+    throw new Error(`Invalid USDC amount: ${amount}`);
+  }
+  const [whole, frac = ""] = trimmed.split(".");
   const fracPadded = frac.padEnd(6, "0").slice(0, 6);
-  return BigInt(whole) * 1_000_000n + BigInt(fracPadded);
+  const result = BigInt(whole) * 1_000_000n + BigInt(fracPadded);
+  if (result < 0n) throw new Error("USDC amount must be non-negative");
+  return result;
 }
 
 export function formatBps(bps: bigint): string {

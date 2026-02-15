@@ -390,16 +390,22 @@ def create_app(
             checks["rpc"] = False
 
         # Check contract addresses are configured (non-zero)
-        from djinn_validator.config import Config
-        cfg = Config()
-        zero = "0" * 40
-        checks["escrow_configured"] = bool(cfg.escrow_address) and zero not in cfg.escrow_address
-        checks["signal_configured"] = bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address
-        checks["account_configured"] = bool(cfg.account_address) and zero not in cfg.account_address
-        checks["collateral_configured"] = bool(cfg.collateral_address) and zero not in cfg.collateral_address
-
-        # Check sports API key
-        checks["sports_api_key"] = bool(cfg.sports_api_key)
+        try:
+            from djinn_validator.config import Config
+            cfg = Config()
+            zero = "0" * 40
+            checks["escrow_configured"] = bool(cfg.escrow_address) and zero not in cfg.escrow_address
+            checks["signal_configured"] = bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address
+            checks["account_configured"] = bool(cfg.account_address) and zero not in cfg.account_address
+            checks["collateral_configured"] = bool(cfg.collateral_address) and zero not in cfg.collateral_address
+            checks["sports_api_key"] = bool(cfg.sports_api_key)
+        except Exception as e:
+            log.warning("readiness_config_error", error=str(e))
+            checks["escrow_configured"] = False
+            checks["signal_configured"] = False
+            checks["account_configured"] = False
+            checks["collateral_configured"] = False
+            checks["sports_api_key"] = False
 
         # Bittensor connectivity
         checks["bt_connected"] = neuron is not None and neuron.uid is not None

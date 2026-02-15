@@ -210,6 +210,23 @@ describe("Hex helpers", () => {
     const original = new Uint8Array([10, 20, 30, 40, 50]);
     expect(fromHex(toHex(original))).toEqual(original);
   });
+
+  it("fromHex rejects odd-length strings", () => {
+    expect(() => fromHex("abc")).toThrow("even length");
+  });
+
+  it("fromHex rejects non-hex characters", () => {
+    expect(() => fromHex("ghij")).toThrow("Invalid hex");
+  });
+
+  it("fromHex accepts empty string", () => {
+    expect(fromHex("")).toEqual(new Uint8Array(0));
+  });
+
+  it("fromHex accepts uppercase hex", () => {
+    const bytes = fromHex("AABB");
+    expect(Array.from(bytes)).toEqual([0xaa, 0xbb]);
+  });
 });
 
 // ---------------------------------------------------------------------------

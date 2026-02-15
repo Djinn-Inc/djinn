@@ -147,11 +147,14 @@ def create_app(
     @app.get("/health/ready", response_model=ReadinessResponse)
     async def readiness() -> ReadinessResponse:
         """Deep readiness probe — checks API key and dependencies."""
-        from djinn_miner.config import Config
-        cfg = Config()
-
         checks: dict[str, bool] = {}
-        checks["odds_api_key"] = bool(cfg.odds_api_key)
+        try:
+            from djinn_miner.config import Config
+            cfg = Config()
+            checks["odds_api_key"] = bool(cfg.odds_api_key)
+        except Exception as e:
+            log.warning("readiness_config_error", error=str(e))
+            checks["odds_api_key"] = False
         checks["odds_api_connected"] = health_tracker.get_status().odds_api_connected
 
         ready = all(checks.values())

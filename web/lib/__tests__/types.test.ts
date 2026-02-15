@@ -80,6 +80,22 @@ describe("parseUsdc", () => {
       expect(formatUsdc(parseUsdc(v))).toBe(v);
     }
   });
+
+  it("rejects empty string", () => {
+    expect(() => parseUsdc("")).toThrow("Invalid USDC amount");
+  });
+
+  it("rejects non-numeric input", () => {
+    expect(() => parseUsdc("abc")).toThrow("Invalid USDC amount");
+  });
+
+  it("rejects negative amounts", () => {
+    expect(() => parseUsdc("-1")).toThrow("Invalid USDC amount");
+  });
+
+  it("trims whitespace before parsing", () => {
+    expect(parseUsdc("  1.5  ")).toBe(1_500_000n);
+  });
 });
 
 describe("formatBps", () => {

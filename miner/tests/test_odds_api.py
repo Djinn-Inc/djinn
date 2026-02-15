@@ -386,3 +386,40 @@ def test_evict_stale_cache() -> None:
     c._evict_stale_cache()
     assert "fresh" in c._cache
     assert "stale" not in c._cache
+
+
+def test_parse_bookmaker_odds_non_dict_event() -> None:
+    """Non-dict events in the list should be skipped, not crash."""
+    c = OddsApiClient(api_key="test")
+    events = [42, "string", None, {"id": "real", "bookmakers": []}]  # type: ignore[list-item]
+    result = c.parse_bookmaker_odds(events)
+    assert len(result) == 0  # real event has no markets
+
+
+def test_parse_bookmaker_odds_bad_price() -> None:
+    """Non-numeric price values should default to 0.0."""
+    c = OddsApiClient(api_key="test")
+    events = [{
+        "id": "ev-1",
+        "home_team": "A",
+        "away_team": "B",
+        "bookmakers": [{
+            "key": "bk",
+            "title": "Bookie",
+            "markets": [{
+                "key": "h2h",
+                "outcomes": [{"name": "A", "price": "invalid"}],
+            }],
+        }],
+    }]
+    result = c.parse_bookmaker_odds(events)
+    assert len(result) == 1
+    assert result[0].price == 0.0
+
+
+def test_parse_bookmaker_odds_non_dict_bookmaker() -> None:
+    """Non-dict bookmakers should be skipped."""
+    c = OddsApiClient(api_key="test")
+    events = [{"id": "ev-1", "bookmakers": ["not-a-dict", 42]}]
+    result = c.parse_bookmaker_odds(events)
+    assert len(result) == 0

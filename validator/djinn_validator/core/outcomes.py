@@ -356,7 +356,7 @@ class OutcomeAttestor:
                 raw_data=event,
             )
 
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
             log.error("sports_api_error", event_id=event_id, error=str(e))
             return EventResult(event_id=event_id, status="error")
 
@@ -477,8 +477,9 @@ class OutcomeAttestor:
         removed = 0
 
         # Clean resolved signals older than max_age
+        # Use list() copy to avoid RuntimeError from concurrent modification
         stale_ids = [
-            sid for sid, meta in self._pending_signals.items()
+            sid for sid, meta in list(self._pending_signals.items())
             if meta.resolved and now - meta.purchased_at > max_age_seconds
         ]
         for sid in stale_ids:

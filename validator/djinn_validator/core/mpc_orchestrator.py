@@ -15,6 +15,7 @@ Falls back to single-validator prototype mode when:
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -110,7 +111,7 @@ class MPCOrchestrator:
                             x=data["share_x"],
                             y=int(data["share_y"], 16),
                         ))
-                except (httpx.HTTPError, KeyError, ValueError) as e:
+                except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
                     log.warning(
                         "peer_share_request_failed",
                         peer_uid=peer["uid"],
@@ -244,7 +245,7 @@ class MPCOrchestrator:
                     )
                     if resp.status_code == 200 and resp.json().get("accepted"):
                         accepted_peers.append(peer)
-                except (httpx.HTTPError, KeyError, ValueError) as e:
+                except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
                     log.warning(
                         "mpc_init_failed",
                         peer_uid=peer["uid"],

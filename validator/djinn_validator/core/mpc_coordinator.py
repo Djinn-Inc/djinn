@@ -127,8 +127,8 @@ class MPCCoordinator:
         """Retrieve a session by ID."""
         with self._lock:
             session = self._sessions.get(session_id)
-        if session and time.time() - session.created_at > self.SESSION_TTL:
-            session.status = SessionStatus.EXPIRED
+            if session and time.time() - session.created_at > self.SESSION_TTL:
+                session.status = SessionStatus.EXPIRED
         return session
 
     def get_triple_shares_for_participant(
@@ -140,7 +140,8 @@ class MPCCoordinator:
 
         Returns a list of {a, b, c} share values for each triple.
         """
-        session = self._sessions.get(session_id)
+        with self._lock:
+            session = self._sessions.get(session_id)
         if session is None:
             return None
 
@@ -166,35 +167,37 @@ class MPCCoordinator:
         message: Round1Message,
     ) -> bool:
         """Submit a Round 1 message for a specific multiplication gate."""
-        session = self._sessions.get(session_id)
-        if session is None or session.status != SessionStatus.ROUND1_COLLECTING:
-            return False
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None or session.status != SessionStatus.ROUND1_COLLECTING:
+                return False
 
-        if gate_idx not in session.round1_messages:
-            session.round1_messages[gate_idx] = []
+            if gate_idx not in session.round1_messages:
+                session.round1_messages[gate_idx] = []
 
-        # Avoid duplicate submissions
-        existing_xs = {m.validator_x for m in session.round1_messages[gate_idx]}
-        if message.validator_x in existing_xs:
-            return True  # Already submitted
+            # Avoid duplicate submissions
+            existing_xs = {m.validator_x for m in session.round1_messages[gate_idx]}
+            if message.validator_x in existing_xs:
+                return True  # Already submitted
 
-        session.round1_messages[gate_idx].append(message)
-        return True
+            session.round1_messages[gate_idx].append(message)
+            return True
 
     def is_round_complete(self, session_id: str) -> bool:
         """Check if all participants have submitted Round 1 for all gates."""
-        session = self._sessions.get(session_id)
-        if session is None:
-            return False
-
-        n_gates = max(len(session.available_indices), 1)
-        n_participants = len(session.participant_xs)
-
-        for gate_idx in range(n_gates):
-            msgs = session.round1_messages.get(gate_idx, [])
-            if len(msgs) < n_participants:
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
                 return False
-        return True
+
+            n_gates = max(len(session.available_indices), 1)
+            n_participants = len(session.participant_xs)
+
+            for gate_idx in range(n_gates):
+                msgs = session.round1_messages.get(gate_idx, [])
+                if len(msgs) < n_participants:
+                    return False
+            return True
 
     def compute_result_with_shares(
         self,
@@ -211,9 +214,10 @@ class MPCCoordinator:
 
         For the distributed path, use submit_round1() + finalize().
         """
-        session = self._sessions.get(session_id)
-        if session is None:
-            return None
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return None
 
         result = secure_check_availability(
             shares=shares,
@@ -221,8 +225,9 @@ class MPCCoordinator:
             threshold=session.threshold,
         )
 
-        session.result = result
-        session.status = SessionStatus.COMPLETE
+        with self._lock:
+            session.result = result
+            session.status = SessionStatus.COMPLETE
         return result
 
     def cleanup_expired(self) -> int:

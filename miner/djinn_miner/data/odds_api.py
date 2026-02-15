@@ -198,7 +198,11 @@ class OddsApiClient:
             }
 
             resp = await self._request_with_retry(url, params, api_sport)
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception as exc:
+                log.error("odds_api_json_decode_error", sport=api_sport, error=str(exc))
+                raise
 
             # Capture the raw HTTP session for proof generation
             if self._session_capture is not None:
@@ -240,6 +244,8 @@ class OddsApiClient:
         results: list[BookmakerOdds] = []
 
         for event in events:
+            if not isinstance(event, dict):
+                continue
             if event_id and event.get("id") != event_id:
                 # Also try matching by teams if event_id doesn't match
                 if not self._teams_match(event, home_team, away_team):
@@ -249,19 +255,29 @@ class OddsApiClient:
                     continue
 
             for bookmaker in event.get("bookmakers", []):
+                if not isinstance(bookmaker, dict):
+                    continue
                 bk_key = bookmaker.get("key", "")
                 bk_title = bookmaker.get("title", bk_key)
 
                 for market in bookmaker.get("markets", []):
+                    if not isinstance(market, dict):
+                        continue
                     market_key = market.get("key", "")
                     for outcome in market.get("outcomes", []):
+                        if not isinstance(outcome, dict):
+                            continue
+                        try:
+                            price = float(outcome.get("price", 0))
+                        except (ValueError, TypeError):
+                            price = 0.0
                         results.append(
                             BookmakerOdds(
                                 bookmaker_key=bk_key,
                                 bookmaker_title=bk_title,
                                 market=market_key,
                                 name=outcome.get("name", ""),
-                                price=float(outcome.get("price", 0)),
+                                price=price,
                                 point=outcome.get("point"),
                             )
                         )
