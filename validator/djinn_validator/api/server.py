@@ -108,6 +108,15 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Request body size limit (1MB)
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > 1_048_576:
+            from starlette.responses import JSONResponse
+            return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+        return await call_next(request)
+
     # Rate limiting
     limiter = RateLimiter(default_capacity=60, default_rate=10)
     limiter.set_path_limit("/v1/signal", capacity=20, rate=2)  # Share storage: 2/sec

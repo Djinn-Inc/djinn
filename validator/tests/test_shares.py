@@ -1,5 +1,8 @@
 """Tests for the ShareStore."""
 
+import tempfile
+from pathlib import Path
+
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
 
@@ -61,3 +64,49 @@ class TestShareStore:
         record = self.store.get("sig-1")
         assert record is not None
         assert record.encrypted_key_share == b"first"
+
+
+class TestShareStorePersistence:
+    """Test that shares survive across ShareStore instances (file-backed SQLite)."""
+
+    def test_data_survives_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "shares.db"
+
+            # First instance: store a share
+            store1 = ShareStore(db_path=db_path)
+            store1.store("sig-1", "0xGenius", Share(x=3, y=99999), b"secret-key")
+            store1.release("sig-1", "0xBuyer1")
+            store1.close()
+
+            # Second instance: verify data persists
+            store2 = ShareStore(db_path=db_path)
+            assert store2.has("sig-1")
+            assert store2.count == 1
+
+            record = store2.get("sig-1")
+            assert record is not None
+            assert record.genius_address == "0xGenius"
+            assert record.share == Share(x=3, y=99999)
+            assert record.encrypted_key_share == b"secret-key"
+            assert "0xBuyer1" in record.released_to
+
+            # Double-release still works
+            data = store2.release("sig-1", "0xBuyer1")
+            assert data == b"secret-key"
+
+            store2.close()
+
+    def test_remove_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "shares.db"
+
+            store = ShareStore(db_path=db_path)
+            store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+            store.remove("sig-1")
+            store.close()
+
+            store2 = ShareStore(db_path=db_path)
+            assert not store2.has("sig-1")
+            assert store2.count == 0
+            store2.close()

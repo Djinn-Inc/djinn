@@ -95,8 +95,8 @@ async def async_main() -> None:
     for w in warnings:
         log.warning("config_warning", msg=w)
 
-    # Initialize components
-    share_store = ShareStore()
+    # Initialize components — SQLite persistence for key shares
+    share_store = ShareStore(db_path="data/shares.db")
     purchase_orch = PurchaseOrchestrator(share_store)
     outcome_attestor = OutcomeAttestor(sports_api_key=config.sports_api_key)
     scorer = MinerScorer()
@@ -165,6 +165,7 @@ async def async_main() -> None:
     for t in running_tasks:
         t.cancel()
     await asyncio.gather(*running_tasks, return_exceptions=True)
+    share_store.close()
     log.info("shutdown_complete")
 
 
