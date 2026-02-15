@@ -142,7 +142,8 @@ async def generate_proof(
     # Parse stdout JSON summary
     try:
         summary = json.loads(stdout.decode().strip())
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        log.debug("tlsn_summary_parse_failed", error=str(e))
         summary = {}
 
     # Read presentation bytes
@@ -154,7 +155,12 @@ async def generate_proof(
             error="presentation file was not created",
         )
 
-    presentation_bytes = presentation_path.read_bytes()
+    try:
+        presentation_bytes = presentation_path.read_bytes()
+    except OSError as e:
+        log.error("tlsn_presentation_read_failed", error=str(e))
+        _cleanup_dir(output_path)
+        return TLSNProofResult(success=False, error=f"failed to read presentation: {e}")
     _cleanup_dir(output_path)
 
     log.info(

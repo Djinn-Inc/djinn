@@ -112,8 +112,8 @@ async def verify_proof(
         try:
             result = json.loads(stdout.decode().strip())
             error_msg = result.get("error", error_msg)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            pass
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            log.debug("tlsn_error_output_parse_failed", error=str(e))
         return TLSNVerifyResult(verified=False, error=error_msg[:500])
 
     # Parse verification output

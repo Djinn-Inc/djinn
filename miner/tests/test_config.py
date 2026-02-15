@@ -129,3 +129,60 @@ class TestConfigTimeouts:
         config = _config(odds_api_key="key", http_timeout=0)
         with pytest.raises(ValueError, match="HTTP_TIMEOUT"):
             config.validate()
+
+
+class TestConfigBoundary:
+    def test_netuid_at_lower_boundary(self) -> None:
+        config = _config(odds_api_key="key", bt_netuid=1)
+        config.validate()  # Should not raise
+
+    def test_netuid_at_upper_boundary(self) -> None:
+        config = _config(odds_api_key="key", bt_netuid=65535)
+        config.validate()  # Should not raise
+
+    def test_port_at_boundaries(self) -> None:
+        config = _config(odds_api_key="key", api_port=1)
+        config.validate()
+        config = _config(odds_api_key="key", api_port=65535)
+        config.validate()
+
+    def test_zero_cache_ttl_accepted(self) -> None:
+        """TTL=0 means no caching — should be accepted."""
+        config = _config(odds_api_key="key", odds_cache_ttl=0)
+        config.validate()
+
+    def test_zero_line_tolerance_accepted(self) -> None:
+        """Tolerance=0 means exact match only — should be accepted."""
+        config = _config(odds_api_key="key", line_tolerance=0.0)
+        config.validate()
+
+    def test_all_known_networks_accepted(self) -> None:
+        """All known networks should not produce warnings."""
+        for network in ("finney", "mainnet", "test", "local", "mock"):
+            config = _config(odds_api_key="key", bt_network=network)
+            warnings = config.validate()
+            assert not any("BT_NETWORK" in w for w in warnings), f"Warning for {network}"
+
+
+class TestIntEnvEdgeCases:
+    def test_int_env_valid_value(self) -> None:
+        from djinn_miner.config import _int_env
+        import os
+        os.environ["TEST_INT_VAL"] = "42"
+        assert _int_env("TEST_INT_VAL", "0") == 42
+        del os.environ["TEST_INT_VAL"]
+
+    def test_int_env_uses_default(self) -> None:
+        from djinn_miner.config import _int_env
+        assert _int_env("NONEXISTENT_INT_KEY_12345", "99") == 99
+
+    def test_float_env_valid_value(self) -> None:
+        from djinn_miner.config import _float_env
+        import os
+        os.environ["TEST_FLOAT_VAL"] = "3.14"
+        assert _float_env("TEST_FLOAT_VAL", "0.0") == pytest.approx(3.14)
+        del os.environ["TEST_FLOAT_VAL"]
+
+    def test_float_env_uses_default(self) -> None:
+        from djinn_miner.config import _float_env
+        assert _float_env("NONEXISTENT_FLOAT_KEY_12345", "2.5") == pytest.approx(2.5)
