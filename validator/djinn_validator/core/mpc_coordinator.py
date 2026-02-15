@@ -13,6 +13,7 @@ Transport is HTTP — validators call each other's /v1/mpc/* endpoints.
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -79,6 +80,7 @@ class MPCCoordinator:
 
     def __init__(self) -> None:
         self._sessions: dict[str, MPCSessionState] = {}
+        self._lock = threading.Lock()
 
     def create_session(
         self,
@@ -111,7 +113,8 @@ class MPCCoordinator:
             status=SessionStatus.ROUND1_COLLECTING,
         )
 
-        self._sessions[session_id] = session
+        with self._lock:
+            self._sessions[session_id] = session
         log.info(
             "mpc_session_created",
             session_id=session_id,
@@ -122,7 +125,8 @@ class MPCCoordinator:
 
     def get_session(self, session_id: str) -> MPCSessionState | None:
         """Retrieve a session by ID."""
-        session = self._sessions.get(session_id)
+        with self._lock:
+            session = self._sessions.get(session_id)
         if session and time.time() - session.created_at > self.SESSION_TTL:
             session.status = SessionStatus.EXPIRED
         return session
@@ -224,17 +228,19 @@ class MPCCoordinator:
     def cleanup_expired(self) -> int:
         """Remove expired sessions. Returns count of removed sessions."""
         now = time.time()
-        expired = [
-            sid for sid, s in self._sessions.items()
-            if now - s.created_at > self.SESSION_TTL
-        ]
-        for sid in expired:
-            del self._sessions[sid]
+        with self._lock:
+            expired = [
+                sid for sid, s in self._sessions.items()
+                if now - s.created_at > self.SESSION_TTL
+            ]
+            for sid in expired:
+                del self._sessions[sid]
         return len(expired)
 
     @property
     def active_session_count(self) -> int:
-        return sum(
-            1 for s in self._sessions.values()
-            if s.status not in (SessionStatus.COMPLETE, SessionStatus.EXPIRED, SessionStatus.FAILED)
-        )
+        with self._lock:
+            return sum(
+                1 for s in self._sessions.values()
+                if s.status not in (SessionStatus.COMPLETE, SessionStatus.EXPIRED, SessionStatus.FAILED)
+            )

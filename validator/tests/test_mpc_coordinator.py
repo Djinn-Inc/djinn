@@ -154,6 +154,100 @@ class TestComputeResult:
         assert coord.compute_result_with_shares("nope", []) is None
 
 
+class TestSubmitRound1EdgeCases:
+    def test_submit_to_expired_session_rejected(self) -> None:
+        """Round 1 submission to an expired session should be rejected."""
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        session.created_at = time.time() - 200  # Force expiry
+        # get_session marks it EXPIRED
+        coord.get_session(session.session_id)
+        msg = Round1Message(validator_x=1, d_value=42, e_value=99)
+        assert coord.submit_round1(session.session_id, 0, msg) is False
+
+    def test_submit_to_completed_session_rejected(self) -> None:
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        session.status = SessionStatus.COMPLETE
+        msg = Round1Message(validator_x=1, d_value=42, e_value=99)
+        assert coord.submit_round1(session.session_id, 0, msg) is False
+
+    def test_multiple_gate_round_completion(self) -> None:
+        """Round completion requires all gates to have all participants."""
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1, 2], 1, [1, 2], 2)
+        # Submit for gate 0 from both participants
+        coord.submit_round1(session.session_id, 0, Round1Message(1, 10, 20))
+        coord.submit_round1(session.session_id, 0, Round1Message(2, 30, 40))
+        # Gate 1 still missing
+        assert coord.is_round_complete(session.session_id) is False
+        # Submit for gate 1
+        coord.submit_round1(session.session_id, 1, Round1Message(1, 50, 60))
+        coord.submit_round1(session.session_id, 1, Round1Message(2, 70, 80))
+        assert coord.is_round_complete(session.session_id) is True
+
+
+class TestComputeResultIdempotency:
+    def test_compute_result_twice(self) -> None:
+        """Computing result multiple times should be safe."""
+        from djinn_validator.utils.crypto import generate_signal_index_shares
+        coord = MPCCoordinator()
+        shares = generate_signal_index_shares(5)
+        session = coord.create_session("sig-1", [1, 3, 5], 1, list(range(1, 11)), 7)
+        r1 = coord.compute_result_with_shares(session.session_id, shares)
+        r2 = coord.compute_result_with_shares(session.session_id, shares)
+        assert r1 is not None
+        assert r2 is not None
+        assert r1.available == r2.available
+
+
+class TestConcurrentAccess:
+    def test_concurrent_session_creation(self) -> None:
+        """Create sessions from multiple threads concurrently."""
+        import threading
+        coord = MPCCoordinator()
+        errors = []
+        sessions = []
+
+        def create(i: int) -> None:
+            try:
+                s = coord.create_session(f"sig-{i}", [1], 1, [1, 2, 3], 3)
+                sessions.append(s.session_id)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=create, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert len(set(sessions)) == 20  # All unique
+
+    def test_concurrent_cleanup(self) -> None:
+        """Cleanup from multiple threads shouldn't crash."""
+        import threading
+        coord = MPCCoordinator()
+        for i in range(10):
+            s = coord.create_session(f"sig-{i}", [1], 1, [1, 2, 3], 3)
+            s.created_at = time.time() - 200  # All expired
+        errors = []
+
+        def cleanup() -> None:
+            try:
+                coord.cleanup_expired()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=cleanup) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+
 class TestCleanup:
     def test_cleanup_expired(self) -> None:
         coord = MPCCoordinator()

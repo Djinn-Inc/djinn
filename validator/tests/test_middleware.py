@@ -117,6 +117,36 @@ class TestRateLimitMiddleware:
         assert resp.status_code == 200
 
 
+class TestRateLimiterBoundary:
+    def test_exact_boundary_enforcement(self) -> None:
+        """Request N+1 should be rejected when capacity is N."""
+        limiter = RateLimiter(default_capacity=20, default_rate=0.001)
+        for i in range(20):
+            assert limiter.allow("1.1.1.1", "/v1/signal") is True, f"Request {i + 1} should pass"
+        assert limiter.allow("1.1.1.1", "/v1/signal") is False, "Request 21 should be blocked"
+
+    def test_path_specific_boundary(self) -> None:
+        """Path-specific limits are enforced at their boundary."""
+        limiter = RateLimiter(default_capacity=100, default_rate=100)
+        limiter.set_path_limit("/v1/signal", capacity=5, rate=0.001)
+        for i in range(5):
+            assert limiter.allow("1.1.1.1", "/v1/signal/store") is True
+        assert limiter.allow("1.1.1.1", "/v1/signal/store") is False
+        # Default path still has capacity
+        assert limiter.allow("1.1.1.1", "/v1/mpc/init") is True
+
+    def test_cleanup_under_pressure(self) -> None:
+        """When bucket count exceeds MAX_BUCKETS, cleanup runs."""
+        limiter = RateLimiter(default_capacity=5, default_rate=1)
+        # Fill beyond MAX_BUCKETS (default 10000) — but just verify the method doesn't crash
+        for i in range(100):
+            limiter.allow(f"10.0.0.{i % 256}", f"/path/{i}")
+        # Force cleanup
+        limiter._last_cleanup = 0
+        limiter._maybe_cleanup()
+        # Should not crash
+
+
 class TestCorsOrigins:
     def test_empty_returns_wildcard(self) -> None:
         assert get_cors_origins("") == ["*"]
