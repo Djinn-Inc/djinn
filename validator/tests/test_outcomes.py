@@ -251,6 +251,24 @@ class TestEdgeCases:
         result = EventResult(event_id="test", status="final")  # no scores
         assert determine_outcome(pick, result, "Lakers", "Celtics") == Outcome.PENDING
 
+    def test_spread_none_line(self) -> None:
+        """Spread with no line should return VOID."""
+        pick = ParsedPick(market="spreads", team="Lakers", line=None, odds=-110)
+        result = EventResult(event_id="test", home_score=110, away_score=105, status="final")
+        assert determine_outcome(pick, result, "Lakers", "Celtics") == Outcome.VOID
+
+    def test_total_none_line(self) -> None:
+        """Total with no line should return VOID."""
+        pick = ParsedPick(market="totals", side="Over", line=None, odds=-110)
+        result = EventResult(event_id="test", home_score=110, away_score=105, status="final")
+        assert determine_outcome(pick, result, "Lakers", "Celtics") == Outcome.VOID
+
+    def test_unknown_market(self) -> None:
+        """Unknown market type returns PENDING."""
+        pick = ParsedPick(market="unknown", team="Lakers")
+        result = EventResult(event_id="test", home_score=110, away_score=105, status="final")
+        assert determine_outcome(pick, result, "Lakers", "Celtics") == Outcome.PENDING
+
 
 # ---------------------------------------------------------------------------
 # OutcomeAttestor
@@ -442,3 +460,72 @@ class TestOutcomeAttestor:
     async def test_close(self) -> None:
         attestor = OutcomeAttestor()
         await attestor.close()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_resolve_all_pending_no_api_key(self) -> None:
+        """resolve_all returns empty when API key not set (all pending)."""
+        attestor = OutcomeAttestor()
+        for i in range(3):
+            meta = SignalMetadata(
+                signal_id=f"sig-{i}", sport="basketball_nba",
+                event_id=f"evt-{i}", home_team="Lakers", away_team="Celtics",
+                pick=parse_pick("Lakers -3.5 (-110)"),
+            )
+            attestor.register_signal(meta)
+
+        resolved = await attestor.resolve_all_pending("v1")
+        assert resolved == []
+        assert len(attestor.get_pending_signals()) == 3
+
+    def test_consensus_split_vote_no_consensus(self) -> None:
+        """3-way split: no outcome reaches threshold."""
+        attestor = OutcomeAttestor()
+        result = EventResult(event_id="evt1", status="final", home_score=100, away_score=90)
+
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        attestor.attest("sig1", "v2", Outcome.UNFAVORABLE, result)
+        attestor.attest("sig1", "v3", Outcome.VOID, result)
+
+        assert attestor.check_consensus("sig1", 3) is None
+
+    def test_consensus_no_attestations(self) -> None:
+        """Signal with no attestations returns None."""
+        attestor = OutcomeAttestor()
+        assert attestor.check_consensus("nonexistent", 10) is None
+
+    def test_register_duplicate_overwrites(self) -> None:
+        """Re-registering same signal_id overwrites the metadata."""
+        attestor = OutcomeAttestor()
+        meta1 = SignalMetadata(
+            signal_id="sig1", sport="basketball_nba",
+            event_id="evt1", home_team="Lakers", away_team="Celtics",
+            pick=parse_pick("Lakers -3.5 (-110)"),
+        )
+        meta2 = SignalMetadata(
+            signal_id="sig1", sport="football_nfl",
+            event_id="evt2", home_team="Chiefs", away_team="Bills",
+            pick=parse_pick("Chiefs ML (-200)"),
+        )
+        attestor.register_signal(meta1)
+        attestor.register_signal(meta2)
+
+        pending = attestor.get_pending_signals()
+        assert len(pending) == 1
+        assert pending[0].sport == "football_nfl"
+
+    def test_cleanup_multiple_resolved(self) -> None:
+        """Cleanup removes all old resolved signals."""
+        attestor = OutcomeAttestor()
+        for i in range(5):
+            meta = SignalMetadata(
+                signal_id=f"sig-{i}", sport="basketball_nba",
+                event_id=f"evt-{i}", home_team="A", away_team="B",
+                pick=parse_pick("A ML (-110)"),
+                purchased_at=0.0,
+            )
+            meta.resolved = True
+            attestor.register_signal(meta)
+
+        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        assert removed == 5
+        assert attestor.get_pending_signals() == []
