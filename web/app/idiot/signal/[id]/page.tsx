@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
@@ -55,6 +55,7 @@ export default function PurchaseSignal() {
     pick: string;
   } | null>(null);
   const [availableIndices, setAvailableIndices] = useState<number[]>([]);
+  const purchaseInFlight = useRef(false);
 
   if (!authenticated) {
     return (
@@ -106,6 +107,8 @@ export default function PurchaseSignal() {
   const handlePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signalId || !selectedSportsbook) return;
+    if (purchaseInFlight.current) return;
+    purchaseInFlight.current = true;
 
     const buyerAddress = user?.wallet?.address;
     if (!buyerAddress) {
@@ -226,6 +229,9 @@ export default function PurchaseSignal() {
           if (typeof parsed.realIndex !== "number" || typeof parsed.pick !== "string") {
             throw new Error("Decrypted data missing required fields (realIndex, pick)");
           }
+          if (parsed.realIndex < 1 || parsed.realIndex > signal.decoyLines.length) {
+            throw new Error(`Invalid realIndex ${parsed.realIndex} (expected 1-${signal.decoyLines.length})`);
+          }
           setDecryptedPick(parsed);
         } catch (decryptErr) {
           setStepError(
@@ -238,6 +244,8 @@ export default function PurchaseSignal() {
     } catch (err) {
       setStepError(err instanceof Error ? err.message : "Purchase failed");
       setStep("error");
+    } finally {
+      purchaseInFlight.current = false;
     }
   };
 

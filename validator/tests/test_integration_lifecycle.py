@@ -26,8 +26,10 @@ from djinn_validator.utils.crypto import (
 
 
 @pytest.fixture
-def share_store() -> ShareStore:
-    return ShareStore()  # in-memory for tests
+def share_store():
+    store = ShareStore()  # in-memory for tests
+    yield store
+    store.close()
 
 
 @pytest.fixture

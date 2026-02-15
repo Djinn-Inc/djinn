@@ -192,7 +192,7 @@ class MPCInitResponse(BaseModel):
 class MPCRound1Request(BaseModel):
     """POST /v1/mpc/round1 — Submit Round 1 message (d, e values) for a gate."""
 
-    session_id: str = Field(max_length=256)
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     gate_idx: int = Field(ge=0, le=20)
     validator_x: int = Field(ge=1, le=255)
     d_value: str = Field(max_length=260)  # Hex-encoded

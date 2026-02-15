@@ -13,6 +13,10 @@ import {
 } from "@/lib/crypto";
 import { getValidatorClients } from "@/lib/api";
 
+/** Total shares and threshold for Shamir secret sharing. */
+const SHAMIR_TOTAL_SHARES = 10;
+const SHAMIR_THRESHOLD = 7;
+
 const SPORTS = [
   "NFL",
   "NBA",
@@ -164,7 +168,7 @@ export default function CreateSignal() {
       setStep("distributing");
 
       const keyBigInt = keyToBigInt(aesKey);
-      const shares = splitSecret(keyBigInt, 10, 7);
+      const shares = splitSecret(keyBigInt, SHAMIR_TOTAL_SHARES, SHAMIR_THRESHOLD);
 
       // Step 6: Distribute shares to validators
       const validators = getValidatorClients();
@@ -186,9 +190,9 @@ export default function CreateSignal() {
       const results = await Promise.allSettled(storePromises);
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
       const failed = results.filter((r) => r.status === "rejected").length;
-      if (succeeded < 7) {
+      if (succeeded < SHAMIR_THRESHOLD) {
         throw new Error(
-          `Only ${succeeded}/10 shares stored (need 7). ${failed} failed. Signal creation aborted.`,
+          `Only ${succeeded}/${SHAMIR_TOTAL_SHARES} shares stored (need ${SHAMIR_THRESHOLD}). ${failed} failed. Signal creation aborted.`,
         );
       }
       if (failed > 0) {

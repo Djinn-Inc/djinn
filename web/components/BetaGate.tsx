@@ -13,9 +13,13 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "true") {
-      setAuthorized(true);
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === "true") {
+        setAuthorized(true);
+      }
+    } catch {
+      // localStorage may be unavailable in private browsing mode
     }
     setChecking(false);
   }, []);
@@ -23,7 +27,11 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === BETA_PASSWORD) {
-      localStorage.setItem(STORAGE_KEY, "true");
+      try {
+        localStorage.setItem(STORAGE_KEY, "true");
+      } catch {
+        // Proceed without persistence in private browsing mode
+      }
       setAuthorized(true);
       setError(false);
     } else {

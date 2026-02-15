@@ -15,8 +15,10 @@ from djinn_validator.utils.crypto import Share
 
 
 @pytest.fixture
-def share_store() -> ShareStore:
-    return ShareStore()
+def share_store():
+    store = ShareStore()
+    yield store
+    store.close()
 
 
 @pytest.fixture

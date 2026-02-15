@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Ensure tests don't fail when .env sets BT_NETWORK=finney.
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 
 from djinn_miner.api.models import CandidateLine
 

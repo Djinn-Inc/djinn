@@ -181,6 +181,14 @@ class TestCorsOrigins:
         result = get_cors_origins("https://a.io,")
         assert result == ["https://a.io"]
 
+    def test_production_requires_cors_origins(self) -> None:
+        with pytest.raises(ValueError, match="CORS_ORIGINS must be set"):
+            get_cors_origins("", bt_network="finney")
+
+    def test_production_with_origins_ok(self) -> None:
+        result = get_cors_origins("https://djinn.io", bt_network="finney")
+        assert result == ["https://djinn.io"]
+
 
 class TestTokenBucketEdgeCases:
     def test_capacity_does_not_overflow(self) -> None:

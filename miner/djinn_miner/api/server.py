@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -68,7 +69,7 @@ def create_app(
             content={"detail": "Internal server error"},
         )
 
-    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))
+    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""), os.getenv("BT_NETWORK", ""))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -103,7 +104,17 @@ def create_app(
         bookmakers.
         """
         start = time.perf_counter()
-        results = await checker.check(request.lines)
+        try:
+            results = await asyncio.wait_for(
+                checker.check(request.lines),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("check_lines_timeout", lines=len(request.lines))
+            return JSONResponse(
+                status_code=504,
+                content={"detail": "Line check timed out"},
+            )
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         available_indices = [r.index for r in results if r.available]
@@ -132,7 +143,17 @@ def create_app(
         In production, this generates a TLSNotary proof of the TLS session
         used during Phase 1. Currently returns a mock proof.
         """
-        result = await proof_gen.generate(request.query_id, request.session_data)
+        try:
+            result = await asyncio.wait_for(
+                proof_gen.generate(request.query_id, request.session_data),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("proof_generation_timeout", query_id=request.query_id)
+            return JSONResponse(
+                status_code=504,
+                content={"detail": "Proof generation timed out"},
+            )
         proof_type = "tlsnotary" if "tlsnotary" in (result.message or "") else "http_attestation"
         PROOFS_GENERATED.labels(type=proof_type).inc()
         log.info("proof_generated", query_id=request.query_id, status=result.status, type=proof_type)

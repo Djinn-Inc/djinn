@@ -48,8 +48,10 @@ from djinn_validator.utils.crypto import (
 
 
 @pytest.fixture
-def share_store() -> ShareStore:
-    return ShareStore()
+def share_store():
+    store = ShareStore()
+    yield store
+    store.close()
 
 
 @pytest.fixture
@@ -369,21 +371,25 @@ class TestShareReleasePipeline:
 
         # Simulate 7 validators each storing and releasing their share
         stores: list[ShareStore] = []
-        for i, share in enumerate(shares[:7]):
-            store = ShareStore()
-            store.store(f"sig-recon", f"0xGenius", share, b"placeholder")
-            stores.append(store)
+        try:
+            for i, share in enumerate(shares[:7]):
+                store = ShareStore()
+                store.store(f"sig-recon", f"0xGenius", share, b"placeholder")
+                stores.append(store)
 
-        # Buyer collects shares from each validator
-        collected_shares: list[Share] = []
-        for store in stores:
-            record = store.get("sig-recon")
-            assert record is not None
-            collected_shares.append(record.share)
+            # Buyer collects shares from each validator
+            collected_shares: list[Share] = []
+            for store in stores:
+                record = store.get("sig-recon")
+                assert record is not None
+                collected_shares.append(record.share)
 
-        # Reconstruct the secret
-        reconstructed = reconstruct_secret(collected_shares)
-        assert reconstructed == secret
+            # Reconstruct the secret
+            reconstructed = reconstruct_secret(collected_shares)
+            assert reconstructed == secret
+        finally:
+            for store in stores:
+                store.close()
 
     def test_purchase_validates_share_existence(
         self, share_store: ShareStore, purchase_orch: PurchaseOrchestrator

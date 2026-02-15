@@ -174,8 +174,8 @@ def create_app(
         try:
             share_y = int(req.share_y, 16)
             encrypted = bytes.fromhex(req.encrypted_key_share)
-        except (ValueError, TypeError) as e:
-            raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid hex encoding in share data")
 
         if share_y < 0:
             raise HTTPException(status_code=400, detail="share_y must be non-negative")
@@ -271,7 +271,7 @@ def create_app(
         """Register a purchased signal for automatic outcome tracking."""
         _validate_signal_id_path(signal_id)
         if req.sport not in SUPPORTED_SPORTS:
-            raise HTTPException(status_code=400, detail=f"Unsupported sport key: {req.sport}")
+            raise HTTPException(status_code=400, detail="Unsupported sport key")
         pick = parse_pick(req.pick)
         metadata = SignalMetadata(
             signal_id=signal_id,
@@ -295,7 +295,14 @@ def create_app(
         if neuron:
             hotkey = neuron.wallet.hotkey.ss58_address if neuron.wallet else ""
 
-        attestations = await outcome_attestor.resolve_all_pending(hotkey)
+        try:
+            attestations = await asyncio.wait_for(
+                outcome_attestor.resolve_all_pending(hotkey),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("resolve_all_pending_timeout")
+            raise HTTPException(status_code=504, detail="Signal resolution timed out")
         results = [
             {
                 "signal_id": a.signal_id,
@@ -312,7 +319,14 @@ def create_app(
     async def attest_outcome(signal_id: str, req: OutcomeRequest) -> OutcomeResponse:
         """Submit an outcome attestation for a signal."""
         _validate_signal_id_path(signal_id)
-        event_result = await outcome_attestor.fetch_event_result(req.event_id)
+        try:
+            event_result = await asyncio.wait_for(
+                outcome_attestor.fetch_event_result(req.event_id),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("fetch_event_result_timeout", event_id=req.event_id)
+            raise HTTPException(status_code=504, detail="Event result fetch timed out")
         outcome = Outcome(req.outcome)
 
         outcome_attestor.attest(
@@ -467,8 +481,8 @@ def create_app(
         try:
             d_val = int(req.d_value, 16)
             e_val = int(req.e_value, 16)
-        except (ValueError, TypeError) as e:
-            raise HTTPException(status_code=400, detail=f"Invalid hex value: {e}")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid hex value in MPC round1 data")
         msg = Round1Message(
             validator_x=req.validator_x,
             d_value=d_val,

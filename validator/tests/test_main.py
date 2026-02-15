@@ -26,9 +26,10 @@ def mock_neuron() -> MagicMock:
 
 
 @pytest.fixture
-def mock_share_store(tmp_path) -> ShareStore:
+def mock_share_store(tmp_path):
     store = ShareStore(db_path=str(tmp_path / "test.db"))
-    return store
+    yield store
+    store.close()
 
 
 @pytest.fixture
