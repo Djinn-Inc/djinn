@@ -93,6 +93,8 @@ class OutcomeAttestation:
 # Pick Parsing
 # ---------------------------------------------------------------------------
 
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]{1,256}$")
+
 # Regex patterns for different pick formats
 _SPREAD_RE = re.compile(
     r"^(.+?)\s+([+-]?\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$"
@@ -311,6 +313,12 @@ class OutcomeAttestor:
 
     async def fetch_event_result(self, event_id: str, sport: str = "basketball_nba") -> EventResult:
         """Fetch event result from The Odds API scores endpoint."""
+        if not _SAFE_ID_RE.match(event_id):
+            log.warning("invalid_event_id", event_id=event_id[:50])
+            return EventResult(event_id=event_id, status="error")
+        if not _SAFE_ID_RE.match(sport):
+            log.warning("invalid_sport_key", sport=sport[:50])
+            return EventResult(event_id=event_id, status="error")
         if not self._api_key:
             log.warning("no_sports_api_key", event_id=event_id)
             return EventResult(event_id=event_id, status="pending")

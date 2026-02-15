@@ -131,7 +131,7 @@ def create_app(
         )
 
     # CORS — restricted in production, open in dev
-    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""))
+    cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""), os.getenv("BT_NETWORK", ""))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

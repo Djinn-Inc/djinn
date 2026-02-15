@@ -289,13 +289,18 @@ async def validate_signed_request(
     return hotkey
 
 
-def get_cors_origins(env_value: str = "") -> list[str]:
+def get_cors_origins(env_value: str = "", bt_network: str = "") -> list[str]:
     """Parse CORS origins from environment variable.
 
-    Returns ["*"] in dev mode (empty env). In production, set CORS_ORIGINS
-    to a comma-separated list of allowed origins.
+    Returns ["*"] in dev mode (empty env). In production (finney/mainnet),
+    raises ValueError if CORS_ORIGINS is not set.
     """
     if not env_value:
+        if bt_network in ("finney", "mainnet"):
+            raise ValueError(
+                "CORS_ORIGINS must be set when BT_NETWORK is production. "
+                "Set CORS_ORIGINS to a comma-separated list of allowed origins."
+            )
         log.warning("cors_wildcard", msg="CORS_ORIGINS not set — using wildcard. Set CORS_ORIGINS in production.")
         return ["*"]
     return [o.strip() for o in env_value.split(",") if o.strip()]

@@ -170,6 +170,22 @@ class TestCorsOrigins:
         result = get_cors_origins("https://a.com,")
         assert result == ["https://a.com"]
 
+    def test_production_rejects_wildcard(self) -> None:
+        with pytest.raises(ValueError, match="CORS_ORIGINS must be set"):
+            get_cors_origins("", bt_network="finney")
+
+    def test_production_mainnet_rejects_wildcard(self) -> None:
+        with pytest.raises(ValueError, match="CORS_ORIGINS must be set"):
+            get_cors_origins("", bt_network="mainnet")
+
+    def test_production_with_origins_succeeds(self) -> None:
+        result = get_cors_origins("https://djinn.io", bt_network="finney")
+        assert result == ["https://djinn.io"]
+
+    def test_dev_network_allows_wildcard(self) -> None:
+        result = get_cors_origins("", bt_network="test")
+        assert result == ["*"]
+
 
 class TestSignatureMessage:
     def test_message_format(self) -> None:
