@@ -41,16 +41,18 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4">
-      <Image
-        src="/djinn-logo.png"
-        alt="Djinn"
-        width={80}
-        height={80}
-        className="w-20 h-20 mb-6"
-      />
-      <h1 className="text-5xl font-extrabold tracking-wider text-slate-900 mb-3">
-        DJINN
-      </h1>
+      <div className="flex items-center gap-4 mb-4">
+        <Image
+          src="/djinn-logo.png"
+          alt="Djinn"
+          width={56}
+          height={56}
+          className="w-14 h-14"
+        />
+        <h1 className="text-5xl font-bold text-slate-900 font-wordmark">
+          djinn
+        </h1>
+      </div>
       <p className="text-sm tracking-[0.25em] uppercase text-slate-400 font-light">
         The Genius-Idiot Network
       </p>

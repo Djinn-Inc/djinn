@@ -4,20 +4,20 @@ import Link from "next/link";
 export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] px-4">
-      {/* Logo */}
-      <Image
-        src="/djinn-logo.png"
-        alt="Djinn"
-        width={140}
-        height={140}
-        className="w-28 h-28 sm:w-36 sm:h-36 mb-6"
-        priority
-      />
-
-      {/* Wordmark */}
-      <h1 className="text-5xl sm:text-6xl font-extrabold tracking-wider text-slate-900 mb-3">
-        DJINN
-      </h1>
+      {/* Logo + Wordmark */}
+      <div className="flex items-center gap-4 sm:gap-5 mb-4">
+        <Image
+          src="/djinn-logo.png"
+          alt="Djinn"
+          width={72}
+          height={72}
+          className="w-16 h-16 sm:w-[72px] sm:h-[72px]"
+          priority
+        />
+        <h1 className="text-5xl sm:text-6xl font-bold text-slate-900 font-wordmark">
+          djinn
+        </h1>
+      </div>
 
       {/* Subtitle */}
       <div className="flex flex-col items-center gap-1 mb-8">

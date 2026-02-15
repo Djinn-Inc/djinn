@@ -6,15 +6,20 @@ export default function About() {
     <div className="max-w-4xl mx-auto">
       {/* Header */}
       <div className="text-center mb-16">
-        <Image
-          src="/djinn-logo.png"
-          alt="Djinn"
-          width={64}
-          height={64}
-          className="w-16 h-16 mx-auto mb-4"
-        />
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-3">
-          How Djinn Works
+        <div className="flex items-center gap-3 justify-center mb-4">
+          <Image
+            src="/djinn-logo.png"
+            alt="Djinn"
+            width={44}
+            height={44}
+            className="w-11 h-11"
+          />
+          <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-wordmark">
+            djinn
+          </span>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
+          How It Works
         </h1>
         <p className="text-lg text-slate-500 max-w-2xl mx-auto">
           The sports intelligence marketplace where analysts sell encrypted

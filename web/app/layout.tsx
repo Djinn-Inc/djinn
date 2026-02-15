@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 import Providers from "./providers";
 import Layout from "@/components/Layout";
 import BetaGate from "@/components/BetaGate";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-wordmark",
+});
 
 export const metadata: Metadata = {
   title: "Djinn | Sports Intelligence Marketplace",
@@ -32,7 +36,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} ${spaceGrotesk.variable}`}>
         <BetaGate>
           <Providers>
             <Layout>{children}</Layout>

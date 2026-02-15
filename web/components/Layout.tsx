@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   height={28}
                   className="w-7 h-7"
                 />
-                <span className="text-lg font-bold text-slate-900 tracking-tight">
+                <span className="text-lg font-bold text-slate-900 font-wordmark">
                   djinn
                 </span>
               </Link>
@@ -187,7 +187,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   height={24}
                   className="w-6 h-6"
                 />
-                <span className="text-sm font-bold text-slate-900">djinn</span>
+                <span className="text-sm font-bold text-slate-900 font-wordmark">djinn</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
                 Sports Intelligence Marketplace.
