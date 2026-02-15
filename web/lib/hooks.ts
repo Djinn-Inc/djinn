@@ -318,3 +318,92 @@ export function useDepositCollateral() {
 
   return { deposit, loading };
 }
+
+// ---------------------------------------------------------------------------
+// Withdraw hooks
+// ---------------------------------------------------------------------------
+
+export function useWithdrawEscrow() {
+  const signer = useEthersSigner();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const withdraw = useCallback(
+    async (amount: bigint) => {
+      if (!signer) throw new Error("Wallet not connected");
+      setLoading(true);
+      setError(null);
+      try {
+        const escrow = getEscrowContract(signer);
+        const tx = await escrow.withdraw(amount);
+        await tx.wait();
+        return tx.hash as string;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Withdraw failed";
+        setError(msg);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [signer]
+  );
+
+  return { withdraw, loading, error };
+}
+
+export function useWithdrawCollateral() {
+  const signer = useEthersSigner();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const withdraw = useCallback(
+    async (amount: bigint) => {
+      if (!signer) throw new Error("Wallet not connected");
+      setLoading(true);
+      setError(null);
+      try {
+        const collateral = getCollateralContract(signer);
+        const tx = await collateral.withdraw(amount);
+        await tx.wait();
+        return tx.hash as string;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Withdraw failed";
+        setError(msg);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [signer]
+  );
+
+  return { withdraw, loading, error };
+}
+
+// ---------------------------------------------------------------------------
+// USDC approval hook (reusable for any spender)
+// ---------------------------------------------------------------------------
+
+export function useApproveUsdc() {
+  const signer = useEthersSigner();
+  const [loading, setLoading] = useState(false);
+
+  const approve = useCallback(
+    async (spender: string, amount: bigint) => {
+      if (!signer) throw new Error("Wallet not connected");
+      setLoading(true);
+      try {
+        const usdc = getUsdcContract(signer);
+        const tx = await usdc.approve(spender, amount);
+        await tx.wait();
+        return tx.hash as string;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [signer]
+  );
+
+  return { approve, loading };
+}

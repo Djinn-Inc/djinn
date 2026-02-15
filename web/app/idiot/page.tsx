@@ -1,16 +1,51 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { useEscrowBalance, useCreditBalance } from "@/lib/hooks";
-import { formatUsdc } from "@/lib/types";
+import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow } from "@/lib/hooks";
+import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function IdiotDashboard() {
   const { authenticated, user } = usePrivy();
   const address = user?.wallet?.address;
-  const { balance: escrowBalance, loading: escrowLoading } =
+  const { balance: escrowBalance, loading: escrowLoading, refresh: refreshEscrow } =
     useEscrowBalance(address);
   const { balance: creditBalance, loading: creditLoading } =
     useCreditBalance(address);
+  const { deposit: depositEscrow, loading: depositLoading } = useDepositEscrow();
+  const { withdraw: withdrawEscrow, loading: withdrawLoading } = useWithdrawEscrow();
+
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [txError, setTxError] = useState<string | null>(null);
+  const [sportFilter, setSportFilter] = useState("");
+  const { signals, loading: signalsLoading } = useActiveSignals(sportFilter || undefined);
+
+  const handleDeposit = async () => {
+    if (!depositAmount) return;
+    setTxError(null);
+    try {
+      await depositEscrow(parseUsdc(depositAmount));
+      setDepositAmount("");
+      refreshEscrow();
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Deposit failed");
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawAmount) return;
+    setTxError(null);
+    try {
+      await withdrawEscrow(parseUsdc(withdrawAmount));
+      setWithdrawAmount("");
+      refreshEscrow();
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Withdraw failed");
+    }
+  };
 
   if (!authenticated) {
     return (
@@ -73,6 +108,11 @@ export default function IdiotDashboard() {
           Balance Management
         </h2>
         <div className="card">
+          {txError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4">
+              <p className="text-xs text-red-600">{txError}</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="label">Deposit USDC</label>
@@ -81,9 +121,15 @@ export default function IdiotDashboard() {
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
                 />
-                <button className="btn-primary whitespace-nowrap">
-                  Deposit
+                <button
+                  className="btn-primary whitespace-nowrap"
+                  disabled={depositLoading || !depositAmount}
+                  onClick={handleDeposit}
+                >
+                  {depositLoading ? "Depositing..." : "Deposit"}
                 </button>
               </div>
               <p className="text-xs text-slate-500 mt-1">
@@ -97,9 +143,15 @@ export default function IdiotDashboard() {
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
                 />
-                <button className="btn-secondary whitespace-nowrap">
-                  Withdraw
+                <button
+                  className="btn-secondary whitespace-nowrap"
+                  disabled={withdrawLoading || !withdrawAmount}
+                  onClick={handleWithdraw}
+                >
+                  {withdrawLoading ? "Withdrawing..." : "Withdraw"}
                 </button>
               </div>
               <p className="text-xs text-slate-500 mt-1">
@@ -117,7 +169,11 @@ export default function IdiotDashboard() {
             Available Signals
           </h2>
           <div className="flex gap-2">
-            <select className="input w-auto">
+            <select
+              className="input w-auto"
+              value={sportFilter}
+              onChange={(e) => setSportFilter(e.target.value)}
+            >
               <option value="">All Sports</option>
               <option value="NFL">NFL</option>
               <option value="NBA">NBA</option>
@@ -127,12 +183,42 @@ export default function IdiotDashboard() {
             </select>
           </div>
         </div>
-        <div className="card">
-          <p className="text-center text-slate-500 py-8">
-            No signals available at the moment. Check back soon or watch for new
-            SignalCommitted events on-chain.
-          </p>
-        </div>
+        {signalsLoading ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">Loading signals...</p>
+          </div>
+        ) : signals.length === 0 ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">
+              No signals available at the moment. Check back soon or watch for new
+              SignalCommitted events on-chain.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {signals.map((s) => (
+              <Link
+                key={s.signalId}
+                href={`/idiot/signal/${s.signalId}`}
+                className="card block hover:border-idiot-300 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">
+                      {s.sport} &middot; by {truncateAddress(s.genius)}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Max Price: {formatBps(s.maxPriceBps)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="text-xs text-idiot-500 font-medium">
+                    View &rarr;
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Purchase History */}

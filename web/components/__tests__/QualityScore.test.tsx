@@ -17,18 +17,18 @@ describe("QualityScore", () => {
   });
 
   describe("positive scores", () => {
-    it("renders high positive score (> 5) with green-400 styling", () => {
+    it("renders high positive score (> 5) with green-600 styling", () => {
       const { container } = render(<QualityScore score={8} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-green-400");
-      expect(wrapper.className).toContain("bg-green-500/10");
+      expect(wrapper.className).toContain("text-green-600");
+      expect(wrapper.className).toContain("bg-green-100");
     });
 
-    it("renders low positive score (0 < score <= 5) with green-300 styling", () => {
+    it("renders low positive score (0 < score <= 5) with green-500 styling", () => {
       const { container } = render(<QualityScore score={3} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-green-300");
-      expect(wrapper.className).toContain("bg-green-500/5");
+      expect(wrapper.className).toContain("text-green-500");
+      expect(wrapper.className).toContain("bg-green-50");
     });
 
     it("shows + sign for positive scores", () => {
@@ -39,24 +39,24 @@ describe("QualityScore", () => {
   });
 
   describe("negative scores", () => {
-    it("renders mildly negative score (-5 < score < 0) with orange styling", () => {
+    it("renders mildly negative score (-5 < score < 0) with genius-500 styling", () => {
       const { container } = render(<QualityScore score={-3} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-orange-400");
-      expect(wrapper.className).toContain("bg-orange-500/10");
+      expect(wrapper.className).toContain("text-genius-500");
+      expect(wrapper.className).toContain("bg-orange-50");
     });
 
     it("renders very negative score (<= -5) with red styling", () => {
       const { container } = render(<QualityScore score={-8} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-red-400");
-      expect(wrapper.className).toContain("bg-red-500/10");
+      expect(wrapper.className).toContain("text-red-600");
+      expect(wrapper.className).toContain("bg-red-100");
     });
 
     it("renders exactly -5 with red styling", () => {
       const { container } = render(<QualityScore score={-5} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-red-400");
+      expect(wrapper.className).toContain("text-red-600");
     });
 
     it("does not show + sign for negative scores", () => {
@@ -70,11 +70,11 @@ describe("QualityScore", () => {
   });
 
   describe("zero score", () => {
-    it("renders zero with gray styling", () => {
+    it("renders zero with slate styling", () => {
       const { container } = render(<QualityScore score={0} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-gray-400");
-      expect(wrapper.className).toContain("bg-gray-500/10");
+      expect(wrapper.className).toContain("text-slate-500");
+      expect(wrapper.className).toContain("bg-slate-100");
     });
 
     it("does not show + sign for zero", () => {
@@ -112,22 +112,22 @@ describe("QualityScore", () => {
   });
 
   describe("boundary values", () => {
-    it("renders score of exactly 5 with green-300 (not green-400)", () => {
+    it("renders score of exactly 5 with green-500 (not green-600)", () => {
       const { container } = render(<QualityScore score={5} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-green-300");
+      expect(wrapper.className).toContain("text-green-500");
     });
 
-    it("renders score of 6 with green-400", () => {
+    it("renders score of 6 with green-600", () => {
       const { container } = render(<QualityScore score={6} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-green-400");
+      expect(wrapper.className).toContain("text-green-600");
     });
 
-    it("renders score of -4 with orange styling", () => {
+    it("renders score of -4 with genius-500 styling", () => {
       const { container } = render(<QualityScore score={-4} />);
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper.className).toContain("text-orange-400");
+      expect(wrapper.className).toContain("text-genius-500");
     });
   });
 });

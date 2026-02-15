@@ -189,8 +189,8 @@ describe("SignalCard", () => {
         />
       );
       const badge = screen.getByText("Active");
-      expect(badge.className).toContain("text-green-400");
-      expect(badge.className).toContain("bg-green-500/20");
+      expect(badge.className).toContain("text-green-600");
+      expect(badge.className).toContain("bg-green-100");
     });
 
     it("applies blue styling for Purchased status", () => {
@@ -201,11 +201,11 @@ describe("SignalCard", () => {
         />
       );
       const badge = screen.getByText("Purchased");
-      expect(badge.className).toContain("text-blue-400");
-      expect(badge.className).toContain("bg-blue-500/20");
+      expect(badge.className).toContain("text-blue-600");
+      expect(badge.className).toContain("bg-blue-100");
     });
 
-    it("applies gray styling for Settled status", () => {
+    it("applies slate styling for Settled status", () => {
       render(
         <SignalCard
           signalId="1"
@@ -213,8 +213,8 @@ describe("SignalCard", () => {
         />
       );
       const badge = screen.getByText("Settled");
-      expect(badge.className).toContain("text-gray-400");
-      expect(badge.className).toContain("bg-gray-500/20");
+      expect(badge.className).toContain("text-slate-500");
+      expect(badge.className).toContain("bg-slate-100");
     });
 
     it("applies red styling for Voided status", () => {
@@ -225,8 +225,8 @@ describe("SignalCard", () => {
         />
       );
       const badge = screen.getByText("Voided");
-      expect(badge.className).toContain("text-red-400");
-      expect(badge.className).toContain("bg-red-500/20");
+      expect(badge.className).toContain("text-red-600");
+      expect(badge.className).toContain("bg-red-100");
     });
   });
 
@@ -292,10 +292,10 @@ describe("SignalCard", () => {
       );
       const dateStr = new Date(Number(pastTs) * 1000).toLocaleDateString();
       const dateEl = screen.getByText(dateStr);
-      expect(dateEl.className).toContain("text-red-400");
+      expect(dateEl.className).toContain("text-red-600");
     });
 
-    it("applies white text to future dates", () => {
+    it("applies slate text to future dates", () => {
       const futureTs = BigInt(Math.floor(Date.now() / 1000) + 86400);
       render(
         <SignalCard
@@ -305,7 +305,7 @@ describe("SignalCard", () => {
       );
       const dateStr = new Date(Number(futureTs) * 1000).toLocaleDateString();
       const dateEl = screen.getByText(dateStr);
-      expect(dateEl.className).toContain("text-white");
+      expect(dateEl.className).toContain("text-slate-900");
     });
   });
 

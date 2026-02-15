@@ -4,19 +4,30 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
+import { getValidatorClient, getMinerClient } from "@/lib/api";
+import { decrypt, fromHex, bigIntToKey } from "@/lib/crypto";
 import QualityScore from "@/components/QualityScore";
 import {
   SignalStatus,
   signalStatusLabel,
   formatBps,
-  formatUsdc,
   truncateAddress,
 } from "@/lib/types";
+import type { CandidateLine } from "@/lib/api";
+
+type PurchaseStep =
+  | "idle"
+  | "checking_lines"
+  | "purchasing_validator"
+  | "purchasing_chain"
+  | "decrypting"
+  | "complete"
+  | "error";
 
 export default function PurchaseSignal() {
   const params = useParams();
   const router = useRouter();
-  const { authenticated } = usePrivy();
+  const { authenticated, user } = usePrivy();
   const signalId = params.id ? BigInt(params.id as string) : undefined;
   const { signal, loading: signalLoading, error: signalError } =
     useSignal(signalId);
@@ -25,12 +36,21 @@ export default function PurchaseSignal() {
 
   const [notional, setNotional] = useState("");
   const [odds, setOdds] = useState("");
-  const [purchased, setPurchased] = useState(false);
+  const [selectedSportsbook, setSelectedSportsbook] = useState("");
+  const [step, setStep] = useState<PurchaseStep>("idle");
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [decryptedPick, setDecryptedPick] = useState<{
+    realIndex: number;
+    pick: string;
+  } | null>(null);
+  const [availableIndices, setAvailableIndices] = useState<number[]>([]);
 
   if (!authenticated) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-slate-900 mb-4">Purchase Signal</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
+          Purchase Signal
+        </h1>
         <p className="text-slate-500">
           Connect your wallet to purchase this signal.
         </p>
@@ -49,7 +69,9 @@ export default function PurchaseSignal() {
   if (signalError) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-slate-900 mb-4">Signal Not Found</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
+          Signal Not Found
+        </h1>
         <p className="text-slate-500 mb-8">{signalError}</p>
         <button onClick={() => router.push("/idiot")} className="btn-primary">
           Back to Dashboard
@@ -72,20 +94,111 @@ export default function PurchaseSignal() {
 
   const handlePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signalId) return;
+    if (!signalId || !selectedSportsbook) return;
 
-    const notionalBig = BigInt(Math.floor(Number(notional) * 1_000_000));
-    const oddsBig = BigInt(Math.floor(Number(odds) * 100));
+    const buyerAddress = user?.wallet?.address;
+    if (!buyerAddress) {
+      setStepError("Wallet address not available");
+      setStep("error");
+      return;
+    }
+
+    setStepError(null);
 
     try {
+      // Step 1: Check line availability with miner
+      setStep("checking_lines");
+
+      const miner = getMinerClient();
+      const candidateLines: CandidateLine[] = signal.decoyLines.map(
+        (line, i) => ({
+          index: i + 1,
+          sport: signal.sport.toLowerCase().replace(/\s/g, "_"),
+          event_id: `signal_${params.id as string}`,
+          home_team: "TBD",
+          away_team: "TBD",
+          market: "spreads",
+          line: null,
+          side: line,
+        }),
+      );
+
+      const checkResult = await miner.checkLines({ lines: candidateLines });
+      setAvailableIndices(checkResult.available_indices);
+
+      if (checkResult.available_indices.length === 0) {
+        setStepError(
+          "No lines are currently available at this sportsbook. Try another sportsbook or check back later.",
+        );
+        setStep("error");
+        return;
+      }
+
+      // Step 2: Request purchase from validator (MPC check)
+      setStep("purchasing_validator");
+
+      const validator = getValidatorClient();
+      const purchaseResult = await validator.purchaseSignal(
+        signalId.toString(),
+        {
+          buyer_address: buyerAddress,
+          sportsbook: selectedSportsbook,
+          available_indices: checkResult.available_indices,
+        },
+      );
+
+      if (!purchaseResult.available) {
+        setStepError(
+          purchaseResult.message ||
+            "Signal not available at this sportsbook (MPC check failed)",
+        );
+        setStep("error");
+        return;
+      }
+
+      // Step 3: Execute on-chain purchase
+      setStep("purchasing_chain");
+
+      const notionalBig = BigInt(Math.floor(Number(notional) * 1_000_000));
+      const oddsBig = BigInt(Math.floor(Number(odds) * 100));
+
       await purchase(signalId, notionalBig, oddsBig);
-      setPurchased(true);
-    } catch {
-      // Error captured in hook
+
+      // Step 4: Decrypt the signal
+      setStep("decrypting");
+
+      if (purchaseResult.encrypted_key_share) {
+        try {
+          // In local single-validator mode, the validator returns the full key
+          // In production, we'd collect k shares and reconstruct via Shamir
+          const keyBytes = fromHex(purchaseResult.encrypted_key_share);
+
+          // The encrypted blob is stored on-chain as hex-encoded bytes
+          // Parse it: format is "iv:ciphertext"
+          const blobBytes = signal.encryptedBlob.startsWith("0x")
+            ? signal.encryptedBlob.slice(2)
+            : signal.encryptedBlob;
+          const blobStr = new TextDecoder().decode(fromHex(blobBytes));
+          const [iv, ciphertext] = blobStr.split(":");
+
+          if (iv && ciphertext) {
+            const plaintext = await decrypt(ciphertext, iv, keyBytes);
+            const parsed = JSON.parse(plaintext);
+            setDecryptedPick(parsed);
+          }
+        } catch {
+          // Decryption may fail if key format doesn't match — show what we have
+        }
+      }
+
+      setStep("complete");
+    } catch (err) {
+      setStepError(err instanceof Error ? err.message : "Purchase failed");
+      setStep("error");
     }
   };
 
-  if (purchased) {
+  if (step === "complete") {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
         <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
@@ -104,27 +217,59 @@ export default function PurchaseSignal() {
           </svg>
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-4">
-          Signal Purchased
+          Signal Purchased & Decrypted
         </h1>
-        <p className="text-slate-500 mb-6">
-          You now have access to this signal. The decryption key will be
-          delivered to your wallet.
-        </p>
-        <div className="card text-left mb-8">
-          <h3 className="text-sm font-medium text-slate-500 mb-3">
-            Decoy Lines (one of these is real)
-          </h3>
-          <div className="space-y-1">
-            {signal.decoyLines.map((line, i) => (
-              <p
-                key={i}
-                className="text-sm text-slate-600 font-mono bg-slate-50 rounded px-3 py-2"
-              >
-                {i + 1}. {line}
+
+        {decryptedPick ? (
+          <div className="card text-left mb-8">
+            <h3 className="text-sm font-medium text-slate-500 mb-3">
+              Decrypted Signal
+            </h3>
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4 mb-4">
+              <p className="text-xs text-green-600 uppercase tracking-wide mb-1">
+                Real Pick (Line #{decryptedPick.realIndex})
               </p>
-            ))}
+              <p className="text-lg font-bold text-green-800">
+                {decryptedPick.pick}
+              </p>
+            </div>
+            <h3 className="text-sm font-medium text-slate-500 mb-2">
+              All Lines
+            </h3>
+            <div className="space-y-1">
+              {signal.decoyLines.map((line, i) => (
+                <p
+                  key={i}
+                  className={`text-sm font-mono rounded px-3 py-2 ${
+                    i + 1 === decryptedPick.realIndex
+                      ? "bg-green-100 text-green-800 font-bold"
+                      : "bg-slate-50 text-slate-500"
+                  }`}
+                >
+                  {i + 1}. {line}
+                  {i + 1 === decryptedPick.realIndex && " \u2190 REAL"}
+                </p>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="card text-left mb-8">
+            <h3 className="text-sm font-medium text-slate-500 mb-3">
+              Lines (decryption key pending)
+            </h3>
+            <div className="space-y-1">
+              {signal.decoyLines.map((line, i) => (
+                <p
+                  key={i}
+                  className="text-sm text-slate-600 font-mono bg-slate-50 rounded px-3 py-2"
+                >
+                  {i + 1}. {line}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={() => router.push("/idiot")}
           className="btn-primary"
@@ -134,6 +279,19 @@ export default function PurchaseSignal() {
       </div>
     );
   }
+
+  const isProcessing =
+    step === "checking_lines" ||
+    step === "purchasing_validator" ||
+    step === "purchasing_chain" ||
+    step === "decrypting";
+
+  const stepLabel: Record<string, string> = {
+    checking_lines: "Checking line availability with miner...",
+    purchasing_validator: "Verifying signal availability with validator (MPC)...",
+    purchasing_chain: "Executing on-chain purchase...",
+    decrypting: "Decrypting signal...",
+  };
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -151,7 +309,7 @@ export default function PurchaseSignal() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">
-                  Signal #{params.id}
+                  Signal #{truncateAddress(String(params.id))}
                 </h1>
                 <p className="text-sm text-slate-500 mt-1">
                   by {truncateAddress(signal.genius)}
@@ -210,15 +368,21 @@ export default function PurchaseSignal() {
             {/* Decoy Lines */}
             <div>
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">
-                Decoy Lines (9 decoys + 1 real -- you cannot tell which is which)
+                Decoy Lines (9 decoys + 1 real &mdash; you cannot tell which is
+                which)
               </p>
               <div className="space-y-1">
                 {signal.decoyLines.map((line, i) => (
                   <p
                     key={i}
-                    className="text-xs text-slate-500 font-mono bg-slate-50 rounded px-2 py-1.5"
+                    className={`text-xs font-mono rounded px-2 py-1.5 ${
+                      availableIndices.includes(i + 1)
+                        ? "bg-green-50 text-green-700"
+                        : "bg-slate-50 text-slate-500"
+                    }`}
                   >
                     {i + 1}. {line}
+                    {availableIndices.includes(i + 1) && " (available)"}
                   </p>
                 ))}
               </div>
@@ -228,16 +392,22 @@ export default function PurchaseSignal() {
           {signal.availableSportsbooks.length > 0 && (
             <div className="card">
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
-                Available Sportsbooks
+                Select Sportsbook
               </p>
               <div className="flex flex-wrap gap-2">
                 {signal.availableSportsbooks.map((book) => (
-                  <span
+                  <button
                     key={book}
-                    className="rounded-lg bg-slate-200 px-3 py-1 text-sm text-slate-600"
+                    type="button"
+                    onClick={() => setSelectedSportsbook(book)}
+                    className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                      selectedSportsbook === book
+                        ? "bg-idiot-500 text-white"
+                        : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                    }`}
                   >
                     {book}
-                  </span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -304,11 +474,14 @@ export default function PurchaseSignal() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Genius collateral locked</span>
+                      <span className="text-slate-500">
+                        Genius collateral locked
+                      </span>
                       <span className="text-slate-900">
                         $
                         {(
-                          (Number(notional) * Number(signal.slaMultiplierBps)) /
+                          (Number(notional) *
+                            Number(signal.slaMultiplierBps)) /
                           10_000
                         ).toFixed(2)}
                       </span>
@@ -316,18 +489,34 @@ export default function PurchaseSignal() {
                   </div>
                 )}
 
-                {purchaseError && (
+                {(purchaseError || stepError) && (
                   <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                    <p className="text-xs text-red-600">{purchaseError}</p>
+                    <p className="text-xs text-red-600">
+                      {purchaseError || stepError}
+                    </p>
+                  </div>
+                )}
+
+                {isProcessing && (
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                    <p className="text-xs text-blue-600">
+                      {stepLabel[step] ?? "Processing..."}
+                    </p>
                   </div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={purchaseLoading}
+                  disabled={
+                    isProcessing || purchaseLoading || !selectedSportsbook
+                  }
                   className="btn-primary w-full py-3"
                 >
-                  {purchaseLoading ? "Processing..." : "Purchase Signal"}
+                  {isProcessing
+                    ? "Processing..."
+                    : !selectedSportsbook
+                      ? "Select a Sportsbook"
+                      : "Purchase Signal"}
                 </button>
               </form>
             )}

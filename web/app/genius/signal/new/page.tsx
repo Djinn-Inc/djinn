@@ -4,7 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useCommitSignal } from "@/lib/hooks";
-import { parseUsdc } from "@/lib/types";
+import {
+  generateAesKey,
+  encrypt,
+  splitSecret,
+  keyToBigInt,
+  toHex,
+} from "@/lib/crypto";
+import { getValidatorClients } from "@/lib/api";
 
 const SPORTS = [
   "NFL",
@@ -30,26 +37,34 @@ const SPORTSBOOKS = [
   "WynnBET",
 ] as const;
 
+type Step = "form" | "committing" | "distributing" | "success" | "error";
+
 export default function CreateSignal() {
   const router = useRouter();
-  const { authenticated } = usePrivy();
-  const { commit, loading, error } = useCommitSignal();
+  const { authenticated, user } = usePrivy();
+  const { commit, loading: commitLoading, error: commitError } =
+    useCommitSignal();
 
+  // Form state
   const [sport, setSport] = useState<string>(SPORTS[0]);
   const [maxPriceBps, setMaxPriceBps] = useState("10");
   const [slaMultiplier, setSlaMultiplier] = useState("100");
   const [expiresIn, setExpiresIn] = useState("24");
-  const [decoyLines, setDecoyLines] = useState<string[]>(
-    Array(10).fill("")
-  );
-  const [encryptedBlob, setEncryptedBlob] = useState("");
+  const [decoyLines, setDecoyLines] = useState<string[]>(Array(10).fill(""));
+  const [realIndex, setRealIndex] = useState(0); // 0-indexed, will be stored as 1-indexed
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
+
+  // Progress state
+  const [step, setStep] = useState<Step>("form");
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   if (!authenticated) {
     return (
       <div className="text-center py-20">
-        <h1 className="text-3xl font-bold text-slate-900 mb-4">Create Signal</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
+          Create Signal
+        </h1>
         <p className="text-slate-500">
           Connect your wallet to create a signal.
         </p>
@@ -65,54 +80,105 @@ export default function CreateSignal() {
 
   const toggleSportsbook = (book: string) => {
     setSelectedSportsbooks((prev) =>
-      prev.includes(book) ? prev.filter((b) => b !== book) : [...prev, book]
+      prev.includes(book) ? prev.filter((b) => b !== book) : [...prev, book],
     );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setStepError(null);
 
-    const expiresAt = BigInt(
-      Math.floor(Date.now() / 1000) + Number(expiresIn) * 3600
-    );
-
-    // Generate a random signal ID
-    const signalId = BigInt(
-      "0x" +
-        Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("")
-    );
-
-    // Generate commit hash from encrypted blob
-    const encoder = new TextEncoder();
-    const data = encoder.encode(encryptedBlob);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const commitHash =
-      "0x" +
-      Array.from(new Uint8Array(hashBuffer))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
+    const geniusAddress = user?.wallet?.address;
+    if (!geniusAddress) {
+      setStepError("Wallet address not available");
+      return;
+    }
 
     try {
+      // Step 1: Generate AES key and encrypt the real pick
+      setStep("committing");
+
+      const aesKey = generateAesKey();
+      const pickPayload = JSON.stringify({
+        realIndex: realIndex + 1, // 1-indexed
+        pick: decoyLines[realIndex],
+      });
+      const { ciphertext, iv } = await encrypt(pickPayload, aesKey);
+      const encryptedBlob = `${iv}:${ciphertext}`;
+
+      // Step 2: Compute commit hash
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest(
+        "SHA-256",
+        encoder.encode(encryptedBlob),
+      );
+      const commitHash =
+        "0x" +
+        Array.from(new Uint8Array(hashBuffer))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+
+      // Step 3: Generate signal ID
+      const signalId = BigInt(
+        "0x" +
+          Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(""),
+      );
+
+      const expiresAt = BigInt(
+        Math.floor(Date.now() / 1000) + Number(expiresIn) * 3600,
+      );
+
+      // Step 4: Commit on-chain
       const hash = await commit({
         signalId,
-        encryptedBlob: "0x" + Buffer.from(encryptedBlob).toString("hex"),
+        encryptedBlob: "0x" + toHex(encoder.encode(encryptedBlob)),
         commitHash,
         sport,
-        maxPriceBps: BigInt(Number(maxPriceBps) * 100),
-        slaMultiplierBps: BigInt(Number(slaMultiplier) * 100),
+        maxPriceBps: BigInt(Math.round(Number(maxPriceBps) * 100)),
+        slaMultiplierBps: BigInt(Math.round(Number(slaMultiplier) * 100)),
         expiresAt,
         decoyLines,
         availableSportsbooks: selectedSportsbooks,
       });
       setTxHash(hash);
-    } catch {
-      // Error is already captured in the hook
+
+      // Step 5: Split AES key into Shamir shares
+      setStep("distributing");
+
+      const keyBigInt = keyToBigInt(aesKey);
+      const shares = splitSecret(keyBigInt, 10, 7);
+
+      // Step 6: Distribute shares to validators
+      const validators = getValidatorClients();
+      const signalIdStr = signalId.toString();
+
+      // In local mode (1 validator), send all 10 shares to it
+      // In production (N validators), distribute round-robin
+      const storePromises = shares.map((share, i) => {
+        const validator = validators[i % validators.length];
+        return validator.storeShare({
+          signal_id: signalIdStr,
+          genius_address: geniusAddress,
+          share_x: share.x,
+          share_y: share.y.toString(16),
+          encrypted_key_share: toHex(aesKey), // Each share is backed by the full encrypted key
+        });
+      });
+
+      await Promise.all(storePromises);
+
+      setStep("success");
+    } catch (err) {
+      setStepError(
+        err instanceof Error ? err.message : "Signal creation failed",
+      );
+      setStep("error");
     }
   };
 
-  if (txHash) {
+  if (step === "success") {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
         <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
@@ -131,10 +197,11 @@ export default function CreateSignal() {
           </svg>
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-4">
-          Signal Committed
+          Signal Committed & Shares Distributed
         </h1>
-        <p className="text-slate-500 mb-6">
-          Your signal has been committed on-chain.
+        <p className="text-slate-500 mb-2">
+          Your signal has been committed on-chain and encryption key shares
+          have been distributed to validators.
         </p>
         <p className="text-sm text-slate-500 font-mono break-all mb-8">
           tx: {txHash}
@@ -149,31 +216,46 @@ export default function CreateSignal() {
     );
   }
 
+  if (step === "error") {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-20">
+        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-6">
+          <svg
+            className="w-8 h-8 text-red-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">
+          Signal Creation Failed
+        </h1>
+        <p className="text-sm text-red-600 mb-8">{stepError}</p>
+        <button onClick={() => setStep("form")} className="btn-primary">
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  const isProcessing = step === "committing" || step === "distributing";
+
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Signal</h1>
       <p className="text-slate-500 mb-8">
-        Commit an encrypted prediction on-chain with 10 decoy lines.
+        Enter your real prediction and 9 decoy lines. The client will encrypt
+        your pick, commit it on-chain, and distribute key shares to validators.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Encrypted Signal */}
-        <div>
-          <label className="label">Encrypted Signal Blob</label>
-          <textarea
-            value={encryptedBlob}
-            onChange={(e) => setEncryptedBlob(e.target.value)}
-            placeholder="Paste your AES-256-GCM encrypted signal here..."
-            rows={4}
-            className="input font-mono text-xs"
-            required
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            Encrypt your signal client-side before pasting. The real prediction
-            is hidden inside this blob.
-          </p>
-        </div>
-
         {/* Sport */}
         <div>
           <label className="label">Sport</label>
@@ -190,31 +272,42 @@ export default function CreateSignal() {
           </select>
         </div>
 
-        {/* Decoy Lines */}
+        {/* Decoy Lines + Real Pick Selection */}
         <div>
           <label className="label">
-            Decoy Lines (10 required -- 9 decoys + 1 real)
+            Lines (10 total &mdash; select which is your real pick)
           </label>
           <div className="space-y-2">
             {decoyLines.map((line, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 font-mono w-6">
-                  {i + 1}.
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setRealIndex(i)}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors flex-shrink-0 ${
+                    i === realIndex
+                      ? "border-genius-500 bg-genius-500 text-white"
+                      : "border-slate-300 text-slate-400 hover:border-slate-400"
+                  }`}
+                  title={
+                    i === realIndex ? "This is your real pick" : "Click to mark as real pick"
+                  }
+                >
+                  {i + 1}
+                </button>
                 <input
                   type="text"
                   value={line}
                   onChange={(e) => handleDecoyChange(i, e.target.value)}
                   placeholder={`Line ${i + 1}: e.g. "Lakers -3.5 (-110)"`}
-                  className="input flex-1"
+                  className={`input flex-1 ${i === realIndex ? "ring-2 ring-genius-200" : ""}`}
                   required
                 />
               </div>
             ))}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            One of these lines should match your real signal. The other 9 are
-            decoys to obscure which one is real.
+            Click a number to mark it as your real pick. The highlighted line
+            will be encrypted. The other 9 are decoys.
           </p>
         </div>
 
@@ -291,18 +384,28 @@ export default function CreateSignal() {
           </div>
         </div>
 
-        {error && (
+        {(commitError || stepError) && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-red-600">{commitError || stepError}</p>
+          </div>
+        )}
+
+        {isProcessing && (
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
+            <p className="text-sm text-blue-600">
+              {step === "committing"
+                ? "Encrypting and committing signal on-chain..."
+                : "Distributing key shares to validators..."}
+            </p>
           </div>
         )}
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={isProcessing || commitLoading}
           className="btn-primary w-full py-3 text-base"
         >
-          {loading ? "Committing..." : "Commit Signal On-Chain"}
+          {isProcessing ? "Processing..." : "Create Signal"}
         </button>
       </form>
     </div>

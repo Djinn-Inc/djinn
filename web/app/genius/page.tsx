@@ -1,15 +1,49 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import QualityScore from "@/components/QualityScore";
-import { useCollateral } from "@/lib/hooks";
-import { formatUsdc } from "@/lib/types";
+import { useCollateral, useDepositCollateral, useWithdrawCollateral } from "@/lib/hooks";
+import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
+import { SignalStatus } from "@/lib/types";
 
 export default function GeniusDashboard() {
   const { authenticated, user } = usePrivy();
   const address = user?.wallet?.address;
-  const { deposit, locked, available, loading } = useCollateral(address);
+  const { deposit, locked, available, loading, refresh: refreshCollateral } = useCollateral(address);
+  const { deposit: depositCollateral, loading: depositLoading } = useDepositCollateral();
+  const { withdraw: withdrawCollateral, loading: withdrawLoading } = useWithdrawCollateral();
+  const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address);
+
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const handleDeposit = async () => {
+    if (!depositAmount) return;
+    setTxError(null);
+    try {
+      await depositCollateral(parseUsdc(depositAmount));
+      setDepositAmount("");
+      refreshCollateral();
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Deposit failed");
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawAmount) return;
+    setTxError(null);
+    try {
+      await withdrawCollateral(parseUsdc(withdrawAmount));
+      setWithdrawAmount("");
+      refreshCollateral();
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Withdraw failed");
+    }
+  };
 
   if (!authenticated) {
     return (
@@ -83,12 +117,36 @@ export default function GeniusDashboard() {
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Active Signals
         </h2>
-        <div className="card">
-          <p className="text-center text-slate-500 py-8">
-            No active signals. Create your first signal to start building your
-            track record.
-          </p>
-        </div>
+        {signalsLoading ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">Loading signals...</p>
+          </div>
+        ) : mySignals.length === 0 ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">
+              No active signals. Create your first signal to start building your
+              track record.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {mySignals.map((s) => (
+              <div key={s.signalId} className="card flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    {s.sport} &middot; Signal #{truncateAddress(s.signalId)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Max Price: {formatBps(s.maxPriceBps)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
+                  </p>
+                </div>
+                <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200">
+                  Active
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Audit History */}
@@ -128,6 +186,11 @@ export default function GeniusDashboard() {
           Collateral Management
         </h2>
         <div className="card">
+          {txError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4">
+              <p className="text-xs text-red-600">{txError}</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="label">Deposit USDC Collateral</label>
@@ -136,9 +199,15 @@ export default function GeniusDashboard() {
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
                 />
-                <button className="btn-primary whitespace-nowrap">
-                  Deposit
+                <button
+                  className="btn-primary whitespace-nowrap"
+                  disabled={depositLoading || !depositAmount}
+                  onClick={handleDeposit}
+                >
+                  {depositLoading ? "Depositing..." : "Deposit"}
                 </button>
               </div>
             </div>
@@ -149,9 +218,15 @@ export default function GeniusDashboard() {
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
                 />
-                <button className="btn-secondary whitespace-nowrap">
-                  Withdraw
+                <button
+                  className="btn-secondary whitespace-nowrap"
+                  disabled={withdrawLoading || !withdrawAmount}
+                  onClick={handleWithdraw}
+                >
+                  {withdrawLoading ? "Withdrawing..." : "Withdraw"}
                 </button>
               </div>
             </div>

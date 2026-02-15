@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from djinn_validator.api.models import (
     AnalyticsRequest,
@@ -53,6 +54,14 @@ def create_app(
         title="Djinn Validator",
         version="0.1.0",
         description="Djinn Protocol Bittensor Validator API",
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.post("/v1/signal", response_model=StoreShareResponse)
