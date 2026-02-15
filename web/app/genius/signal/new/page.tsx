@@ -167,7 +167,17 @@ export default function CreateSignal() {
         });
       });
 
-      await Promise.all(storePromises);
+      const results = await Promise.allSettled(storePromises);
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (succeeded < 7) {
+        throw new Error(
+          `Only ${succeeded}/10 shares stored (need 7). ${failed} failed. Signal creation aborted.`,
+        );
+      }
+      if (failed > 0) {
+        console.warn(`${failed}/10 share stores failed, but ${succeeded} succeeded (threshold: 7)`);
+      }
 
       setStep("success");
     } catch (err) {
@@ -338,6 +348,7 @@ export default function CreateSignal() {
               onChange={(e) => setSlaMultiplier(e.target.value)}
               placeholder="100"
               min="100"
+              max="1000"
               step="1"
               className="input"
               required

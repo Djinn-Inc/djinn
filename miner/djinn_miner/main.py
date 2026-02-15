@@ -8,6 +8,7 @@ The BT loop keeps the metagraph fresh and re-serves the axon if needed.
 from __future__ import annotations
 
 import asyncio
+import signal
 
 import structlog
 import uvicorn
@@ -53,6 +54,7 @@ async def run_server(app: object, host: str, port: int) -> None:
 async def async_main() -> None:
     """Start miner with concurrent API server and BT sync."""
     config = Config()
+    config.validate()
 
     # Session capture for proof generation
     session_capture = SessionCapture()
@@ -109,11 +111,27 @@ async def async_main() -> None:
     )
 
     # Run API server and BT sync loop concurrently
-    tasks = [run_server(app, config.api_host, config.api_port)]
+    running_tasks = [asyncio.create_task(run_server(app, config.api_host, config.api_port))]
     if bt_ok:
-        tasks.append(bt_sync_loop(neuron, health_tracker))
+        running_tasks.append(asyncio.create_task(bt_sync_loop(neuron, health_tracker)))
 
-    await asyncio.gather(*tasks)
+    shutdown_event = asyncio.Event()
+
+    def _shutdown(sig: signal.Signals) -> None:
+        log.info("shutdown_signal", signal=sig.name)
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _shutdown, sig)
+
+    await shutdown_event.wait()
+    log.info("shutting_down")
+    for t in running_tasks:
+        t.cancel()
+    await asyncio.gather(*running_tasks, return_exceptions=True)
+    await odds_client.close()
+    log.info("shutdown_complete")
 
 
 def main() -> None:

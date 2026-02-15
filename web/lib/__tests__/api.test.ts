@@ -42,7 +42,7 @@ describe("ValidatorClient", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:8421/v1/signal",
-        {
+        expect.objectContaining({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -52,7 +52,7 @@ describe("ValidatorClient", () => {
             share_y: "0a1b2c",
             encrypted_key_share: "deadbeef",
           }),
-        },
+        }),
       );
 
       expect(result.signal_id).toBe("abc123");
@@ -140,7 +140,10 @@ describe("ValidatorClient", () => {
       );
 
       const result = await client.health();
-      expect(mockFetch).toHaveBeenCalledWith("http://localhost:8421/health");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8421/health",
+        expect.objectContaining({ signal: expect.anything() }),
+      );
       expect(result.status).toBe("ok");
       expect(result.shares_held).toBe(5);
     });
@@ -227,7 +230,10 @@ describe("MinerClient", () => {
       );
 
       const result = await client.health();
-      expect(mockFetch).toHaveBeenCalledWith("http://localhost:8422/health");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8422/health",
+        expect.objectContaining({ signal: expect.anything() }),
+      );
       expect(result.uid).toBe(7);
       expect(result.odds_api_connected).toBe(true);
     });

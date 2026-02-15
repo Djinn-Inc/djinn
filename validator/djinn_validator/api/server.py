@@ -287,8 +287,8 @@ def create_app(
         if chain_client:
             try:
                 chain_ok = await chain_client.is_connected()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("chain_health_check_failed", error=str(e))
 
         return HealthResponse(
             status="ok",

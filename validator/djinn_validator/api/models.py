@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+_HEX_RE = re.compile(r"^(0x)?[0-9a-fA-F]+$")
+
+
+def _validate_hex(v: str, field_name: str) -> str:
+    if not _HEX_RE.match(v):
+        raise ValueError(f"{field_name} must be a hex string")
+    return v
 
 
 class StoreShareRequest(BaseModel):
@@ -13,6 +23,16 @@ class StoreShareRequest(BaseModel):
     share_x: int = Field(ge=1, le=10)
     share_y: str  # Hex-encoded field element
     encrypted_key_share: str  # Hex-encoded encrypted AES key share
+
+    @field_validator("share_y")
+    @classmethod
+    def validate_share_y(cls, v: str) -> str:
+        return _validate_hex(v, "share_y")
+
+    @field_validator("encrypted_key_share")
+    @classmethod
+    def validate_encrypted_key_share(cls, v: str) -> str:
+        return _validate_hex(v, "encrypted_key_share")
 
 
 class StoreShareResponse(BaseModel):
@@ -126,6 +146,11 @@ class MPCRound1Request(BaseModel):
     validator_x: int
     d_value: str  # Hex-encoded
     e_value: str  # Hex-encoded
+
+    @field_validator("d_value", "e_value")
+    @classmethod
+    def validate_hex(cls, v: str) -> str:
+        return _validate_hex(v, "d_value/e_value")
 
 
 class MPCRound1Response(BaseModel):
