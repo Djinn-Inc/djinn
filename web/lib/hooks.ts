@@ -39,8 +39,11 @@ export function useEthersSigner(): ethers.Signer | null {
     if (provider) {
       provider.getSigner().then((s) => {
         if (!cancelled) setSigner(s);
-      }).catch(() => {
-        // Wallet not connected yet
+      }).catch((err: unknown) => {
+        // Expected when wallet not connected; log unexpected errors
+        if (err instanceof Error && !err.message.includes("unknown account")) {
+          console.debug("getSigner failed:", err.message);
+        }
       });
     }
     return () => {
@@ -179,23 +182,28 @@ export function useSignal(signalId: bigint | undefined) {
     setError(null);
 
     const contract = getSignalCommitmentContract(provider);
+    const toBigInt = (v: unknown): bigint => {
+      if (typeof v === "bigint") return v;
+      if (typeof v === "number" || typeof v === "string") return BigInt(v);
+      return 0n;
+    };
     contract
       .getSignal(signalId)
       .then((raw: Record<string, unknown>) => {
         if (cancelled) return;
         setSignal({
-          genius: raw.genius as string,
-          encryptedBlob: raw.encryptedBlob as string,
-          commitHash: raw.commitHash as string,
-          sport: raw.sport as string,
-          maxPriceBps: BigInt(raw.maxPriceBps as string),
-          slaMultiplierBps: BigInt(raw.slaMultiplierBps as string),
-          expiresAt: BigInt(raw.expiresAt as string),
-          decoyLines: raw.decoyLines as string[],
-          availableSportsbooks: raw.availableSportsbooks as string[],
-          walletRecoveryBlob: raw.walletRecoveryBlob as string,
-          status: Number(raw.status),
-          createdAt: BigInt(raw.createdAt as string),
+          genius: String(raw.genius ?? ""),
+          encryptedBlob: String(raw.encryptedBlob ?? ""),
+          commitHash: String(raw.commitHash ?? ""),
+          sport: String(raw.sport ?? ""),
+          maxPriceBps: toBigInt(raw.maxPriceBps),
+          slaMultiplierBps: toBigInt(raw.slaMultiplierBps),
+          expiresAt: toBigInt(raw.expiresAt),
+          decoyLines: Array.isArray(raw.decoyLines) ? raw.decoyLines.map(String) : [],
+          availableSportsbooks: Array.isArray(raw.availableSportsbooks) ? raw.availableSportsbooks.map(String) : [],
+          walletRecoveryBlob: String(raw.walletRecoveryBlob ?? ""),
+          status: Number(raw.status ?? 0),
+          createdAt: toBigInt(raw.createdAt),
         });
       })
       .catch((err: Error) => {
