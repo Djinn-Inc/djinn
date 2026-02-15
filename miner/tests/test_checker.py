@@ -441,3 +441,55 @@ async def test_all_sports_fail_degrades_health() -> None:
         await chk.check(lines)
 
     assert health.get_status().odds_api_connected is False
+
+
+@pytest.mark.asyncio
+async def test_check_empty_odds_returns_all_unavailable(checker: LineChecker) -> None:
+    """When odds data has no matching event, all lines are unavailable."""
+    lines = [
+        CandidateLine(
+            index=1, sport="basketball_nba", event_id="nonexistent-event",
+            home_team="Team A", away_team="Team B",
+            market="h2h", line=None, side="Team A",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_side_matching_case_insensitive(checker: LineChecker) -> None:
+    """Side matching should be case-insensitive."""
+    lines = [
+        CandidateLine(
+            index=1, sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers", away_team="Boston Celtics",
+            market="h2h", line=None,
+            side="los angeles lakers",  # lowercase
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].available is True
+
+
+@pytest.mark.asyncio
+async def test_check_preserves_line_order(checker: LineChecker) -> None:
+    """Results should be in the same order as input lines."""
+    lines = [
+        CandidateLine(
+            index=5, sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers", away_team="Boston Celtics",
+            market="h2h", line=None, side="Los Angeles Lakers",
+        ),
+        CandidateLine(
+            index=2, sport="basketball_nba",
+            event_id="event-lakers-celtics-001",
+            home_team="Los Angeles Lakers", away_team="Boston Celtics",
+            market="spreads", line=-99.0, side="Los Angeles Lakers",
+        ),
+    ]
+    results = await checker.check(lines)
+    assert results[0].index == 5
+    assert results[1].index == 2
