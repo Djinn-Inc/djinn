@@ -218,12 +218,7 @@ def create_app(
         # Initiate purchase
         purchase = purchase_orch.initiate(signal_id, req.buyer_address, req.sportsbook)
         if purchase.status == PurchaseStatus.FAILED:
-            return PurchaseResponse(
-                signal_id=signal_id,
-                status="failed",
-                available=None,
-                message="Purchase initiation failed",
-            )
+            raise HTTPException(status_code=500, detail="Purchase initiation failed")
 
         # Run MPC availability check (multi-validator or single-validator fallback)
         available_set = set(req.available_indices)
@@ -257,12 +252,7 @@ def create_app(
 
         share_data = share_store.release(signal_id, req.buyer_address)
         if share_data is None:
-            return PurchaseResponse(
-                signal_id=signal_id,
-                status="error",
-                available=True,
-                message="Share release failed",
-            )
+            raise HTTPException(status_code=500, detail="Share release failed")
 
         PURCHASES_PROCESSED.labels(result="available").inc()
         ACTIVE_SHARES.set(share_store.count)
