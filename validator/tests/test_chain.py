@@ -172,7 +172,8 @@ class TestClose:
         mock_session = AsyncMock()
         client._w3.provider._request_session = mock_session
         await client.close()
-        mock_session.close.assert_awaited_once()
+        # close() now prefers aclose() if available
+        mock_session.aclose.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_close_without_session(self, client: ChainClient) -> None:

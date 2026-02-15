@@ -266,6 +266,24 @@ class TestInputValidation:
         })
         assert resp.status_code == 422
 
+    def test_purchase_path_rejects_special_chars(self, client: TestClient) -> None:
+        """Signal IDs with spaces/special chars in path should be rejected."""
+        resp = client.post("/v1/signal/sig id with spaces/purchase", json={
+            "buyer_address": "0xBuyer",
+            "sportsbook": "DK",
+            "available_indices": [1, 3, 5],
+        })
+        assert resp.status_code == 400
+
+    def test_outcome_path_rejects_special_chars(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/sig.bad.id/outcome", json={
+            "signal_id": "sig-1",
+            "event_id": "ev-1",
+            "outcome": 1,
+            "validator_hotkey": "5xxx",
+        })
+        assert resp.status_code == 400
+
     def test_nonexistent_endpoint_returns_404(self, client: TestClient) -> None:
         resp = client.get("/v1/doesnotexist")
         assert resp.status_code in (404, 405)

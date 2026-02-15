@@ -289,6 +289,15 @@ class TestOutcomeAttestor:
         attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
         assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE
 
+    def test_consensus_zero_validators(self) -> None:
+        attestor = OutcomeAttestor()
+        result = EventResult(
+            event_id="evt1", home_score=110, away_score=105, status="final"
+        )
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        # Zero validators — should return None, not crash
+        assert attestor.check_consensus("sig1", 0) is None
+
     def test_consensus_disagreement(self) -> None:
         attestor = OutcomeAttestor()
         result = EventResult(

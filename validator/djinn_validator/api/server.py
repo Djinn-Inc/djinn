@@ -80,6 +80,17 @@ from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
 
+import re
+
+_SIGNAL_ID_PATH_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
+
+
+def _validate_signal_id_path(signal_id: str) -> None:
+    """Validate signal_id path parameter format."""
+    if not _SIGNAL_ID_PATH_RE.match(signal_id):
+        raise HTTPException(status_code=400, detail="Invalid signal_id format")
+
+
 if TYPE_CHECKING:
     from djinn_validator.bt.neuron import DjinnValidator
     from djinn_validator.chain.contracts import ChainClient
@@ -180,8 +191,11 @@ def create_app(
         2. Run MPC to check if real index ∈ available indices
         3. If available, release encrypted key share
         """
-        # Clean up expired MPC sessions before starting new ones
+        _validate_signal_id_path(signal_id)
+
+        # Clean up expired MPC sessions and old purchases
         _mpc.cleanup_expired()
+        purchase_orch.cleanup_completed()
 
         # Check we hold a share for this signal
         record = share_store.get(signal_id)
@@ -251,6 +265,7 @@ def create_app(
     @app.post("/v1/signal/{signal_id}/register", response_model=RegisterSignalResponse)
     async def register_signal(signal_id: str, req: RegisterSignalRequest) -> RegisterSignalResponse:
         """Register a purchased signal for automatic outcome tracking."""
+        _validate_signal_id_path(signal_id)
         pick = parse_pick(req.pick)
         metadata = SignalMetadata(
             signal_id=signal_id,
@@ -290,6 +305,7 @@ def create_app(
     @app.post("/v1/signal/{signal_id}/outcome", response_model=OutcomeResponse)
     async def attest_outcome(signal_id: str, req: OutcomeRequest) -> OutcomeResponse:
         """Submit an outcome attestation for a signal."""
+        _validate_signal_id_path(signal_id)
         event_result = await outcome_attestor.fetch_event_result(req.event_id)
         outcome = Outcome(req.outcome)
 

@@ -67,3 +67,31 @@ class TestPurchaseOrchestrator:
         req1 = self.orch.initiate("sig-1", "0xBuyer", "DK")
         req2 = self.orch.initiate("sig-1", "0xBuyer", "FD")
         assert req1 is req2
+
+    def test_cleanup_completed_removes_old_terminal(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        # Set to terminal state with old timestamp
+        req.status = PurchaseStatus.SHARES_RELEASED
+        req.created_at = 0.0  # Very old
+
+        removed = self.orch.cleanup_completed(max_age_seconds=1)
+        assert removed == 1
+        assert self.orch.get("sig-1", "0xBuyer") is None
+
+    def test_cleanup_completed_keeps_recent(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        req.status = PurchaseStatus.SHARES_RELEASED
+        # created_at defaults to now — recent
+
+        removed = self.orch.cleanup_completed(max_age_seconds=86400)
+        assert removed == 0
+
+    def test_cleanup_completed_keeps_active(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        req.created_at = 0.0  # Very old but still active
+
+        removed = self.orch.cleanup_completed(max_age_seconds=1)
+        assert removed == 0  # Not terminal, should not be cleaned

@@ -337,10 +337,14 @@ class OutcomeAttestor:
             home_score = None
             away_score = None
             for s in scores:
+                try:
+                    score_val = int(s.get("score", ""))
+                except (ValueError, TypeError):
+                    continue
                 if s.get("name") == home_team:
-                    home_score = int(s["score"])
+                    home_score = score_val
                 elif s.get("name") == away_team:
-                    away_score = int(s["score"])
+                    away_score = score_val
 
             return EventResult(
                 event_id=event_id,
@@ -438,6 +442,9 @@ class OutcomeAttestor:
         """
         attestations = self._attestations.get(signal_id, [])
         if not attestations:
+            return None
+
+        if total_validators <= 0:
             return None
 
         threshold = int(total_validators * quorum) + 1

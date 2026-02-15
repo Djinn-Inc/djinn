@@ -167,9 +167,18 @@ class ChainClient:
 
     async def close(self) -> None:
         """Close the underlying HTTP provider session."""
+        import asyncio
+
         provider = self._w3.provider
         if hasattr(provider, "_request_session") and provider._request_session:
-            await provider._request_session.close()
+            session = provider._request_session
+            try:
+                close_coro = session.aclose() if hasattr(session, "aclose") else session.close()
+                await asyncio.wait_for(close_coro, timeout=5.0)
+            except asyncio.TimeoutError:
+                log.warning("chain_client_close_timeout")
+            except Exception as e:
+                log.warning("chain_client_close_error", error=str(e))
 
     async def is_connected(self) -> bool:
         """Check Base chain RPC connectivity."""

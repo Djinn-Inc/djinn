@@ -146,3 +146,21 @@ class PurchaseOrchestrator:
     def get(self, signal_id: str, buyer_address: str) -> PurchaseRequest | None:
         """Get status of a purchase."""
         return self._active.get(self._key(signal_id, buyer_address))
+
+    def cleanup_completed(self, max_age_seconds: float = 86400) -> int:
+        """Remove completed/failed/voided purchases older than max_age_seconds.
+
+        Prevents unbounded growth of the in-memory _active dict.
+        Returns count of removed entries.
+        """
+        now = time.time()
+        terminal = (PurchaseStatus.SHARES_RELEASED, PurchaseStatus.FAILED, PurchaseStatus.VOIDED, PurchaseStatus.UNAVAILABLE)
+        stale = [
+            k for k, p in self._active.items()
+            if p.status in terminal and now - p.created_at > max_age_seconds
+        ]
+        for k in stale:
+            del self._active[k]
+        if stale:
+            log.info("purchases_cleaned", removed=len(stale))
+        return len(stale)

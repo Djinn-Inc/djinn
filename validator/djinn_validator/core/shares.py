@@ -126,6 +126,7 @@ class ShareStore:
 
         Returns the encrypted key share bytes, or None if not found.
         Records the release to prevent double-claiming.
+        Uses a transaction to ensure atomicity of check+insert.
         """
         row = self._conn.execute(
             "SELECT encrypted_key_share FROM shares WHERE signal_id = ?",
@@ -137,22 +138,28 @@ class ShareStore:
 
         encrypted_key_share = row[0]
 
-        # Check if already released
-        existing = self._conn.execute(
-            "SELECT 1 FROM releases WHERE signal_id = ? AND buyer_address = ?",
-            (signal_id, buyer_address),
-        ).fetchone()
-        if existing:
-            log.info("share_already_released", signal_id=signal_id, buyer=buyer_address)
-            return encrypted_key_share
+        # Atomic check+insert within a transaction
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                "SELECT 1 FROM releases WHERE signal_id = ? AND buyer_address = ?",
+                (signal_id, buyer_address),
+            ).fetchone()
+            if existing:
+                self._conn.execute("COMMIT")
+                log.info("share_already_released", signal_id=signal_id, buyer=buyer_address)
+                return encrypted_key_share
 
-        self._conn.execute(
-            "INSERT INTO releases (signal_id, buyer_address, released_at) VALUES (?, ?, ?)",
-            (signal_id, buyer_address, time.time()),
-        )
-        self._conn.commit()
-        log.info("share_released", signal_id=signal_id, buyer=buyer_address)
-        return encrypted_key_share
+            self._conn.execute(
+                "INSERT INTO releases (signal_id, buyer_address, released_at) VALUES (?, ?, ?)",
+                (signal_id, buyer_address, time.time()),
+            )
+            self._conn.execute("COMMIT")
+            log.info("share_released", signal_id=signal_id, buyer=buyer_address)
+            return encrypted_key_share
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
 
     def remove(self, signal_id: str) -> None:
         """Remove a share (e.g., signal voided or expired)."""
