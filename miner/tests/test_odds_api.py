@@ -326,3 +326,63 @@ async def test_concurrent_requests_only_fetch_once(mock_odds_response: list[dict
     assert all(r == results[0] for r in results)
     # Only one actual HTTP call should have been made (lock prevents stampede)
     assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_close_releases_owned_client() -> None:
+    """close() should release the owned HTTP client."""
+    c = OddsApiClient(api_key="test")
+    assert c._owns_client is True
+    await c.close()
+    # After close, the client should be closed
+    assert c._client.is_closed
+
+
+@pytest.mark.asyncio
+async def test_close_does_not_close_injected_client() -> None:
+    """close() should NOT close an injected HTTP client."""
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json=[])
+    ))
+    c = OddsApiClient(api_key="test", http_client=mock_http)
+    assert c._owns_client is False
+    await c.close()
+    assert not mock_http.is_closed
+    await mock_http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_json_decode_error_propagates() -> None:
+    """If API returns non-JSON, the error should propagate."""
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, content=b"not json", headers={"content-type": "text/plain"})
+    ))
+    c = OddsApiClient(api_key="test", http_client=mock_http, cache_ttl=60)
+    # resp.json() will raise json.JSONDecodeError
+    with pytest.raises(Exception):
+        await c.get_odds("basketball_nba")
+
+
+def test_sport_key_mapping() -> None:
+    """Known sport keys should be mapped, unknown keys passed through."""
+    c = OddsApiClient(api_key="test")
+    assert c._resolve_sport_key("basketball_nba") == "basketball_nba"
+    assert c._resolve_sport_key("football_nfl") == "americanfootball_nfl"
+    assert c._resolve_sport_key("unknown_sport") == "unknown_sport"
+
+
+def test_clear_cache() -> None:
+    c = OddsApiClient(api_key="test")
+    c._cache["test"] = CachedOdds(data=[], expires_at=9999999999)
+    c.clear_cache()
+    assert len(c._cache) == 0
+
+
+def test_evict_stale_cache() -> None:
+    """Stale cache entries should be removed."""
+    c = OddsApiClient(api_key="test")
+    c._cache["fresh"] = CachedOdds(data=[{"id": "1"}], expires_at=9999999999)
+    c._cache["stale"] = CachedOdds(data=[{"id": "2"}], expires_at=0)
+    c._evict_stale_cache()
+    assert "fresh" in c._cache
+    assert "stale" not in c._cache

@@ -88,3 +88,39 @@ class TestHealthTracker:
         tracker = HealthTracker(odds_api_connected=False)
         tracker.record_api_success()
         assert tracker.get_status().odds_api_connected is True
+
+    def test_failures_below_threshold_keep_connected(self) -> None:
+        """Failures below threshold should not degrade health."""
+        tracker = HealthTracker(odds_api_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is True
+
+    def test_repeated_failures_after_degradation(self) -> None:
+        """Additional failures after degradation don't cause errors."""
+        tracker = HealthTracker(odds_api_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD + 5):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is False
+
+    def test_recovery_then_degradation_cycle(self) -> None:
+        """Multiple cycles of degradation and recovery should work."""
+        tracker = HealthTracker(odds_api_connected=True)
+        # Degrade
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is False
+        # Recover
+        tracker.record_api_success()
+        assert tracker.get_status().odds_api_connected is True
+        # Degrade again
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+            tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is False
+
+    def test_already_disconnected_stays_disconnected(self) -> None:
+        """Failures when already disconnected don't change state."""
+        tracker = HealthTracker(odds_api_connected=False)
+        tracker.record_api_failure()
+        tracker.record_api_failure()
+        assert tracker.get_status().odds_api_connected is False
