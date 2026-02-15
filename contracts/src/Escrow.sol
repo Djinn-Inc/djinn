@@ -246,6 +246,9 @@ contract Escrow is Ownable {
         if (sig.status != SignalStatus.Active) revert SignalNotActive(signalId);
         if (block.timestamp >= sig.expiresAt) revert SignalExpired(signalId);
 
+        // --- Mark signal as purchased immediately (prevents re-entry/double-purchase) ---
+        signalCommitment.updateStatus(signalId, SignalStatus.Purchased);
+
         // --- Calculate fee ---
         // fee = notional * maxPriceBps / 10_000
         uint256 fee = (notional * sig.maxPriceBps) / 10_000;
@@ -285,9 +288,6 @@ contract Escrow is Ownable {
         });
 
         _purchasesBySignal[signalId].push(purchaseId);
-
-        // --- Update signal status ---
-        signalCommitment.updateStatus(signalId, SignalStatus.Purchased);
 
         // --- Track fee pool for audit refunds ---
         uint256 cycle = account.getCurrentCycle(sig.genius, msg.sender);
