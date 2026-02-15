@@ -95,6 +95,10 @@ class TestRateLimitMiddleware:
         async def metrics() -> dict:
             return {"metrics": True}
 
+        @app.get("/health/ready")
+        async def readiness() -> dict:
+            return {"ready": True}
+
         return TestClient(app)
 
     def test_allows_requests(self, limited_app: TestClient) -> None:
@@ -118,6 +122,12 @@ class TestRateLimitMiddleware:
         for _ in range(3):
             limited_app.get("/test")
         resp = limited_app.get("/metrics")
+        assert resp.status_code == 200
+
+    def test_readiness_bypasses_limit(self, limited_app: TestClient) -> None:
+        for _ in range(3):
+            limited_app.get("/test")
+        resp = limited_app.get("/health/ready")
         assert resp.status_code == 200
 
 

@@ -37,7 +37,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
             duration_ms = round((time.monotonic() - start) * 1000, 1)
-            if request.url.path not in ("/health", "/metrics"):
+            if request.url.path not in ("/health", "/health/ready", "/metrics"):
                 log.info(
                     "request",
                     method=request.method,
@@ -123,7 +123,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         client_ip = request.client.host if request.client else "unknown"
 
-        if request.url.path in ("/health", "/metrics"):
+        if request.url.path in ("/health", "/health/ready", "/metrics"):
             return await call_next(request)
 
         if not self._limiter.allow(client_ip):
