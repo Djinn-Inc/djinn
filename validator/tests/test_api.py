@@ -1,5 +1,9 @@
 """Tests for the validator REST API."""
 
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,6 +24,17 @@ def client(share_store: ShareStore) -> TestClient:
     purchase_orch = PurchaseOrchestrator(share_store)
     outcome_attestor = OutcomeAttestor()
     app = create_app(share_store, purchase_orch, outcome_attestor)
+    return TestClient(app)
+
+
+@pytest.fixture
+def client_with_chain(share_store: ShareStore) -> TestClient:
+    """Client with a mock chain client that reports connected."""
+    purchase_orch = PurchaseOrchestrator(share_store)
+    outcome_attestor = OutcomeAttestor()
+    mock_chain = AsyncMock()
+    mock_chain.is_connected = AsyncMock(return_value=True)
+    app = create_app(share_store, purchase_orch, outcome_attestor, chain_client=mock_chain)
     return TestClient(app)
 
 
@@ -263,3 +278,13 @@ class TestReadinessEndpoint:
         data = resp.json()
         # Without chain client and neuron, not fully ready
         assert data["ready"] is False
+
+    def test_readiness_rpc_passes_with_chain_client(self, client_with_chain: TestClient) -> None:
+        resp = client_with_chain.get("/health/ready")
+        data = resp.json()
+        assert data["checks"]["rpc"] is True
+
+    def test_health_chain_status_with_mock(self, client_with_chain: TestClient) -> None:
+        resp = client_with_chain.get("/health")
+        data = resp.json()
+        assert data["chain_connected"] is True

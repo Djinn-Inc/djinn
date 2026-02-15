@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-function safeAddress(raw: string | undefined, fallback: string): string {
+export function safeAddress(raw: string | undefined, fallback: string): string {
   const addr = raw ?? fallback;
   if (addr === ZERO_ADDRESS) return addr; // allow zero in dev
   try {

@@ -13,6 +13,7 @@ import {
   getCreditLedgerContract,
   getAccountContract,
   getUsdcContract,
+  safeAddress,
 } from "../contracts";
 
 describe("ADDRESSES", () => {
@@ -101,6 +102,37 @@ describe("ABI definitions", () => {
     expect(abiStr).toContain("allowance");
     expect(abiStr).toContain("balanceOf");
     expect(abiStr).toContain("decimals");
+  });
+});
+
+describe("safeAddress", () => {
+  const ZERO = "0x0000000000000000000000000000000000000000";
+
+  it("returns zero address as-is", () => {
+    expect(safeAddress(ZERO, ZERO)).toBe(ZERO);
+  });
+
+  it("checksums a valid lowercase address", () => {
+    const lower = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+    const result = safeAddress(lower, ZERO);
+    expect(result).toBe("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+  });
+
+  it("returns fallback when raw is undefined", () => {
+    expect(safeAddress(undefined, ZERO)).toBe(ZERO);
+  });
+
+  it("falls back to zero for garbage input", () => {
+    expect(safeAddress("not-an-address", ZERO)).toBe(ZERO);
+  });
+
+  it("falls back to zero for too-short address", () => {
+    expect(safeAddress("0x1234", ZERO)).toBe(ZERO);
+  });
+
+  it("passes through already-checksummed address", () => {
+    const checksummed = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    expect(safeAddress(checksummed, ZERO)).toBe(checksummed);
   });
 });
 

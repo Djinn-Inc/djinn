@@ -118,6 +118,18 @@ class TestCorsOrigins:
         result = get_cors_origins("https://djinn.io, https://app.djinn.io")
         assert result == ["https://djinn.io", "https://app.djinn.io"]
 
+    def test_strips_whitespace(self) -> None:
+        result = get_cors_origins("  https://a.com , https://b.com  ")
+        assert result == ["https://a.com", "https://b.com"]
+
+    def test_filters_empty_values(self) -> None:
+        result = get_cors_origins("https://a.com,,, ,https://b.com")
+        assert result == ["https://a.com", "https://b.com"]
+
+    def test_trailing_comma(self) -> None:
+        result = get_cors_origins("https://a.com,")
+        assert result == ["https://a.com"]
+
 
 class TestSignatureMessage:
     def test_message_format(self) -> None:
