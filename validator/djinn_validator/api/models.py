@@ -54,6 +54,14 @@ class PurchaseRequest(BaseModel):
     sportsbook: str = Field(max_length=256)
     available_indices: list[int] = Field(min_length=1, max_length=10)
 
+    @field_validator("available_indices")
+    @classmethod
+    def validate_indices_range(cls, v: list[int]) -> list[int]:
+        for idx in v:
+            if idx < 1 or idx > 10:
+                raise ValueError(f"available_indices values must be 1-10, got {idx}")
+        return v
+
 
 class PurchaseResponse(BaseModel):
     signal_id: str

@@ -147,3 +147,29 @@ class TestBlock:
     def test_block_zero_without_subtensor(self) -> None:
         m = DjinnMiner()
         assert m.block == 0
+
+
+class TestSetupWalletNotFound:
+    def test_wallet_not_found(self) -> None:
+        """FileNotFoundError in setup returns False with specific logging."""
+        mock_bt = MagicMock()
+        mock_bt.wallet.side_effect = FileNotFoundError("~/.bittensor/wallets/default")
+        m = DjinnMiner()
+        with patch("djinn_miner.bt.neuron.bt", mock_bt):
+            assert m.setup() is False
+
+
+class TestSetupAxonWithoutWallet:
+    def test_axon_setup_skipped_without_wallet(self) -> None:
+        """_setup_axon is a no-op if wallet is None."""
+        m = DjinnMiner()
+        m._setup_axon()  # Should not raise
+        assert m.axon is None
+
+    def test_axon_setup_skipped_without_bt(self) -> None:
+        """_setup_axon is a no-op if bittensor not installed."""
+        m = DjinnMiner()
+        m.wallet = MagicMock()
+        with patch("djinn_miner.bt.neuron.bt", None):
+            m._setup_axon()
+        assert m.axon is None

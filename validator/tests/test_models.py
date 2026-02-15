@@ -94,6 +94,30 @@ class TestPurchaseRequest:
                 available_indices=list(range(1, 12)),  # 11 items
             )
 
+    def test_index_out_of_range_zero(self) -> None:
+        with pytest.raises(ValidationError, match="1-10"):
+            PurchaseRequest(
+                buyer_address="0xBuyer",
+                sportsbook="draftkings",
+                available_indices=[0],
+            )
+
+    def test_index_out_of_range_high(self) -> None:
+        with pytest.raises(ValidationError, match="1-10"):
+            PurchaseRequest(
+                buyer_address="0xBuyer",
+                sportsbook="draftkings",
+                available_indices=[11],
+            )
+
+    def test_index_boundary_values(self) -> None:
+        req = PurchaseRequest(
+            buyer_address="0xBuyer",
+            sportsbook="draftkings",
+            available_indices=[1, 10],
+        )
+        assert req.available_indices == [1, 10]
+
 
 class TestMPCRound1Request:
     def test_valid_hex_values(self) -> None:

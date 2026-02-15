@@ -27,6 +27,9 @@ except ImportError:
 class DjinnValidator:
     """Bittensor validator neuron for Djinn Protocol subnet 103."""
 
+    # Minimum blocks between weight updates (Bittensor tempo is ~100 blocks)
+    MIN_WEIGHT_INTERVAL = 100
+
     def __init__(
         self,
         netuid: int = 103,
@@ -44,6 +47,7 @@ class DjinnValidator:
         self.metagraph: Any = None
         self.uid: int | None = None
         self._running = False
+        self._last_weight_block: int = 0
 
     def setup(self) -> bool:
         """Initialize wallet, subtensor, and metagraph connections.
@@ -168,5 +172,9 @@ class DjinnValidator:
         """Check if enough blocks have passed since last weight update."""
         if self.subtensor is None:
             return False
-        # Bittensor typically requires weights every ~100 blocks
-        return True  # Simplified; production would track last_update block
+        current = self.block
+        return (current - self._last_weight_block) >= self.MIN_WEIGHT_INTERVAL
+
+    def record_weight_set(self) -> None:
+        """Record the block at which weights were last set."""
+        self._last_weight_block = self.block

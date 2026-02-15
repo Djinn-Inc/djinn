@@ -208,6 +208,6 @@ class ShareStore:
         if self._conn is not None:
             try:
                 self._conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("share_store_close_error", error=str(e))
             self._conn = None

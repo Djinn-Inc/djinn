@@ -43,6 +43,9 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
                 health.set_bt_connected(False)
             else:
                 health.set_bt_connected(True)
+                # Refresh UID in case it changed after re-registration
+                if neuron.uid is not None:
+                    health.set_uid(neuron.uid)
 
             consecutive_errors = 0
 

@@ -87,17 +87,29 @@ class TestGenerateProof:
 
     @pytest.mark.asyncio
     async def test_timeout(self) -> None:
-        """Timeout returns graceful error."""
+        """Timeout returns graceful error and kills the process."""
         async def mock_subprocess(*args, **kwargs):
             proc = MagicMock()
             # Use MagicMock (not async) for communicate — the mocked
             # wait_for raises TimeoutError before awaiting the coroutine,
             # so an async function would create an unawaited coroutine warning.
             proc.communicate = MagicMock()
+            proc.wait = AsyncMock()
             return proc
 
+        call_count = 0
+
+        async def mock_wait_for(coro, timeout):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call is proc.communicate() — raise timeout
+                raise asyncio.TimeoutError()
+            # Subsequent calls (proc.wait()) — succeed
+            return await coro
+
         with patch("djinn_miner.core.tlsn.asyncio.create_subprocess_exec", side_effect=mock_subprocess):
-            with patch("djinn_miner.core.tlsn.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+            with patch("djinn_miner.core.tlsn.asyncio.wait_for", side_effect=mock_wait_for):
                 result = await generate_proof("https://example.com", timeout=0.1)
 
         assert result.success is False

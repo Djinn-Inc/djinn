@@ -270,6 +270,11 @@ class OddsApiClient:
                         try:
                             price = float(outcome.get("price", 0))
                         except (ValueError, TypeError):
+                            log.debug(
+                                "invalid_odds_price",
+                                bookmaker=bk_key,
+                                raw_price=outcome.get("price"),
+                            )
                             price = 0.0
                         results.append(
                             BookmakerOdds(

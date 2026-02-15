@@ -155,7 +155,78 @@ class TestShouldSetWeights:
         v = DjinnValidator()
         assert v.should_set_weights() is False
 
-    def test_with_subtensor(self) -> None:
+    def test_first_time_after_min_blocks(self) -> None:
+        """Should set weights when MIN_WEIGHT_INTERVAL blocks have passed."""
         v = DjinnValidator()
         v.subtensor = MagicMock()
+        v.subtensor.block = 100
         assert v.should_set_weights() is True
+
+    def test_too_soon_after_last_set(self) -> None:
+        """Should not set weights before MIN_WEIGHT_INTERVAL blocks."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.subtensor.block = 150
+        v._last_weight_block = 100
+        assert v.should_set_weights() is False
+
+    def test_exact_boundary(self) -> None:
+        """Exactly MIN_WEIGHT_INTERVAL blocks triggers weight set."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.subtensor.block = 200
+        v._last_weight_block = 100
+        assert v.should_set_weights() is True
+
+    def test_record_weight_set(self) -> None:
+        """record_weight_set stores current block."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.subtensor.block = 500
+        v.record_weight_set()
+        assert v._last_weight_block == 500
+
+
+class TestSetWeightsSuccess:
+    def test_set_weights_calls_subtensor(self) -> None:
+        """Successful set_weights calls subtensor with torch tensors."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.wallet = MagicMock()
+        v.subtensor.set_weights.return_value = True
+
+        mock_torch = MagicMock()
+        mock_torch.tensor = MagicMock(side_effect=lambda x, dtype: x)
+        mock_torch.int64 = "int64"
+        mock_torch.float32 = "float32"
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = v.set_weights({1: 0.5, 2: 0.5})
+
+        assert result is True
+        v.subtensor.set_weights.assert_called_once()
+
+    def test_set_weights_exception_returns_false(self) -> None:
+        """Exception in set_weights returns False, doesn't crash."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.wallet = MagicMock()
+        v.subtensor.set_weights.side_effect = RuntimeError("network error")
+
+        mock_torch = MagicMock()
+        mock_torch.tensor = MagicMock(side_effect=lambda x, dtype: x)
+        mock_torch.int64 = "int64"
+        mock_torch.float32 = "float32"
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = v.set_weights({1: 0.5})
+
+        assert result is False
+
+
+class TestSetupWalletNotFound:
+    def test_wallet_not_found(self) -> None:
+        """FileNotFoundError in setup returns False with specific logging."""
+        mock_bt = MagicMock()
+        mock_bt.wallet.side_effect = FileNotFoundError("~/.bittensor/wallets/default/hotkeys/default")
+        v = DjinnValidator()
+        with patch("djinn_validator.bt.neuron.bt", mock_bt):
+            assert v.setup() is False

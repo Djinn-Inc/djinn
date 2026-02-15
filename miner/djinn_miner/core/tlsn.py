@@ -113,6 +113,14 @@ async def generate_proof(
         )
     except asyncio.TimeoutError:
         log.error("tlsn_proof_timeout", timeout=timeout)
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except (asyncio.TimeoutError, OSError):
+            pass
         _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
@@ -185,5 +193,5 @@ def _cleanup_dir(file_path: str) -> None:
             os.unlink(file_path)
         if parent and os.path.basename(parent).startswith("djinn-tlsn-"):
             shutil.rmtree(parent, ignore_errors=True)
-    except OSError:
-        pass
+    except OSError as e:
+        log.warning("tlsn_cleanup_failed", path=file_path, error=str(e))

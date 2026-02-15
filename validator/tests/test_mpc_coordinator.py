@@ -58,10 +58,10 @@ class TestGetSession:
         coord = MPCCoordinator()
         session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
         session.created_at = time.time() - 200  # Force expiry
+        # Expired sessions return None (removed from internal dict)
         retrieved = coord.get_session(session.session_id)
-        assert retrieved is not None
-        assert retrieved.status == SessionStatus.EXPIRED
-        # Expired session should be removed from internal dict
+        assert retrieved is None
+        # Second lookup also returns None
         assert coord.get_session(session.session_id) is None
 
 

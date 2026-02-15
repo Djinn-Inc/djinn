@@ -124,14 +124,17 @@ class MPCCoordinator:
         return session
 
     def get_session(self, session_id: str) -> MPCSessionState | None:
-        """Retrieve a session by ID. Removes expired sessions from memory."""
+        """Retrieve a session by ID. Returns None for expired sessions."""
         with self._lock:
             session = self._sessions.get(session_id)
-            if session and time.time() - session.created_at > self.SESSION_TTL:
+            if session is None:
+                return None
+            if time.time() - session.created_at > self.SESSION_TTL:
                 session.status = SessionStatus.EXPIRED
                 del self._sessions[session_id]
                 log.info("mpc_session_expired", session_id=session_id)
-        return session
+                return None
+            return session
 
     def get_triple_shares_for_participant(
         self,

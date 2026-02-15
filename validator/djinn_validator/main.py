@@ -71,8 +71,10 @@ async def epoch_loop(
             if neuron.should_set_weights():
                 weights = scorer.compute_weights(is_active)
                 if weights:
-                    neuron.set_weights(weights)
-                    log.info("weights_updated", n_miners=len(weights), active=is_active)
+                    success = neuron.set_weights(weights)
+                    if success:
+                        neuron.record_weight_set()
+                    log.info("weights_updated", n_miners=len(weights), active=is_active, success=success)
 
             # Reset per-epoch metrics
             scorer.reset_epoch()
