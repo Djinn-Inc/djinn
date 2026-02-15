@@ -124,3 +124,38 @@ class TestHealthTracker:
         tracker.record_api_failure()
         tracker.record_api_failure()
         assert tracker.get_status().odds_api_connected is False
+
+
+class TestBTDegradation:
+    def test_bt_failures_degrade_health(self) -> None:
+        tracker = HealthTracker(bt_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+            tracker.record_bt_failure()
+        assert tracker.get_status().bt_connected is False
+
+    def test_bt_failures_below_threshold_keep_connected(self) -> None:
+        tracker = HealthTracker(bt_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_bt_failure()
+        assert tracker.get_status().bt_connected is True
+
+    def test_bt_set_connected_resets_failures(self) -> None:
+        tracker = HealthTracker(bt_connected=True)
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_bt_failure()
+        # Successful sync resets counter
+        tracker.set_bt_connected(True)
+        # Now threshold-1 more failures still won't degrade
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            tracker.record_bt_failure()
+        assert tracker.get_status().bt_connected is True
+
+    def test_bt_recovery_cycle(self) -> None:
+        tracker = HealthTracker(bt_connected=True)
+        # Degrade
+        for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+            tracker.record_bt_failure()
+        assert tracker.get_status().bt_connected is False
+        # Recover
+        tracker.set_bt_connected(True)
+        assert tracker.get_status().bt_connected is True

@@ -54,6 +54,7 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
             return
         except Exception as e:
             consecutive_errors += 1
+            health.record_bt_failure()
             backoff = min(60 * (2 ** consecutive_errors), 600)
             log.error("bt_sync_error", error=str(e), consecutive=consecutive_errors, backoff_s=backoff)
             await asyncio.sleep(backoff)

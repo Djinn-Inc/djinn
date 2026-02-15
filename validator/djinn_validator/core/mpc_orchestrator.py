@@ -249,6 +249,7 @@ class MPCOrchestrator:
                     log.warning(
                         "mpc_init_failed",
                         peer_uid=peer["uid"],
+                        error_type=type(e).__name__,
                         error=str(e),
                     )
 
@@ -291,6 +292,7 @@ class MPCOrchestrator:
                         log.warning(
                             "mpc_result_broadcast_failed",
                             peer_uid=peer["uid"],
+                            error_type=type(e).__name__,
                             error=str(e),
                         )
 

@@ -223,6 +223,12 @@ async def async_main() -> None:
     except Exception as e:
         log.warning("chain_client_close_error", error=str(e))
     try:
+        removed = mpc_coordinator.cleanup_expired()
+        if removed:
+            log.info("mpc_sessions_cleaned_on_shutdown", removed=removed)
+    except Exception as e:
+        log.warning("mpc_cleanup_error", error=str(e))
+    try:
         share_store.close()
     except Exception as e:
         log.warning("share_store_close_error", error=str(e))

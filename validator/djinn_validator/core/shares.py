@@ -187,8 +187,8 @@ class ShareStore:
             log.error("share_release_error", signal_id=signal_id, buyer=buyer_address, error=str(e))
             try:
                 self._conn.execute("ROLLBACK")
-            except Exception:
-                log.error("share_release_rollback_failed", signal_id=signal_id)
+            except Exception as rb_err:
+                log.error("share_release_rollback_failed", signal_id=signal_id, error=str(rb_err))
             raise
 
     def remove(self, signal_id: str) -> None:

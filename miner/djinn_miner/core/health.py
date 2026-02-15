@@ -32,6 +32,7 @@ class HealthTracker:
         self._start_time = time.monotonic()
         self._ping_count = 0
         self._consecutive_api_failures = 0
+        self._consecutive_bt_failures = 0
 
     def record_ping(self) -> None:
         """Record a health check ping from a validator."""
@@ -45,6 +46,19 @@ class HealthTracker:
 
     def set_bt_connected(self, connected: bool) -> None:
         self._bt_connected = connected
+        if connected:
+            self._consecutive_bt_failures = 0
+
+    def record_bt_failure(self) -> None:
+        """Record failed BT sync — degrade health after threshold."""
+        self._consecutive_bt_failures += 1
+        if self._consecutive_bt_failures >= self.CONSECUTIVE_FAILURE_THRESHOLD:
+            if self._bt_connected:
+                log.warning(
+                    "bt_connection_degraded",
+                    consecutive_failures=self._consecutive_bt_failures,
+                )
+                self._bt_connected = False
 
     def record_api_success(self) -> None:
         """Record successful Odds API call — reset failure counter."""
