@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 
-const BETA_PASSWORD = "djinnybaby";
+const BETA_PASSWORD = process.env.NEXT_PUBLIC_BETA_PASSWORD || "";
 const STORAGE_KEY = "djinn-beta-access";
 
 export default function BetaGate({ children }: { children: React.ReactNode }) {
@@ -35,7 +35,7 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (authorized) {
+  if (authorized || !BETA_PASSWORD) {
     return <>{children}</>;
   }
 

@@ -101,7 +101,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 def get_cors_origins(env_value: str = "") -> list[str]:
-    """Parse CORS origins from environment variable."""
+    """Parse CORS origins from environment variable.
+
+    Returns ["*"] in dev mode (empty env). In production, set CORS_ORIGINS
+    to a comma-separated list of allowed origins.
+    """
     if not env_value:
+        log.warning("cors_wildcard", msg="CORS_ORIGINS not set — using wildcard. Set CORS_ORIGINS in production.")
         return ["*"]
     return [o.strip() for o in env_value.split(",") if o.strip()]

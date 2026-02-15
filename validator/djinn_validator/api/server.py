@@ -256,12 +256,14 @@ def create_app(
         OUTCOMES_ATTESTED.labels(outcome=outcome.value).inc()
 
         # Check if consensus is reached
-        total_validators = 10  # Default; in production read from metagraph
         if neuron and neuron.metagraph:
             total_validators = sum(
                 1 for uid in range(neuron.metagraph.n.item())
                 if neuron.metagraph.validator_permit[uid].item()
             )
+        else:
+            total_validators = 1  # Single-validator dev mode
+            log.warning("no_metagraph", msg="Using total_validators=1 (no metagraph available)")
 
         consensus = outcome_attestor.check_consensus(signal_id, total_validators)
 
