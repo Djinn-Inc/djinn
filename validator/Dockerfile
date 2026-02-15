@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache
 COPY . .
 RUN pip install --no-cache-dir -e .
 
+RUN useradd -m -r appuser && mkdir -p /app/data && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8421
 
 CMD ["djinn-validator"]

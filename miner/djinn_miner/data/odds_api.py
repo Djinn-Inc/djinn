@@ -60,6 +60,7 @@ class OddsApiClient:
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 0.5  # seconds
     RETRY_MAX_DELAY = 8.0  # seconds
+    MAX_CACHE_ENTRIES = 100
 
     def __init__(
         self,
@@ -83,6 +84,17 @@ class OddsApiClient:
         """Close the HTTP client if we own it."""
         if self._owns_client:
             await self._client.aclose()
+
+    def _evict_stale_cache(self) -> None:
+        """Remove expired entries and enforce max cache size."""
+        now = time.monotonic()
+        stale = [k for k, v in self._cache.items() if v.expires_at <= now]
+        for k in stale:
+            del self._cache[k]
+        if len(self._cache) > self.MAX_CACHE_ENTRIES:
+            oldest = sorted(self._cache, key=lambda k: self._cache[k].expires_at)
+            for k in oldest[: len(self._cache) - self.MAX_CACHE_ENTRIES]:
+                del self._cache[k]
 
     async def _request_with_retry(
         self,
@@ -185,6 +197,7 @@ class OddsApiClient:
                 )
             )
 
+        self._evict_stale_cache()
         self._cache[cache_key] = CachedOdds(
             data=data,
             expires_at=time.monotonic() + self._cache_ttl,

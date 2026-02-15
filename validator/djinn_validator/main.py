@@ -79,7 +79,7 @@ async def epoch_loop(
                 m.consecutive_epochs += 1
 
         except Exception as e:
-            log.error("epoch_error", error=str(e))
+            log.error("epoch_error", error=str(e), exc_info=True)
 
         # Wait for next epoch (~12 seconds per Bittensor block, tempo ~100 blocks)
         await asyncio.sleep(12)
@@ -169,6 +169,7 @@ async def async_main() -> None:
     for t in running_tasks:
         t.cancel()
     await asyncio.gather(*running_tasks, return_exceptions=True)
+    await outcome_attestor.close()
     share_store.close()
     log.info("shutdown_complete")
 

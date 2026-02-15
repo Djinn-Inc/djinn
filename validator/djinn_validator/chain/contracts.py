@@ -167,5 +167,6 @@ class ChainClient:
         try:
             await self._w3.eth.block_number
             return True
-        except Exception:
+        except Exception as e:
+            log.warning("rpc_connection_failed", error=str(e))
             return False

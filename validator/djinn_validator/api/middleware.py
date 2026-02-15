@@ -56,6 +56,8 @@ class TokenBucket:
 class RateLimiter:
     """Per-IP rate limiter with configurable limits per path prefix."""
 
+    _MAX_BUCKETS = 10_000
+
     def __init__(
         self,
         default_capacity: float = 60,
@@ -91,9 +93,10 @@ class RateLimiter:
         return bucket.consume()
 
     def _maybe_cleanup(self) -> None:
-        """Remove stale buckets periodically."""
+        """Remove stale buckets periodically or when limit exceeded."""
         now = time.monotonic()
-        if now - self._last_cleanup < self._cleanup_interval:
+        force = len(self._buckets) > self._MAX_BUCKETS
+        if not force and now - self._last_cleanup < self._cleanup_interval:
             return
         self._last_cleanup = now
         stale = [
@@ -102,6 +105,8 @@ class RateLimiter:
         ]
         for k in stale:
             del self._buckets[k]
+        if force and len(self._buckets) > self._MAX_BUCKETS:
+            log.warning("rate_limiter_bucket_overflow", count=len(self._buckets))
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

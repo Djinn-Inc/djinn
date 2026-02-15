@@ -12,6 +12,9 @@ COPY . .
 # Build the Next.js app
 RUN pnpm build
 
+RUN adduser -D -h /app appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 3000
 
 CMD ["pnpm", "start"]
