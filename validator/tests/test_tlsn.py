@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -142,10 +142,7 @@ class TestVerifyProof:
             "djinn_validator.core.tlsn.asyncio.create_subprocess_exec",
         ) as mock_exec:
             proc = MagicMock()
-            async def communicate():
-                await asyncio.sleep(100)
-                return b"", b""
-            proc.communicate = communicate
+            proc.communicate = AsyncMock(return_value=(b"", b""))
             mock_exec.return_value = proc
 
             with patch(
