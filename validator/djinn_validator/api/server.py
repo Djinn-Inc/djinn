@@ -93,6 +93,8 @@ def create_app(
     chain_client: "ChainClient | None" = None,
     neuron: "DjinnValidator | None" = None,
     mpc_coordinator: "MPCCoordinator | None" = None,
+    rate_limit_capacity: int = 60,
+    rate_limit_rate: int = 10,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     app = FastAPI(
@@ -130,7 +132,7 @@ def create_app(
         return await call_next(request)
 
     # Rate limiting
-    limiter = RateLimiter(default_capacity=60, default_rate=10)
+    limiter = RateLimiter(default_capacity=rate_limit_capacity, default_rate=rate_limit_rate)
     limiter.set_path_limit("/v1/signal", capacity=20, rate=2)  # Share storage: 2/sec
     limiter.set_path_limit("/v1/signals/resolve", capacity=10, rate=1)  # Resolution: 1/sec
     limiter.set_path_limit("/v1/mpc/", capacity=100, rate=50)  # MPC: higher for multi-round

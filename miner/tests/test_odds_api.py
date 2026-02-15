@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import httpx
@@ -297,3 +298,31 @@ async def test_no_retry_on_4xx() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         await c.get_odds("basketball_nba")
     assert call_count == 1  # No retry
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_only_fetch_once(mock_odds_response: list[dict]) -> None:
+    """Concurrent cache-miss requests for the same sport should only fetch once."""
+    call_count = 0
+
+    async def slow_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0.05)  # Simulate network delay
+        return httpx.Response(200, json=mock_odds_response)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(slow_handler))
+    c = OddsApiClient(api_key="test", cache_ttl=60, http_client=mock_http)
+
+    # Launch 5 concurrent requests for the same sport
+    results = await asyncio.gather(
+        c.get_odds("basketball_nba"),
+        c.get_odds("basketball_nba"),
+        c.get_odds("basketball_nba"),
+        c.get_odds("basketball_nba"),
+        c.get_odds("basketball_nba"),
+    )
+    # All should return the same data
+    assert all(r == results[0] for r in results)
+    # Only one actual HTTP call should have been made (lock prevents stampede)
+    assert call_count == 1

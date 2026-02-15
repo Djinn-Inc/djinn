@@ -113,6 +113,57 @@ class TestConfigTimeouts:
             config.validate()
 
 
+class TestConfigNetuidValidation:
+    def test_netuid_zero_raises(self) -> None:
+        config = _config(bt_netuid=0, bt_network="local", sports_api_key="key")
+        with pytest.raises(ValueError, match="BT_NETUID"):
+            config.validate()
+
+    def test_netuid_too_high_raises(self) -> None:
+        config = _config(bt_netuid=70000, bt_network="local", sports_api_key="key")
+        with pytest.raises(ValueError, match="BT_NETUID"):
+            config.validate()
+
+    def test_netuid_valid(self) -> None:
+        config = _config(bt_netuid=103, bt_network="local", sports_api_key="key")
+        warnings = config.validate()
+        assert not any("BT_NETUID" in w for w in warnings)
+
+
+class TestConfigChainId:
+    def test_standard_chain_id_no_warning(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", base_chain_id=8453)
+        warnings = config.validate()
+        assert not any("BASE_CHAIN_ID" in w for w in warnings)
+
+    def test_localhost_chain_id_no_warning(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", base_chain_id=31337)
+        warnings = config.validate()
+        assert not any("BASE_CHAIN_ID" in w for w in warnings)
+
+    def test_nonstandard_chain_id_warns(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", base_chain_id=999)
+        warnings = config.validate()
+        assert any("BASE_CHAIN_ID" in w for w in warnings)
+
+
+class TestConfigRateLimits:
+    def test_default_rate_limits(self) -> None:
+        config = Config()
+        assert config.rate_limit_capacity == 60
+        assert config.rate_limit_rate == 10
+
+    def test_rate_limit_capacity_zero_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", rate_limit_capacity=0)
+        with pytest.raises(ValueError, match="RATE_LIMIT_CAPACITY"):
+            config.validate()
+
+    def test_rate_limit_rate_zero_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", rate_limit_rate=0)
+        with pytest.raises(ValueError, match="RATE_LIMIT_RATE"):
+            config.validate()
+
+
 class TestConfigAddressValidation:
     def test_valid_address_accepted(self) -> None:
         config = _config(

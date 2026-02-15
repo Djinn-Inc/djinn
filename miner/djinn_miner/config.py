@@ -51,11 +51,21 @@ class Config:
     # Timeouts (seconds)
     http_timeout: int = _int_env("HTTP_TIMEOUT", "30")
 
+    # Rate limits
+    rate_limit_capacity: int = _int_env("RATE_LIMIT_CAPACITY", "30")
+    rate_limit_rate: int = _int_env("RATE_LIMIT_RATE", "5")
+
     def validate(self) -> list[str]:
         """Validate config at startup. Raises ValueError on hard errors, returns warnings."""
         warnings: list[str] = []
         if not self.odds_api_key:
             raise ValueError("ODDS_API_KEY is required. Get one at https://the-odds-api.com")
+        if not (1 <= self.bt_netuid <= 65535):
+            raise ValueError(f"BT_NETUID must be 1-65535, got {self.bt_netuid}")
+        if not self.odds_api_base_url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"ODDS_API_BASE_URL must start with http:// or https://, got {self.odds_api_base_url!r}"
+            )
         known_networks = ("finney", "mainnet", "test", "local", "mock")
         if self.bt_network not in known_networks:
             warnings.append(
@@ -70,4 +80,8 @@ class Config:
             raise ValueError(f"LINE_TOLERANCE must be >= 0, got {self.line_tolerance}")
         if self.http_timeout < 1:
             raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")
+        if self.rate_limit_capacity < 1:
+            raise ValueError(f"RATE_LIMIT_CAPACITY must be >= 1, got {self.rate_limit_capacity}")
+        if self.rate_limit_rate < 1:
+            raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
         return warnings

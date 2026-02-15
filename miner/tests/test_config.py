@@ -76,6 +76,50 @@ class TestConfigNetworkWarning:
         assert any("BT_NETWORK" in w for w in warnings)
 
 
+class TestConfigNetuidValidation:
+    def test_netuid_zero_raises(self) -> None:
+        config = _config(odds_api_key="key", bt_netuid=0)
+        with pytest.raises(ValueError, match="BT_NETUID"):
+            config.validate()
+
+    def test_netuid_too_high_raises(self) -> None:
+        config = _config(odds_api_key="key", bt_netuid=70000)
+        with pytest.raises(ValueError, match="BT_NETUID"):
+            config.validate()
+
+
+class TestConfigBaseUrl:
+    def test_invalid_base_url_raises(self) -> None:
+        config = _config(odds_api_key="key", odds_api_base_url="ftp://bad.url")
+        with pytest.raises(ValueError, match="ODDS_API_BASE_URL"):
+            config.validate()
+
+    def test_valid_https_url_accepted(self) -> None:
+        config = _config(odds_api_key="key", odds_api_base_url="https://api.example.com")
+        config.validate()  # Should not raise
+
+    def test_valid_http_url_accepted(self) -> None:
+        config = _config(odds_api_key="key", odds_api_base_url="http://localhost:8080")
+        config.validate()  # Should not raise
+
+
+class TestConfigRateLimits:
+    def test_default_rate_limits(self) -> None:
+        config = Config()
+        assert config.rate_limit_capacity == 30
+        assert config.rate_limit_rate == 5
+
+    def test_rate_limit_capacity_zero_raises(self) -> None:
+        config = _config(odds_api_key="key", rate_limit_capacity=0)
+        with pytest.raises(ValueError, match="RATE_LIMIT_CAPACITY"):
+            config.validate()
+
+    def test_rate_limit_rate_zero_raises(self) -> None:
+        config = _config(odds_api_key="key", rate_limit_rate=0)
+        with pytest.raises(ValueError, match="RATE_LIMIT_RATE"):
+            config.validate()
+
+
 class TestConfigTimeouts:
     def test_default_http_timeout(self) -> None:
         config = Config()

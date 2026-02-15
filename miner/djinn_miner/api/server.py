@@ -46,6 +46,8 @@ def create_app(
     checker: LineChecker,
     proof_gen: ProofGenerator,
     health_tracker: HealthTracker,
+    rate_limit_capacity: int = 30,
+    rate_limit_rate: int = 5,
 ) -> FastAPI:
     """Build the FastAPI application with all routes wired."""
 
@@ -77,7 +79,7 @@ def create_app(
             return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
         return await call_next(request)
 
-    app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=30, rate=5))
+    app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=rate_limit_capacity, rate=rate_limit_rate))
 
     # Request ID tracing (outermost — must be added last)
     app.add_middleware(RequestIdMiddleware)

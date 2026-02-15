@@ -119,6 +119,8 @@ async def async_main() -> None:
         checker=checker,
         proof_gen=proof_gen,
         health_tracker=health_tracker,
+        rate_limit_capacity=config.rate_limit_capacity,
+        rate_limit_rate=config.rate_limit_rate,
     )
 
     log.info(

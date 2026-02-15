@@ -96,6 +96,22 @@ async def epoch_loop(
         await asyncio.sleep(12)
 
 
+async def mpc_cleanup_loop(mpc_coordinator: MPCCoordinator) -> None:
+    """Periodically remove expired MPC sessions to prevent memory growth."""
+    log.info("mpc_cleanup_loop_started")
+    while True:
+        try:
+            await asyncio.sleep(300)  # Every 5 minutes
+            removed = mpc_coordinator.cleanup_expired()
+            if removed > 0:
+                log.info("mpc_sessions_cleaned", count=removed)
+        except asyncio.CancelledError:
+            log.info("mpc_cleanup_loop_cancelled")
+            return
+        except Exception as e:
+            log.error("mpc_cleanup_error", error=str(e))
+
+
 async def run_server(app: object, host: str, port: int) -> None:
     """Run uvicorn as an async task."""
     config = uvicorn.Config(
@@ -151,6 +167,8 @@ async def async_main() -> None:
         chain_client=chain_client,
         neuron=neuron if bt_ok else None,
         mpc_coordinator=mpc_coordinator,
+        rate_limit_capacity=config.rate_limit_capacity,
+        rate_limit_rate=config.rate_limit_rate,
     )
 
     log.info(
@@ -166,8 +184,11 @@ async def async_main() -> None:
         log_format=os.getenv("LOG_FORMAT", "console"),
     )
 
-    # Run API server and epoch loop concurrently
-    running_tasks = [asyncio.create_task(run_server(app, config.api_host, config.api_port))]
+    # Run API server, epoch loop, and MPC cleanup concurrently
+    running_tasks = [
+        asyncio.create_task(run_server(app, config.api_host, config.api_port)),
+        asyncio.create_task(mpc_cleanup_loop(mpc_coordinator)),
+    ]
     if bt_ok:
         running_tasks.append(
             asyncio.create_task(epoch_loop(neuron, scorer, share_store, outcome_attestor))

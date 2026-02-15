@@ -75,6 +75,7 @@ class OddsApiClient:
         self._base_url = base_url.rstrip("/")
         self._cache_ttl = cache_ttl
         self._cache: dict[str, CachedOdds] = {}
+        self._cache_lock = asyncio.Lock()
         self._client = http_client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = http_client is None
         self._session_capture = session_capture
@@ -159,52 +160,60 @@ class OddsApiClient:
         """Fetch live odds for a sport from The Odds API.
 
         Returns raw event data from the API, using cache when available.
+        Uses an asyncio lock to prevent duplicate API calls on cache miss.
         """
         api_sport = self._resolve_sport_key(sport)
         cache_key = f"{api_sport}:{markets}"
 
+        # Fast path: check cache without lock
         cached = self._cache.get(cache_key)
         if cached and cached.expires_at > time.monotonic():
             log.debug("odds_cache_hit", sport=api_sport)
             return cached.data
 
-        url = f"{self._base_url}/v4/sports/{api_sport}/odds"
-        params = {
-            "apiKey": self._api_key,
-            "regions": "us",
-            "markets": markets,
-            "oddsFormat": "decimal",
-        }
+        async with self._cache_lock:
+            # Re-check under lock (another coroutine may have populated it)
+            cached = self._cache.get(cache_key)
+            if cached and cached.expires_at > time.monotonic():
+                log.debug("odds_cache_hit", sport=api_sport)
+                return cached.data
 
-        resp = await self._request_with_retry(url, params, api_sport)
-        data = resp.json()
+            url = f"{self._base_url}/v4/sports/{api_sport}/odds"
+            params = {
+                "apiKey": self._api_key,
+                "regions": "us",
+                "markets": markets,
+                "oddsFormat": "decimal",
+            }
 
-        # Capture the raw HTTP session for proof generation
-        if self._session_capture is not None:
-            from djinn_miner.core.proof import CapturedSession
+            resp = await self._request_with_retry(url, params, api_sport)
+            data = resp.json()
 
-            # Strip API key from URL for the proof record
-            safe_url = url  # params are separate, URL itself has no key
-            query_id = f"{api_sport}:{markets}:{uuid.uuid4().hex[:8]}"
-            self._session_capture.record(
-                CapturedSession(
-                    query_id=query_id,
-                    request_url=safe_url,
-                    request_params={k: v for k, v in params.items() if k != "apiKey"},
-                    response_status=resp.status_code,
-                    response_body=resp.content,
-                    response_headers=dict(resp.headers),
+            # Capture the raw HTTP session for proof generation
+            if self._session_capture is not None:
+                from djinn_miner.core.proof import CapturedSession
+
+                safe_url = url  # params are separate, URL itself has no key
+                query_id = f"{api_sport}:{markets}:{uuid.uuid4().hex[:8]}"
+                self._session_capture.record(
+                    CapturedSession(
+                        query_id=query_id,
+                        request_url=safe_url,
+                        request_params={k: v for k, v in params.items() if k != "apiKey"},
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        response_headers=dict(resp.headers),
+                    )
                 )
+
+            self._evict_stale_cache()
+            self._cache[cache_key] = CachedOdds(
+                data=data,
+                expires_at=time.monotonic() + self._cache_ttl,
             )
 
-        self._evict_stale_cache()
-        self._cache[cache_key] = CachedOdds(
-            data=data,
-            expires_at=time.monotonic() + self._cache_ttl,
-        )
-
-        log.info("odds_fetched", sport=api_sport, events=len(data))
-        return data
+            log.info("odds_fetched", sport=api_sport, events=len(data))
+            return data
 
     def parse_bookmaker_odds(
         self,

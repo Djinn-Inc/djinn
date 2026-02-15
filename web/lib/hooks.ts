@@ -59,16 +59,20 @@ export function useEscrowBalance(address: string | undefined) {
   const provider = useEthersProvider();
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!provider || !address) return;
     setLoading(true);
+    setError(null);
     try {
       const contract = getEscrowContract(provider);
       const bal = await contract.getBalance(address);
       setBalance(BigInt(bal));
-    } catch {
-      // Contract not deployed or address invalid
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to fetch escrow balance";
+      setError(msg);
+      console.warn("useEscrowBalance error:", msg);
     } finally {
       setLoading(false);
     }
@@ -78,7 +82,7 @@ export function useEscrowBalance(address: string | undefined) {
     refresh();
   }, [refresh]);
 
-  return { balance, loading, refresh };
+  return { balance, loading, refresh, error };
 }
 
 // ---------------------------------------------------------------------------
@@ -89,16 +93,20 @@ export function useCreditBalance(address: string | undefined) {
   const provider = useEthersProvider();
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!provider || !address) return;
     setLoading(true);
+    setError(null);
     try {
       const contract = getCreditLedgerContract(provider);
       const bal = await contract.balanceOf(address);
       setBalance(BigInt(bal));
-    } catch {
-      // Contract not deployed
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to fetch credit balance";
+      setError(msg);
+      console.warn("useCreditBalance error:", msg);
     } finally {
       setLoading(false);
     }
@@ -108,7 +116,7 @@ export function useCreditBalance(address: string | undefined) {
     refresh();
   }, [refresh]);
 
-  return { balance, loading, refresh };
+  return { balance, loading, refresh, error };
 }
 
 // ---------------------------------------------------------------------------
@@ -121,10 +129,12 @@ export function useCollateral(address: string | undefined) {
   const [locked, setLocked] = useState<bigint>(0n);
   const [available, setAvailable] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!provider || !address) return;
     setLoading(true);
+    setError(null);
     try {
       const contract = getCollateralContract(provider);
       const [d, l, a] = await Promise.all([
@@ -135,8 +145,10 @@ export function useCollateral(address: string | undefined) {
       setDeposit(BigInt(d));
       setLocked(BigInt(l));
       setAvailable(BigInt(a));
-    } catch {
-      // Contract not deployed
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to fetch collateral";
+      setError(msg);
+      console.warn("useCollateral error:", msg);
     } finally {
       setLoading(false);
     }
@@ -146,7 +158,7 @@ export function useCollateral(address: string | undefined) {
     refresh();
   }, [refresh]);
 
-  return { deposit, locked, available, loading, refresh };
+  return { deposit, locked, available, loading, refresh, error };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,22 +278,26 @@ export function usePurchaseSignal() {
 export function useDepositEscrow() {
   const signer = useEthersSigner();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const deposit = useCallback(
     async (amount: bigint) => {
       if (!signer) throw new Error("Wallet not connected");
       setLoading(true);
+      setError(null);
       try {
-        // Approve USDC first
         const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
         await approveTx.wait();
 
-        // Then deposit
         const escrow = getEscrowContract(signer);
         const tx = await escrow.deposit(amount);
         await tx.wait();
         return tx.hash as string;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Deposit failed";
+        setError(msg);
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -289,17 +305,19 @@ export function useDepositEscrow() {
     [signer]
   );
 
-  return { deposit, loading };
+  return { deposit, loading, error };
 }
 
 export function useDepositCollateral() {
   const signer = useEthersSigner();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const deposit = useCallback(
     async (amount: bigint) => {
       if (!signer) throw new Error("Wallet not connected");
       setLoading(true);
+      setError(null);
       try {
         const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
@@ -309,6 +327,10 @@ export function useDepositCollateral() {
         const tx = await collateral.deposit(amount);
         await tx.wait();
         return tx.hash as string;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Deposit failed";
+        setError(msg);
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -316,7 +338,7 @@ export function useDepositCollateral() {
     [signer]
   );
 
-  return { deposit, loading };
+  return { deposit, loading, error };
 }
 
 // ---------------------------------------------------------------------------
@@ -388,16 +410,22 @@ export function useWithdrawCollateral() {
 export function useApproveUsdc() {
   const signer = useEthersSigner();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const approve = useCallback(
     async (spender: string, amount: bigint) => {
       if (!signer) throw new Error("Wallet not connected");
       setLoading(true);
+      setError(null);
       try {
         const usdc = getUsdcContract(signer);
         const tx = await usdc.approve(spender, amount);
         await tx.wait();
         return tx.hash as string;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Approval failed";
+        setError(msg);
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -405,5 +433,5 @@ export function useApproveUsdc() {
     [signer]
   );
 
-  return { approve, loading };
+  return { approve, loading, error };
 }

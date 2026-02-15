@@ -47,6 +47,10 @@ class Config:
     http_timeout: int = _int_env("HTTP_TIMEOUT", "30")
     rpc_timeout: int = _int_env("RPC_TIMEOUT", "30")
 
+    # Rate limits (configurable without redeploy)
+    rate_limit_capacity: int = _int_env("RATE_LIMIT_CAPACITY", "60")
+    rate_limit_rate: int = _int_env("RATE_LIMIT_RATE", "10")
+
     # Protocol constants
     signals_per_cycle: int = 10
     shares_total: int = 10
@@ -60,6 +64,8 @@ class Config:
         """Validate config at startup. Returns list of warnings (empty = all good)."""
         import re
         warnings = []
+        if not (1 <= self.bt_netuid <= 65535):
+            raise ValueError(f"BT_NETUID must be 1-65535, got {self.bt_netuid}")
         if self.api_port < 1 or self.api_port > 65535:
             raise ValueError(f"API_PORT must be 1-65535, got {self.api_port}")
         if not self.sports_api_key:
@@ -81,4 +87,13 @@ class Config:
             raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")
         if self.rpc_timeout < 1:
             raise ValueError(f"RPC_TIMEOUT must be >= 1, got {self.rpc_timeout}")
+        if self.base_chain_id not in (8453, 84532, 31337):
+            warnings.append(
+                f"BASE_CHAIN_ID={self.base_chain_id} is non-standard "
+                "(expected 8453=mainnet, 84532=sepolia, 31337=localhost)"
+            )
+        if self.rate_limit_capacity < 1:
+            raise ValueError(f"RATE_LIMIT_CAPACITY must be >= 1, got {self.rate_limit_capacity}")
+        if self.rate_limit_rate < 1:
+            raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
         return warnings
