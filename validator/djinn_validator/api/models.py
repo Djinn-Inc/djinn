@@ -52,6 +52,29 @@ class OutcomeResponse(BaseModel):
     consensus_outcome: int | None = None
 
 
+class RegisterSignalRequest(BaseModel):
+    """POST /v1/signal/{id}/register — Register a purchased signal for outcome tracking."""
+
+    sport: str  # The Odds API sport key, e.g., "basketball_nba"
+    event_id: str  # The Odds API event ID
+    home_team: str
+    away_team: str
+    pick: str  # e.g., "Lakers -3.5 (-110)"
+
+
+class RegisterSignalResponse(BaseModel):
+    signal_id: str
+    registered: bool
+    market: str = ""
+
+
+class ResolveResponse(BaseModel):
+    """POST /v1/signals/resolve — Resolve all pending signals."""
+
+    resolved_count: int
+    results: list[dict] = Field(default_factory=list)
+
+
 class HealthResponse(BaseModel):
     """GET /health — Validator health check."""
 
@@ -59,6 +82,7 @@ class HealthResponse(BaseModel):
     version: str = "0.1.0"
     uid: int | None = None
     shares_held: int = 0
+    pending_outcomes: int = 0
     chain_connected: bool = False
     bt_connected: bool = False
 

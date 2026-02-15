@@ -2,10 +2,17 @@
 
 Validators independently query official sports data sources, then
 reach 2/3+ consensus before writing outcomes on-chain.
+
+Outcome determination logic:
+- SPREADS: Team must cover the spread (score diff > spread for favorites,
+           or lose by fewer than spread for underdogs). Push = VOID.
+- TOTALS:  Combined score must be over/under the total. Push = VOID.
+- H2H:     Selected team must win outright. Tie = VOID.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -31,10 +38,43 @@ class EventResult:
     """Result of a sporting event relevant to a signal."""
 
     event_id: str
+    home_team: str = ""
+    away_team: str = ""
     home_score: int | None = None
     away_score: int | None = None
     status: str = "pending"  # pending, final, postponed, cancelled
     raw_data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ParsedPick:
+    """A structured representation of a signal pick string.
+
+    Examples:
+        "Lakers -3.5 (-110)"  → market=spreads, team=Lakers, line=-3.5
+        "Over 218.5 (-110)"   → market=totals, side=Over, line=218.5
+        "Celtics ML (-150)"   → market=h2h, team=Celtics
+    """
+
+    market: str  # "spreads", "totals", "h2h"
+    team: str = ""  # Team name (for spreads/h2h)
+    side: str = ""  # "Over"/"Under" (for totals)
+    line: float | None = None  # Spread or total line
+    odds: int | None = None  # American odds (informational only)
+
+
+@dataclass
+class SignalMetadata:
+    """Metadata for a purchased signal, used for outcome resolution."""
+
+    signal_id: str
+    sport: str  # The Odds API sport key, e.g., "basketball_nba"
+    event_id: str  # The Odds API event ID
+    home_team: str
+    away_team: str
+    pick: ParsedPick
+    purchased_at: float = field(default_factory=time.time)
+    resolved: bool = False
 
 
 @dataclass
@@ -48,6 +88,195 @@ class OutcomeAttestation:
     timestamp: float = field(default_factory=time.time)
 
 
+# ---------------------------------------------------------------------------
+# Pick Parsing
+# ---------------------------------------------------------------------------
+
+# Regex patterns for different pick formats
+_SPREAD_RE = re.compile(
+    r"^(.+?)\s+([+-]?\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$"
+)
+_TOTAL_RE = re.compile(
+    r"^(Over|Under)\s+(\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$", re.IGNORECASE
+)
+_ML_RE = re.compile(
+    r"^(.+?)\s+ML\s*\(([+-]?\d+)\)$", re.IGNORECASE
+)
+
+
+def parse_pick(pick_str: str) -> ParsedPick:
+    """Parse a pick string into structured data.
+
+    Supports formats:
+        "Lakers -3.5 (-110)"   → spreads
+        "Over 218.5 (-110)"    → totals
+        "Under 218.5 (-110)"   → totals
+        "Celtics ML (-150)"    → h2h (moneyline)
+    """
+    pick_str = pick_str.strip()
+
+    # Try totals first (Over/Under)
+    m = _TOTAL_RE.match(pick_str)
+    if m:
+        return ParsedPick(
+            market="totals",
+            side=m.group(1).capitalize(),
+            line=float(m.group(2)),
+            odds=int(m.group(3)),
+        )
+
+    # Try moneyline
+    m = _ML_RE.match(pick_str)
+    if m:
+        return ParsedPick(
+            market="h2h",
+            team=m.group(1).strip(),
+            odds=int(m.group(2)),
+        )
+
+    # Try spread (most common)
+    m = _SPREAD_RE.match(pick_str)
+    if m:
+        return ParsedPick(
+            market="spreads",
+            team=m.group(1).strip(),
+            line=float(m.group(2)),
+            odds=int(m.group(3)),
+        )
+
+    # Fallback: treat as moneyline without explicit ML tag
+    return ParsedPick(market="h2h", team=pick_str)
+
+
+# ---------------------------------------------------------------------------
+# Outcome Determination
+# ---------------------------------------------------------------------------
+
+
+def determine_outcome(
+    pick: ParsedPick,
+    result: EventResult,
+    home_team: str,
+    away_team: str,
+) -> Outcome:
+    """Determine signal outcome from pick + game result.
+
+    Returns VOID for postponed/cancelled games or pushes (exact line hit).
+    """
+    if result.status in ("postponed", "cancelled"):
+        return Outcome.VOID
+
+    if result.status != "final":
+        return Outcome.PENDING
+
+    if result.home_score is None or result.away_score is None:
+        return Outcome.PENDING
+
+    home = result.home_score
+    away = result.away_score
+
+    if pick.market == "spreads":
+        return _determine_spread(pick, home, away, home_team, away_team)
+    elif pick.market == "totals":
+        return _determine_total(pick, home, away)
+    elif pick.market == "h2h":
+        return _determine_h2h(pick, home, away, home_team, away_team)
+
+    return Outcome.PENDING
+
+
+def _determine_spread(
+    pick: ParsedPick,
+    home: int,
+    away: int,
+    home_team: str,
+    away_team: str,
+) -> Outcome:
+    """Spreads: team + spread vs opponent score."""
+    if pick.line is None:
+        return Outcome.VOID
+
+    # Determine which team was picked
+    is_home = _team_matches(pick.team, home_team)
+    is_away = _team_matches(pick.team, away_team)
+
+    if not is_home and not is_away:
+        log.warning("team_not_found", pick_team=pick.team, home=home_team, away=away_team)
+        return Outcome.VOID
+
+    if is_home:
+        adjusted = home + pick.line
+        diff = adjusted - away
+    else:
+        adjusted = away + pick.line
+        diff = adjusted - home
+
+    if diff == 0:
+        return Outcome.VOID  # Push
+    return Outcome.FAVORABLE if diff > 0 else Outcome.UNFAVORABLE
+
+
+def _determine_total(pick: ParsedPick, home: int, away: int) -> Outcome:
+    """Totals: combined score over/under the line."""
+    if pick.line is None:
+        return Outcome.VOID
+
+    total = home + away
+
+    if total == pick.line:
+        return Outcome.VOID  # Push
+
+    if pick.side == "Over":
+        return Outcome.FAVORABLE if total > pick.line else Outcome.UNFAVORABLE
+    else:
+        return Outcome.FAVORABLE if total < pick.line else Outcome.UNFAVORABLE
+
+
+def _determine_h2h(
+    pick: ParsedPick,
+    home: int,
+    away: int,
+    home_team: str,
+    away_team: str,
+) -> Outcome:
+    """Head-to-head (moneyline): picked team must win outright."""
+    if home == away:
+        return Outcome.VOID  # Tie
+
+    is_home = _team_matches(pick.team, home_team)
+    is_away = _team_matches(pick.team, away_team)
+
+    if not is_home and not is_away:
+        log.warning("team_not_found", pick_team=pick.team, home=home_team, away=away_team)
+        return Outcome.VOID
+
+    if is_home:
+        return Outcome.FAVORABLE if home > away else Outcome.UNFAVORABLE
+    else:
+        return Outcome.FAVORABLE if away > home else Outcome.UNFAVORABLE
+
+
+def _team_matches(pick_team: str, full_name: str) -> bool:
+    """Fuzzy match: pick might use city or mascot, full_name is "City Mascot"."""
+    pick_lower = pick_team.lower()
+    full_lower = full_name.lower()
+    # Exact match
+    if pick_lower == full_lower:
+        return True
+    # Pick is a substring (e.g., "Lakers" in "Los Angeles Lakers")
+    if pick_lower in full_lower:
+        return True
+    # Full name ends with pick (mascot match)
+    if full_lower.endswith(pick_lower):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# OutcomeAttestor
+# ---------------------------------------------------------------------------
+
+
 class OutcomeAttestor:
     """Manages outcome attestation and consensus building."""
 
@@ -55,13 +284,25 @@ class OutcomeAttestor:
         self._api_key = sports_api_key
         self._client = httpx.AsyncClient(timeout=30.0)
         self._attestations: dict[str, list[OutcomeAttestation]] = {}
+        self._pending_signals: dict[str, SignalMetadata] = {}
+
+    def register_signal(self, metadata: SignalMetadata) -> None:
+        """Register a purchased signal for outcome tracking."""
+        self._pending_signals[metadata.signal_id] = metadata
+        log.info(
+            "signal_registered_for_outcome",
+            signal_id=metadata.signal_id,
+            sport=metadata.sport,
+            event_id=metadata.event_id,
+            market=metadata.pick.market,
+        )
+
+    def get_pending_signals(self) -> list[SignalMetadata]:
+        """Return all unresolved signals."""
+        return [s for s in self._pending_signals.values() if not s.resolved]
 
     async def fetch_event_result(self, event_id: str, sport: str = "basketball_nba") -> EventResult:
-        """Fetch event result from sports data API.
-
-        Uses The Odds API for event scores. In production, multiple
-        sources would be queried for cross-validation.
-        """
+        """Fetch event result from The Odds API scores endpoint."""
         if not self._api_key:
             log.warning("no_sports_api_key", event_id=event_id)
             return EventResult(event_id=event_id, status="pending")
@@ -80,9 +321,14 @@ class OutcomeAttestor:
                 return EventResult(event_id=event_id, status="pending")
 
             event = data[0]
+            home_team = event.get("home_team", "")
+            away_team = event.get("away_team", "")
+
             if not event.get("completed"):
                 return EventResult(
                     event_id=event_id,
+                    home_team=home_team,
+                    away_team=away_team,
                     status="pending",
                     raw_data=event,
                 )
@@ -91,13 +337,15 @@ class OutcomeAttestor:
             home_score = None
             away_score = None
             for s in scores:
-                if s.get("name") == event.get("home_team"):
+                if s.get("name") == home_team:
                     home_score = int(s["score"])
-                elif s.get("name") == event.get("away_team"):
+                elif s.get("name") == away_team:
                     away_score = int(s["score"])
 
             return EventResult(
                 event_id=event_id,
+                home_team=home_team,
+                away_team=away_team,
                 home_score=home_score,
                 away_score=away_score,
                 status="final",
@@ -107,6 +355,50 @@ class OutcomeAttestor:
         except httpx.HTTPError as e:
             log.error("sports_api_error", event_id=event_id, error=str(e))
             return EventResult(event_id=event_id, status="error")
+
+    async def resolve_signal(
+        self,
+        signal_id: str,
+        validator_hotkey: str,
+    ) -> OutcomeAttestation | None:
+        """Fetch scores and determine outcome for a registered signal.
+
+        Returns the attestation if the game is complete, None if still pending.
+        """
+        meta = self._pending_signals.get(signal_id)
+        if meta is None:
+            log.warning("signal_not_registered", signal_id=signal_id)
+            return None
+
+        if meta.resolved:
+            return None
+
+        result = await self.fetch_event_result(meta.event_id, meta.sport)
+
+        if result.status not in ("final", "postponed", "cancelled"):
+            return None
+
+        outcome = determine_outcome(
+            meta.pick,
+            result,
+            meta.home_team,
+            meta.away_team,
+        )
+
+        if outcome == Outcome.PENDING:
+            return None
+
+        meta.resolved = True
+        return self.attest(signal_id, validator_hotkey, outcome, result)
+
+    async def resolve_all_pending(self, validator_hotkey: str) -> list[OutcomeAttestation]:
+        """Check all pending signals and resolve any with completed games."""
+        resolved = []
+        for meta in self.get_pending_signals():
+            attestation = await self.resolve_signal(meta.signal_id, validator_hotkey)
+            if attestation is not None:
+                resolved.append(attestation)
+        return resolved
 
     def attest(
         self,

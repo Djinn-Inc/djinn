@@ -1,11 +1,13 @@
 """FastAPI server for the Djinn validator REST API.
 
 Endpoints from Appendix A of the whitepaper:
-- POST /v1/signal         — Accept encrypted key shares from Genius
-- POST /v1/signal/{id}/purchase — Handle buyer purchase (MPC + share release)
-- POST /v1/signal/{id}/outcome  — Submit outcome attestation
-- POST /v1/analytics/attempt    — Fire-and-forget analytics
-- GET  /health                  — Health check
+- POST /v1/signal                    — Accept encrypted key shares from Genius
+- POST /v1/signal/{id}/purchase      — Handle buyer purchase (MPC + share release)
+- POST /v1/signal/{id}/register      — Register purchased signal for outcome tracking
+- POST /v1/signal/{id}/outcome       — Submit outcome attestation
+- POST /v1/signals/resolve           — Resolve all pending signal outcomes
+- POST /v1/analytics/attempt         — Fire-and-forget analytics
+- GET  /health                       — Health check
 """
 
 from __future__ import annotations
@@ -23,6 +25,9 @@ from djinn_validator.api.models import (
     OutcomeResponse,
     PurchaseRequest,
     PurchaseResponse,
+    RegisterSignalRequest,
+    RegisterSignalResponse,
+    ResolveResponse,
     StoreShareRequest,
     StoreShareResponse,
 )
@@ -30,7 +35,12 @@ from djinn_validator.core.mpc import (
     check_availability,
     compute_local_contribution,
 )
-from djinn_validator.core.outcomes import Outcome, OutcomeAttestor
+from djinn_validator.core.outcomes import (
+    Outcome,
+    OutcomeAttestor,
+    SignalMetadata,
+    parse_pick,
+)
 from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
@@ -143,6 +153,45 @@ def create_app(
             message="Key share released",
         )
 
+    @app.post("/v1/signal/{signal_id}/register", response_model=RegisterSignalResponse)
+    async def register_signal(signal_id: str, req: RegisterSignalRequest) -> RegisterSignalResponse:
+        """Register a purchased signal for automatic outcome tracking."""
+        pick = parse_pick(req.pick)
+        metadata = SignalMetadata(
+            signal_id=signal_id,
+            sport=req.sport,
+            event_id=req.event_id,
+            home_team=req.home_team,
+            away_team=req.away_team,
+            pick=pick,
+        )
+        outcome_attestor.register_signal(metadata)
+        return RegisterSignalResponse(
+            signal_id=signal_id,
+            registered=True,
+            market=pick.market,
+        )
+
+    @app.post("/v1/signals/resolve", response_model=ResolveResponse)
+    async def resolve_signals() -> ResolveResponse:
+        """Check all pending signals and resolve any with completed games."""
+        hotkey = ""
+        if neuron:
+            hotkey = neuron.wallet.hotkey.ss58_address if neuron.wallet else ""
+
+        attestations = await outcome_attestor.resolve_all_pending(hotkey)
+        results = [
+            {
+                "signal_id": a.signal_id,
+                "outcome": a.outcome.name,
+                "event_id": a.event_result.event_id,
+                "home_score": a.event_result.home_score,
+                "away_score": a.event_result.away_score,
+            }
+            for a in attestations
+        ]
+        return ResolveResponse(resolved_count=len(attestations), results=results)
+
     @app.post("/v1/signal/{signal_id}/outcome", response_model=OutcomeResponse)
     async def attest_outcome(signal_id: str, req: OutcomeRequest) -> OutcomeResponse:
         """Submit an outcome attestation for a signal."""
@@ -193,6 +242,7 @@ def create_app(
             status="ok",
             uid=neuron.uid if neuron else None,
             shares_held=share_store.count,
+            pending_outcomes=len(outcome_attestor.get_pending_signals()),
             chain_connected=chain_ok,
             bt_connected=neuron is not None and neuron.uid is not None,
         )

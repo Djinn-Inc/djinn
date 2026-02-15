@@ -204,4 +204,4 @@ template TrackRecord(MAX_SIGNALS) {
 component main {public [
     commitHash, outcome, notional, odds, slaBps,
     signalCount, totalGain, totalLoss, favCount, unfavCount, voidCount
-]} = TrackRecord(64);
+]} = TrackRecord(20);
