@@ -54,7 +54,7 @@ const config: Config = {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
-        wordmark: ["var(--font-wordmark)", "Inter", "system-ui", "sans-serif"],
+        wordmark: ["var(--font-wordmark)", "Georgia", "serif"],
       },
     },
   },

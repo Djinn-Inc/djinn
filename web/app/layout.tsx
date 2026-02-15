@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk } from "next/font/google";
+import { Inter, Cinzel } from "next/font/google";
 import Providers from "./providers";
 import Layout from "@/components/Layout";
 import BetaGate from "@/components/BetaGate";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-const spaceGrotesk = Space_Grotesk({
+const cinzel = Cinzel({
   subsets: ["latin"],
   variable: "--font-wordmark",
 });
@@ -36,7 +36,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} ${spaceGrotesk.variable}`}>
+      <body className={`${inter.className} ${cinzel.variable}`}>
         <BetaGate>
           <Providers>
             <Layout>{children}</Layout>

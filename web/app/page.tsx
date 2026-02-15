@@ -14,8 +14,8 @@ export default function Home() {
           className="w-16 h-16 sm:w-[72px] sm:h-[72px]"
           priority
         />
-        <h1 className="text-5xl sm:text-6xl font-bold text-slate-900 font-wordmark">
-          djinn
+        <h1 className="text-5xl sm:text-6xl font-bold text-slate-900 font-wordmark tracking-wide">
+          DJINN
         </h1>
       </div>
 
@@ -32,7 +32,7 @@ export default function Home() {
       </div>
 
       {/* Taglines */}
-      <div className="text-center mb-14 space-y-1">
+      <div className="text-center mb-10 sm:mb-14 space-y-1">
         <p className="text-slate-600">
           Buy intelligence you can <span className="font-semibold text-slate-900">trust</span>.
         </p>
@@ -44,41 +44,48 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Two big CTAs */}
-      <div className="flex flex-col sm:flex-row gap-6 w-full max-w-lg mb-12">
+      {/* Separator */}
+      <div className="flex items-center gap-4 w-full max-w-xs sm:max-w-lg mb-10 sm:mb-14">
+        <div className="flex-1 h-px bg-slate-200" />
+        <span className="text-xs text-slate-400 uppercase tracking-widest">Get started</span>
+        <div className="flex-1 h-px bg-slate-200" />
+      </div>
+
+      {/* Two CTAs */}
+      <div className="flex flex-row gap-4 sm:gap-6 w-full max-w-lg mb-12">
         {/* Genius — orange */}
         <Link
           href="/genius"
-          className="flex-1 group rounded-2xl border-2 border-genius-200 bg-white p-8 text-center hover:border-genius-400 hover:shadow-lg hover:shadow-genius-100 transition-all"
+          className="flex-1 group rounded-xl sm:rounded-2xl border-2 border-genius-200 bg-white p-5 sm:p-8 text-center hover:border-genius-400 hover:shadow-lg hover:shadow-genius-100 transition-all"
         >
-          <div className="w-14 h-14 rounded-full bg-genius-100 flex items-center justify-center mx-auto mb-4 group-hover:bg-genius-200 transition-colors">
-            <svg className="w-7 h-7 text-genius-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-genius-100 flex items-center justify-center mx-auto mb-3 sm:mb-4 group-hover:bg-genius-200 transition-colors">
+            <svg className="w-5 h-5 sm:w-7 sm:h-7 text-genius-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-1">
+          <h2 className="text-base sm:text-xl font-bold text-slate-900 mb-0.5 sm:mb-1">
             I&apos;m a Genius
           </h2>
-          <p className="text-sm text-slate-500">
-            Sell your predictions
+          <p className="text-xs sm:text-sm text-slate-500">
+            Sell predictions
           </p>
         </Link>
 
         {/* Idiot — green */}
         <Link
           href="/idiot"
-          className="flex-1 group rounded-2xl border-2 border-idiot-200 bg-white p-8 text-center hover:border-idiot-400 hover:shadow-lg hover:shadow-idiot-100 transition-all"
+          className="flex-1 group rounded-xl sm:rounded-2xl border-2 border-idiot-200 bg-white p-5 sm:p-8 text-center hover:border-idiot-400 hover:shadow-lg hover:shadow-idiot-100 transition-all"
         >
-          <div className="w-14 h-14 rounded-full bg-idiot-100 flex items-center justify-center mx-auto mb-4 group-hover:bg-idiot-200 transition-colors">
-            <svg className="w-7 h-7 text-idiot-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-idiot-100 flex items-center justify-center mx-auto mb-3 sm:mb-4 group-hover:bg-idiot-200 transition-colors">
+            <svg className="w-5 h-5 sm:w-7 sm:h-7 text-idiot-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-1">
+          <h2 className="text-base sm:text-xl font-bold text-slate-900 mb-0.5 sm:mb-1">
             I&apos;m an Idiot
           </h2>
-          <p className="text-sm text-slate-500">
-            Buy signal access
+          <p className="text-xs sm:text-sm text-slate-500">
+            Buy signals
           </p>
         </Link>
       </div>

@@ -49,8 +49,8 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
           height={56}
           className="w-14 h-14"
         />
-        <h1 className="text-5xl font-bold text-slate-900 font-wordmark">
-          djinn
+        <h1 className="text-5xl font-bold text-slate-900 font-wordmark tracking-wide">
+          DJINN
         </h1>
       </div>
       <p className="text-sm tracking-[0.25em] uppercase text-slate-400 font-light">

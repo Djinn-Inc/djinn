@@ -14,8 +14,8 @@ export default function About() {
             height={44}
             className="w-11 h-11"
           />
-          <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-wordmark">
-            djinn
+          <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-wordmark tracking-wide">
+            DJINN
           </span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
