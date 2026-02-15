@@ -176,7 +176,10 @@ export default function CreateSignal() {
         );
       }
       if (failed > 0) {
-        console.warn(`${failed}/10 share stores failed, but ${succeeded} succeeded (threshold: 7)`);
+        const reasons = results
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r, i) => `share ${i}: ${r.reason}`);
+        console.warn(`${failed}/10 share stores failed (${succeeded} succeeded):`, reasons);
       }
 
       setStep("success");

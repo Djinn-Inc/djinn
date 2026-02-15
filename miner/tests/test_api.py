@@ -285,6 +285,20 @@ class TestInputValidation:
         resp = app.post("/v1/proof", json={})
         assert resp.status_code == 422
 
+    def test_check_invalid_market(self, app: TestClient) -> None:
+        resp = app.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                "event_id": "ev",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "moneyline",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 422
+
     def test_nonexistent_endpoint_returns_404(self, app: TestClient) -> None:
         resp = app.get("/v1/doesnotexist")
         assert resp.status_code in (404, 405)
