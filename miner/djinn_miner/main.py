@@ -156,7 +156,10 @@ async def async_main() -> None:
     for t in running_tasks:
         t.cancel()
     await asyncio.gather(*running_tasks, return_exceptions=True)
-    await odds_client.close()
+    try:
+        await odds_client.close()
+    except Exception as e:
+        log.warning("odds_client_close_error", error=str(e))
     log.info("shutdown_complete")
 
 

@@ -239,3 +239,30 @@ describe("MinerClient", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Error handling
+// ---------------------------------------------------------------------------
+
+describe("Error handling", () => {
+  it("includes status code in error message", async () => {
+    const client = new ValidatorClient("http://localhost:8421");
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ detail: "not found" }, 404),
+    );
+    await expect(client.health()).rejects.toThrow("404");
+  });
+
+  it("propagates network errors", async () => {
+    const client = new MinerClient("http://localhost:8422");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(client.health()).rejects.toThrow("Failed to fetch");
+  });
+
+  it("wraps abort errors as timeout", async () => {
+    const client = new MinerClient("http://localhost:8422");
+    const abortError = new DOMException("The operation was aborted", "AbortError");
+    mockFetch.mockRejectedValueOnce(abortError);
+    await expect(client.health()).rejects.toThrow("timed out");
+  });
+});

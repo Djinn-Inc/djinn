@@ -177,3 +177,44 @@ class TestLagrangeCoefficient:
             coeff = _lagrange_coefficient(s.x, xs)
             reconstructed = (reconstructed + coeff * s.y) % BN254_PRIME
         assert reconstructed == secret
+
+
+class TestSecureMPCEdgeCases:
+    """Edge cases for the secure MPC protocol."""
+
+    def test_single_index_available(self) -> None:
+        """Single element in available set that matches."""
+        shares = generate_signal_index_shares(5)
+        result = secure_check_availability(shares, {5}, threshold=7)
+        assert result.available is True
+
+    def test_single_index_unavailable(self) -> None:
+        """Single element in available set that doesn't match."""
+        shares = generate_signal_index_shares(5)
+        result = secure_check_availability(shares, {3}, threshold=7)
+        assert result.available is False
+
+    def test_boundary_index_1(self) -> None:
+        """Real index at lower boundary (1)."""
+        shares = generate_signal_index_shares(1)
+        result = secure_check_availability(shares, {1, 2, 3}, threshold=7)
+        assert result.available is True
+
+    def test_boundary_index_10(self) -> None:
+        """Real index at upper boundary (10)."""
+        shares = generate_signal_index_shares(10)
+        result = secure_check_availability(shares, {8, 9, 10}, threshold=7)
+        assert result.available is True
+
+    def test_all_indices_available(self) -> None:
+        """All 10 indices available — always succeeds."""
+        for idx in range(1, 11):
+            shares = generate_signal_index_shares(idx)
+            result = secure_check_availability(shares, set(range(1, 11)), threshold=7)
+            assert result.available is True, f"Failed for index {idx}"
+
+    def test_participating_validators_count(self) -> None:
+        """Result should report correct participant count."""
+        shares = generate_signal_index_shares(5)
+        result = secure_check_availability(shares, {5}, threshold=7)
+        assert result.participating_validators == len(shares)

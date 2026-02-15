@@ -9,6 +9,7 @@ import pytest
 
 from djinn_miner.api.models import CandidateLine
 from djinn_miner.core.checker import LineChecker
+from djinn_miner.core.health import HealthTracker
 from djinn_miner.data.odds_api import OddsApiClient
 
 
@@ -362,3 +363,81 @@ async def test_strict_tolerance() -> None:
     res_close = await chk.check(close)
     assert res_exact[0].available is True
     assert res_close[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_partial_sport_failure_still_returns_results() -> None:
+    """If one sport fails but another succeeds, partial results are returned."""
+    nba_data = [
+        {
+            "id": "nba-001",
+            "home_team": "Lakers",
+            "away_team": "Celtics",
+            "bookmakers": [
+                {
+                    "key": "fanduel", "title": "FanDuel",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "Lakers", "price": 1.5},
+                    ]}],
+                },
+            ],
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "basketball_nba" in url:
+            return httpx.Response(200, json=nba_data)
+        return httpx.Response(500, json={"error": "fail"})
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    odds_client = OddsApiClient(api_key="test", http_client=mock_http)
+    health = HealthTracker(odds_api_connected=True)
+    chk = LineChecker(odds_client=odds_client, line_tolerance=0.5, health_tracker=health)
+
+    lines = [
+        CandidateLine(
+            index=1, sport="basketball_nba", event_id="nba-001",
+            home_team="Lakers", away_team="Celtics",
+            market="h2h", line=None, side="Lakers",
+        ),
+        CandidateLine(
+            index=2, sport="football_nfl", event_id="nfl-001",
+            home_team="Chiefs", away_team="Bills",
+            market="h2h", line=None, side="Chiefs",
+        ),
+    ]
+
+    results = await chk.check(lines)
+    assert len(results) == 2
+    assert results[0].available is True  # NBA succeeded
+    assert results[1].available is False  # NFL failed
+    # Health should record success since at least one sport succeeded
+    assert health.get_status().odds_api_connected is True
+
+
+@pytest.mark.asyncio
+async def test_all_sports_fail_degrades_health() -> None:
+    """When all sports fail, health tracker records failure."""
+    mock_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(500, json={"error": "down"})
+        )
+    )
+    odds_client = OddsApiClient(api_key="test", http_client=mock_http)
+    health = HealthTracker(odds_api_connected=True)
+    chk = LineChecker(odds_client=odds_client, line_tolerance=0.5, health_tracker=health)
+
+    lines = [
+        CandidateLine(
+            index=1, sport="basketball_nba", event_id="ev-1",
+            home_team="A", away_team="B",
+            market="h2h", line=None, side="A",
+        ),
+    ]
+
+    # Need CONSECUTIVE_FAILURE_THRESHOLD failures to degrade
+    for _ in range(HealthTracker.CONSECUTIVE_FAILURE_THRESHOLD):
+        await chk.check(lines)
+
+    assert health.get_status().odds_api_connected is False

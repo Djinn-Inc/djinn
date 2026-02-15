@@ -383,6 +383,61 @@ class TestOutcomeAttestor:
         removed = attestor.cleanup_resolved(max_age_seconds=1)
         assert removed == 0
 
+    def test_consensus_threshold_rounding(self) -> None:
+        """Threshold = int(n * 2/3) + 1. For n=3: int(2.0)+1 = 3."""
+        attestor = OutcomeAttestor()
+        result = EventResult(event_id="evt1", status="final", home_score=100, away_score=90)
+
+        # With 3 validators, threshold is int(3*2/3)+1 = 3 → all must agree
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        attestor.attest("sig1", "v2", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", 3) is None  # 2 < 3
+        attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE  # 3 >= 3
+
+    def test_consensus_with_4_validators(self) -> None:
+        """For n=4: int(4*2/3)+1 = int(2.66)+1 = 3 → need 3 of 4."""
+        attestor = OutcomeAttestor()
+        result = EventResult(event_id="evt1", status="final", home_score=100, away_score=90)
+
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        attestor.attest("sig1", "v2", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", 4) is None  # 2 < 3
+        attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", 4) == Outcome.FAVORABLE  # 3 >= 3
+
+    def test_consensus_negative_validators(self) -> None:
+        """Negative validator count should not crash."""
+        attestor = OutcomeAttestor()
+        result = EventResult(event_id="evt1", status="final", home_score=100, away_score=90)
+        attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", -1) is None
+
+    def test_resolve_unregistered_signal(self) -> None:
+        """Resolving a signal that was never registered returns None."""
+        import asyncio
+        attestor = OutcomeAttestor()
+        result = asyncio.get_event_loop().run_until_complete(
+            attestor.resolve_signal("nonexistent", "v1")
+        )
+        assert result is None
+
+    def test_resolve_already_resolved(self) -> None:
+        """Resolving an already-resolved signal returns None."""
+        import asyncio
+        attestor = OutcomeAttestor()
+        meta = SignalMetadata(
+            signal_id="sig1", sport="basketball_nba", event_id="evt1",
+            home_team="Lakers", away_team="Celtics",
+            pick=parse_pick("Lakers -3.5 (-110)"),
+        )
+        meta.resolved = True
+        attestor.register_signal(meta)
+        result = asyncio.get_event_loop().run_until_complete(
+            attestor.resolve_signal("sig1", "v1")
+        )
+        assert result is None
+
     @pytest.mark.asyncio
     async def test_close(self) -> None:
         attestor = OutcomeAttestor()
