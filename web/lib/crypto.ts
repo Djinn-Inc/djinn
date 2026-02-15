@@ -130,6 +130,12 @@ export function reconstructSecret(
 // AES-256-GCM (Web Crypto API)
 // ---------------------------------------------------------------------------
 
+function toArrayBuffer(arr: Uint8Array): ArrayBuffer {
+  return arr.buffer instanceof ArrayBuffer
+    ? arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength)
+    : new Uint8Array(arr).buffer as ArrayBuffer;
+}
+
 export function generateAesKey(): Uint8Array {
   // Generate a random key that fits within BN254 field (so Shamir roundtrip works).
   // We generate random bytes, reduce mod prime, then convert back to 32 bytes.
@@ -160,7 +166,7 @@ export async function encrypt(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key,
+    toArrayBuffer(key),
     { name: "AES-GCM" },
     false,
     ["encrypt"],
@@ -168,7 +174,7 @@ export async function encrypt(
 
   const encoded = new TextEncoder().encode(plaintext);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     cryptoKey,
     encoded,
   );
@@ -186,16 +192,18 @@ export async function decrypt(
 ): Promise<string> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key,
+    toArrayBuffer(key),
     { name: "AES-GCM" },
     false,
     ["decrypt"],
   );
 
+  const ivBytes = fromHex(iv);
+  const ctBytes = fromHex(ciphertext);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: fromHex(iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(ivBytes) },
     cryptoKey,
-    fromHex(ciphertext),
+    toArrayBuffer(ctBytes),
   );
 
   return new TextDecoder().decode(decrypted);
