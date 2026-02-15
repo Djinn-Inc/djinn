@@ -1,0 +1,116 @@
+export enum SignalStatus {
+  Active = 0,
+  Purchased = 1,
+  Settled = 2,
+  Voided = 3,
+}
+
+export enum Outcome {
+  Pending = 0,
+  Favorable = 1,
+  Unfavorable = 2,
+  Void = 3,
+}
+
+export interface Signal {
+  genius: string;
+  encryptedBlob: string;
+  commitHash: string;
+  sport: string;
+  maxPriceBps: bigint;
+  slaMultiplierBps: bigint;
+  expiresAt: bigint;
+  decoyLines: string[];
+  availableSportsbooks: string[];
+  walletRecoveryBlob: string;
+  status: SignalStatus;
+  createdAt: bigint;
+}
+
+export interface Purchase {
+  idiot: string;
+  signalId: bigint;
+  notional: bigint;
+  feePaid: bigint;
+  creditUsed: bigint;
+  usdcPaid: bigint;
+  odds: bigint;
+  outcome: Outcome;
+  purchasedAt: bigint;
+}
+
+export interface AccountState {
+  currentCycle: bigint;
+  signalCount: bigint;
+  qualityScore: bigint;
+  purchaseIds: bigint[];
+  settled: boolean;
+}
+
+export interface GeniusLeaderboardEntry {
+  address: string;
+  qualityScore: number;
+  totalSignals: number;
+  auditCount: number;
+  roi: number;
+}
+
+export interface CommitParams {
+  signalId: bigint;
+  encryptedBlob: string;
+  commitHash: string;
+  sport: string;
+  maxPriceBps: bigint;
+  slaMultiplierBps: bigint;
+  expiresAt: bigint;
+  decoyLines: string[];
+  availableSportsbooks: string[];
+}
+
+export function formatUsdc(amount: bigint): string {
+  const whole = amount / 1_000_000n;
+  const frac = amount % 1_000_000n;
+  const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+  return fracStr ? `${whole}.${fracStr}` : whole.toString();
+}
+
+export function parseUsdc(amount: string): bigint {
+  const [whole, frac = ""] = amount.split(".");
+  const fracPadded = frac.padEnd(6, "0").slice(0, 6);
+  return BigInt(whole) * 1_000_000n + BigInt(fracPadded);
+}
+
+export function formatBps(bps: bigint): string {
+  const pct = Number(bps) / 100;
+  return `${pct}%`;
+}
+
+export function truncateAddress(address: string): string {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+export function signalStatusLabel(status: SignalStatus): string {
+  switch (status) {
+    case SignalStatus.Active:
+      return "Active";
+    case SignalStatus.Purchased:
+      return "Purchased";
+    case SignalStatus.Settled:
+      return "Settled";
+    case SignalStatus.Voided:
+      return "Voided";
+  }
+}
+
+export function outcomeLabel(outcome: Outcome): string {
+  switch (outcome) {
+    case Outcome.Pending:
+      return "Pending";
+    case Outcome.Favorable:
+      return "Favorable";
+    case Outcome.Unfavorable:
+      return "Unfavorable";
+    case Outcome.Void:
+      return "Void";
+  }
+}
