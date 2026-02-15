@@ -425,6 +425,65 @@ def test_parse_bookmaker_odds_non_dict_bookmaker() -> None:
     assert len(result) == 0
 
 
+class TestNaNParsing:
+    """NaN and Infinity values from API must be sanitized during parsing."""
+
+    def _make_event(self, price: object, point: object = None) -> list[dict]:
+        outcome: dict = {"name": "Team A", "price": price}
+        if point is not None:
+            outcome["point"] = point
+        return [{
+            "id": "ev-1",
+            "home_team": "A",
+            "away_team": "B",
+            "bookmakers": [{
+                "key": "bk",
+                "title": "Bookie",
+                "markets": [{
+                    "key": "spreads",
+                    "outcomes": [outcome],
+                }],
+            }],
+        }]
+
+    def test_nan_price_becomes_zero(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(float("nan")))
+        assert len(result) == 1
+        assert result[0].price == 0.0
+
+    def test_inf_price_becomes_zero(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(float("inf")))
+        assert len(result) == 1
+        assert result[0].price == 0.0
+
+    def test_nan_point_becomes_none(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(1.91, float("nan")))
+        assert len(result) == 1
+        assert result[0].point is None
+
+    def test_inf_point_becomes_none(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(1.91, float("-inf")))
+        assert len(result) == 1
+        assert result[0].point is None
+
+    def test_valid_price_and_point_preserved(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(1.91, -3.5))
+        assert len(result) == 1
+        assert result[0].price == 1.91
+        assert result[0].point == -3.5
+
+    def test_string_nan_point_becomes_none(self) -> None:
+        c = OddsApiClient(api_key="test")
+        result = c.parse_bookmaker_odds(self._make_event(1.91, "NaN"))
+        assert len(result) == 1
+        assert result[0].point is None
+
+
 class TestErrorCaching:
     """Failed API responses are cached with short TTL to prevent request storms.
 

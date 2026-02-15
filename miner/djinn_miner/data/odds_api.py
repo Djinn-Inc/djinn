@@ -7,6 +7,7 @@ from multiple bookmakers. Caches responses for a configurable TTL.
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import time
 import uuid
@@ -316,6 +317,17 @@ class OddsApiClient:
                                 raw_price=outcome.get("price"),
                             )
                             price = 0.0
+                        if not math.isfinite(price):
+                            price = 0.0
+                        raw_point = outcome.get("point")
+                        point: float | None = None
+                        if raw_point is not None:
+                            try:
+                                point = float(raw_point)
+                                if not math.isfinite(point):
+                                    point = None
+                            except (ValueError, TypeError):
+                                point = None
                         results.append(
                             BookmakerOdds(
                                 bookmaker_key=bk_key,
@@ -323,7 +335,7 @@ class OddsApiClient:
                                 market=market_key,
                                 name=outcome.get("name", ""),
                                 price=price,
-                                point=outcome.get("point"),
+                                point=point,
                             )
                         )
 
