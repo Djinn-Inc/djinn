@@ -167,6 +167,9 @@ def create_app(
         2. Run MPC to check if real index ∈ available indices
         3. If available, release encrypted key share
         """
+        # Clean up expired MPC sessions before starting new ones
+        _mpc.cleanup_expired()
+
         # Check we hold a share for this signal
         record = share_store.get(signal_id)
         if record is None:
@@ -347,6 +350,9 @@ def create_app(
     async def mpc_init(req: MPCInitRequest, request: Request) -> MPCInitResponse:
         """Accept an MPC session invitation from the coordinator."""
         await validate_signed_request(request, _get_validator_hotkeys())
+
+        # Clean up expired sessions to prevent memory leak
+        _mpc.cleanup_expired()
 
         session = _mpc.get_session(req.session_id)
         if session is not None:
