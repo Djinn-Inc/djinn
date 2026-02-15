@@ -103,21 +103,19 @@ class ChainClient:
         self._signal: AsyncContract | None = None
         self._account: AsyncContract | None = None
 
-        if escrow_address:
-            self._escrow = self._w3.eth.contract(
-                address=self._w3.to_checksum_address(escrow_address),
-                abi=ESCROW_ABI,
-            )
-        if signal_address:
-            self._signal = self._w3.eth.contract(
-                address=self._w3.to_checksum_address(signal_address),
-                abi=SIGNAL_COMMITMENT_ABI,
-            )
-        if account_address:
-            self._account = self._w3.eth.contract(
-                address=self._w3.to_checksum_address(account_address),
-                abi=ACCOUNT_ABI,
-            )
+        for label, addr, abi, attr in [
+            ("escrow", escrow_address, ESCROW_ABI, "_escrow"),
+            ("signal", signal_address, SIGNAL_COMMITMENT_ABI, "_signal"),
+            ("account", account_address, ACCOUNT_ABI, "_account"),
+        ]:
+            if addr:
+                try:
+                    setattr(self, attr, self._w3.eth.contract(
+                        address=self._w3.to_checksum_address(addr),
+                        abi=abi,
+                    ))
+                except ValueError:
+                    log.error("invalid_contract_address", contract=label, address=addr)
 
     async def is_signal_active(self, signal_id: int) -> bool:
         """Check if a signal is still active on-chain."""
@@ -155,9 +153,13 @@ class ChainClient:
             log.warning("escrow_contract_not_configured")
             return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
         try:
+            buyer_addr = self._w3.to_checksum_address(buyer)
+        except ValueError:
+            log.error("invalid_buyer_address", buyer=buyer)
+            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
+        try:
             result = await self._escrow.functions.purchases(
-                signal_id,
-                self._w3.to_checksum_address(buyer),
+                signal_id, buyer_addr,
             ).call()
             return {
                 "notional": result[0],
@@ -173,9 +175,14 @@ class ChainClient:
         if self._account is None:
             return False
         try:
+            genius_addr = self._w3.to_checksum_address(genius)
+            idiot_addr = self._w3.to_checksum_address(idiot)
+        except ValueError:
+            log.error("invalid_address_for_audit", genius=genius, idiot=idiot)
+            return False
+        try:
             return await self._account.functions.isAuditReady(
-                self._w3.to_checksum_address(genius),
-                self._w3.to_checksum_address(idiot),
+                genius_addr, idiot_addr,
             ).call()
         except Exception as e:
             log.error("is_audit_ready_failed", genius=genius, idiot=idiot, error=str(e))

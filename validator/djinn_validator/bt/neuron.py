@@ -72,15 +72,15 @@ class DjinnValidator:
             log.info(
                 "metagraph_synced",
                 netuid=self.netuid,
-                n=self.metagraph.n.item(),
+                n=self._safe_item(self.metagraph.n),
             )
 
             # Find our UID
             hotkey = self.wallet.hotkey.ss58_address
-            if hotkey in self.metagraph.hotkeys:
-                self.uid = self.metagraph.hotkeys.index(hotkey)
+            try:
+                self.uid = list(self.metagraph.hotkeys).index(hotkey)
                 log.info("validator_uid", uid=self.uid)
-            else:
+            except ValueError:
                 log.warning("not_registered", hotkey=hotkey, netuid=self.netuid)
                 return False
 
@@ -95,11 +95,18 @@ class DjinnValidator:
                       exc_info=True)
             return False
 
+    @staticmethod
+    def _safe_item(tensor_or_val: Any) -> int:
+        """Safely extract an int from a tensor or raw value."""
+        if hasattr(tensor_or_val, "item"):
+            return int(tensor_or_val.item())
+        return int(tensor_or_val)
+
     def sync_metagraph(self) -> None:
         """Re-sync the metagraph to pick up new registrations/deregistrations."""
         if self.subtensor and self.metagraph:
             self.metagraph.sync(subtensor=self.subtensor)
-            log.debug("metagraph_synced", n=self.metagraph.n.item())
+            log.debug("metagraph_synced", n=self._safe_item(self.metagraph.n))
 
     def set_weights(self, weights: dict[int, float]) -> bool:
         """Set miner weights on the Bittensor network.
@@ -143,9 +150,10 @@ class DjinnValidator:
             return []
 
         miner_uids = []
-        for uid in range(self.metagraph.n.item()):
-            # Miners have stake below validator threshold
-            if self.metagraph.validator_permit[uid].item() is False:
+        for uid in range(self._safe_item(self.metagraph.n)):
+            permit = self.metagraph.validator_permit[uid]
+            is_validator = bool(permit.item() if hasattr(permit, "item") else permit)
+            if not is_validator:
                 miner_uids.append(uid)
         return miner_uids
 
@@ -166,7 +174,11 @@ class DjinnValidator:
         """Current block number."""
         if self.subtensor is None:
             return 0
-        return self.subtensor.block
+        try:
+            return int(self.subtensor.block)
+        except Exception:
+            log.warning("block_access_failed")
+            return 0
 
     def should_set_weights(self) -> bool:
         """Check if enough blocks have passed since last weight update."""
