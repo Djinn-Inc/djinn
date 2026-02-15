@@ -176,3 +176,49 @@ class TestCorsOrigins:
     def test_ignores_empty_entries(self) -> None:
         result = get_cors_origins("https://a.io,,https://b.io")
         assert result == ["https://a.io", "https://b.io"]
+
+    def test_trailing_comma(self) -> None:
+        result = get_cors_origins("https://a.io,")
+        assert result == ["https://a.io"]
+
+
+class TestTokenBucketEdgeCases:
+    def test_capacity_does_not_overflow(self) -> None:
+        """Refill should not exceed initial capacity."""
+        b = TokenBucket(capacity=5, refill_rate=1000)
+        b.last_refill = time.monotonic() - 100  # 100 seconds = 100k tokens @ rate 1000
+        assert b.consume() is True
+        assert b.tokens <= 5.0
+
+    def test_consume_multiple_tokens(self) -> None:
+        b = TokenBucket(capacity=10, refill_rate=1)
+        assert b.consume(5) is True
+        assert b.consume(5) is True
+        assert b.consume(1) is False
+
+    def test_zero_rate_bucket(self) -> None:
+        """With zero refill rate, tokens never recover."""
+        b = TokenBucket(capacity=1, refill_rate=0)
+        assert b.consume() is True
+        b.last_refill = time.monotonic() - 1000
+        assert b.consume() is False
+
+
+class TestRateLimiterCleanup:
+    def test_cleanup_removes_stale_keeps_fresh(self) -> None:
+        limiter = RateLimiter(capacity=5, rate=1)
+        limiter.allow("fresh-ip")
+        limiter.allow("stale-ip")
+        limiter._buckets["stale-ip"].last_refill = time.monotonic() - 600
+        limiter._last_cleanup = time.monotonic() - 600
+        limiter._maybe_cleanup()
+        assert "stale-ip" not in limiter._buckets
+        assert "fresh-ip" in limiter._buckets
+
+    def test_cleanup_skipped_when_recent(self) -> None:
+        limiter = RateLimiter(capacity=5, rate=1)
+        limiter.allow("1.1.1.1")
+        limiter._buckets["1.1.1.1"].last_refill = time.monotonic() - 600  # stale
+        # Don't force cleanup time
+        limiter._maybe_cleanup()
+        assert "1.1.1.1" in limiter._buckets  # Not cleaned because interval not reached

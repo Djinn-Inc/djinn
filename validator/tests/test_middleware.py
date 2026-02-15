@@ -223,3 +223,78 @@ class TestValidateSignedRequest:
         )
         assert resp.status_code == 401
         assert "too old" in resp.json()["detail"]
+
+    def test_invalid_timestamp_format_rejected(self, auth_app: TestClient) -> None:
+        resp = auth_app.post(
+            "/v1/mpc/test",
+            json={},
+            headers={
+                "X-Hotkey": "5FakeKey",
+                "X-Signature": "abcd",
+                "X-Timestamp": "not-a-number",
+                "X-Nonce": "test",
+            },
+        )
+        assert resp.status_code == 401
+        assert "Invalid timestamp" in resp.json()["detail"]
+
+    def test_forbidden_hotkey_rejected(self) -> None:
+        """Hotkey not in allowlist should be rejected."""
+        app = FastAPI()
+
+        @app.post("/v1/mpc/test")
+        async def mpc_test(request: Request) -> dict:
+            hotkey = await validate_signed_request(request, allowed_hotkeys={"5AllowedKey"})
+            return {"hotkey": hotkey}
+
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/mpc/test",
+            json={},
+            headers={
+                "X-Hotkey": "5ForbiddenKey",
+                "X-Signature": "abcd",
+                "X-Timestamp": str(int(time.time())),
+                "X-Nonce": "test",
+            },
+        )
+        assert resp.status_code == 403
+
+
+class TestTokenBucketEdgeCases:
+    def test_capacity_does_not_overflow(self) -> None:
+        """Refill should not exceed initial capacity."""
+        b = TokenBucket(capacity=5, refill_rate=1000)
+        b.last_refill = time.monotonic() - 100
+        assert b.consume() is True
+        assert b.tokens <= 5.0
+
+    def test_consume_multiple_tokens(self) -> None:
+        b = TokenBucket(capacity=10, refill_rate=1)
+        assert b.consume(5) is True
+        assert b.consume(5) is True
+        assert b.consume(1) is False
+
+
+class TestRateLimiterStaleCleanup:
+    def test_stale_bucket_cleanup(self) -> None:
+        limiter = RateLimiter(default_capacity=5, default_rate=1)
+        limiter.allow("1.1.1.1", "/test")
+        # Make stale
+        for key in list(limiter._buckets.keys()):
+            limiter._buckets[key].last_refill = time.monotonic() - 600
+        limiter._last_cleanup = time.monotonic() - 600
+        limiter._maybe_cleanup()
+        assert len(limiter._buckets) == 0
+
+    def test_cleanup_keeps_fresh_buckets(self) -> None:
+        limiter = RateLimiter(default_capacity=5, default_rate=1)
+        limiter.allow("fresh", "/test")
+        limiter.allow("stale", "/test")
+        for key in limiter._buckets:
+            if "stale" in key:
+                limiter._buckets[key].last_refill = time.monotonic() - 600
+        limiter._last_cleanup = time.monotonic() - 600
+        limiter._maybe_cleanup()
+        assert any("fresh" in k for k in limiter._buckets)
+        assert not any("stale" in k for k in limiter._buckets)
