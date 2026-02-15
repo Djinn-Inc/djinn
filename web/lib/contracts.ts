@@ -1,28 +1,39 @@
 import { ethers } from "ethers";
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+function safeAddress(raw: string | undefined, fallback: string): string {
+  const addr = raw ?? fallback;
+  if (addr === ZERO_ADDRESS) return addr; // allow zero in dev
+  try {
+    return ethers.getAddress(addr);
+  } catch {
+    console.warn(`Invalid contract address "${addr}" — falling back to zero`);
+    return ZERO_ADDRESS;
+  }
+}
+
 // Contract addresses — populated from env vars or placeholder zeros
 export const ADDRESSES = {
-  signalCommitment:
-    process.env.NEXT_PUBLIC_SIGNAL_COMMITMENT_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  escrow:
-    process.env.NEXT_PUBLIC_ESCROW_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  collateral:
-    process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  creditLedger:
-    process.env.NEXT_PUBLIC_CREDIT_LEDGER_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  account:
-    process.env.NEXT_PUBLIC_ACCOUNT_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  audit:
-    process.env.NEXT_PUBLIC_AUDIT_ADDRESS ??
-    "0x0000000000000000000000000000000000000000",
-  usdc:
-    process.env.NEXT_PUBLIC_USDC_ADDRESS ??
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  signalCommitment: safeAddress(
+    process.env.NEXT_PUBLIC_SIGNAL_COMMITMENT_ADDRESS,
+    ZERO_ADDRESS
+  ),
+  escrow: safeAddress(process.env.NEXT_PUBLIC_ESCROW_ADDRESS, ZERO_ADDRESS),
+  collateral: safeAddress(
+    process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS,
+    ZERO_ADDRESS
+  ),
+  creditLedger: safeAddress(
+    process.env.NEXT_PUBLIC_CREDIT_LEDGER_ADDRESS,
+    ZERO_ADDRESS
+  ),
+  account: safeAddress(process.env.NEXT_PUBLIC_ACCOUNT_ADDRESS, ZERO_ADDRESS),
+  audit: safeAddress(process.env.NEXT_PUBLIC_AUDIT_ADDRESS, ZERO_ADDRESS),
+  usdc: safeAddress(
+    process.env.NEXT_PUBLIC_USDC_ADDRESS,
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  ),
 } as const;
 
 // Minimal ABIs — only the functions used by the client

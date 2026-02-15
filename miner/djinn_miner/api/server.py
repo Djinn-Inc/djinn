@@ -31,6 +31,7 @@ from djinn_miner.api.models import (
     HealthResponse,
     ProofRequest,
     ProofResponse,
+    ReadinessResponse,
 )
 
 if TYPE_CHECKING:
@@ -130,6 +131,19 @@ def create_app(
         """Health check endpoint for validator pings."""
         health_tracker.record_ping()
         return health_tracker.get_status()
+
+    @app.get("/health/ready", response_model=ReadinessResponse)
+    async def readiness() -> ReadinessResponse:
+        """Deep readiness probe — checks API key and dependencies."""
+        from djinn_miner.config import Config
+        cfg = Config()
+
+        checks: dict[str, bool] = {}
+        checks["odds_api_key"] = bool(cfg.odds_api_key)
+        checks["odds_api_connected"] = health_tracker.get_status().odds_api_connected
+
+        ready = all(checks.values())
+        return ReadinessResponse(ready=ready, checks=checks)
 
     @app.get("/metrics")
     async def metrics() -> bytes:

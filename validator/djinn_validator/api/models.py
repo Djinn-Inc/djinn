@@ -107,6 +107,13 @@ class HealthResponse(BaseModel):
     bt_connected: bool = False
 
 
+class ReadinessResponse(BaseModel):
+    """GET /health/ready — Deep readiness probe."""
+
+    ready: bool
+    checks: dict[str, bool] = Field(default_factory=dict)
+
+
 class AnalyticsRequest(BaseModel):
     """POST /v1/analytics/attempt — Fire-and-forget analytics."""
 

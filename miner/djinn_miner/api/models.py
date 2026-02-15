@@ -88,3 +88,10 @@ class HealthResponse(BaseModel):
     odds_api_connected: bool = False
     bt_connected: bool = False
     uptime_seconds: float = 0.0
+
+
+class ReadinessResponse(BaseModel):
+    """GET /health/ready — Deep readiness probe."""
+
+    ready: bool
+    checks: dict[str, bool] = Field(default_factory=dict)

@@ -54,6 +54,7 @@ from djinn_validator.api.models import (
     OutcomeResponse,
     PurchaseRequest,
     PurchaseResponse,
+    ReadinessResponse,
     RegisterSignalRequest,
     RegisterSignalResponse,
     ResolveResponse,
@@ -326,6 +327,38 @@ def create_app(
             chain_connected=chain_ok,
             bt_connected=neuron is not None and neuron.uid is not None,
         )
+
+    @app.get("/health/ready", response_model=ReadinessResponse)
+    async def readiness() -> ReadinessResponse:
+        """Deep readiness probe — checks RPC, contracts, and dependencies."""
+        checks: dict[str, bool] = {}
+
+        # Check RPC connectivity
+        if chain_client:
+            try:
+                checks["rpc"] = await chain_client.is_connected()
+            except Exception:
+                checks["rpc"] = False
+        else:
+            checks["rpc"] = False
+
+        # Check contract addresses are configured (non-zero)
+        from djinn_validator.config import Config
+        cfg = Config()
+        zero = "0" * 40
+        checks["escrow_configured"] = bool(cfg.escrow_address) and zero not in cfg.escrow_address
+        checks["signal_configured"] = bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address
+        checks["account_configured"] = bool(cfg.account_address) and zero not in cfg.account_address
+        checks["collateral_configured"] = bool(cfg.collateral_address) and zero not in cfg.collateral_address
+
+        # Check sports API key
+        checks["sports_api_key"] = bool(cfg.sports_api_key)
+
+        # Bittensor connectivity
+        checks["bt_connected"] = neuron is not None and neuron.uid is not None
+
+        ready = all(checks.values())
+        return ReadinessResponse(ready=ready, checks=checks)
 
     # ------------------------------------------------------------------
     # MPC orchestration

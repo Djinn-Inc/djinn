@@ -61,3 +61,5 @@ class Config:
             raise ValueError(f"ODDS_CACHE_TTL must be >= 0, got {self.odds_cache_ttl}")
         if self.line_tolerance < 0:
             raise ValueError(f"LINE_TOLERANCE must be >= 0, got {self.line_tolerance}")
+        if self.http_timeout < 1:
+            raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")

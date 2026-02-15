@@ -235,3 +235,31 @@ class TestMPCEndpoints:
             "e_value": "ff",
         })
         assert resp.status_code == 422
+
+
+class TestReadinessEndpoint:
+    def test_readiness_returns_checks(self, client: TestClient) -> None:
+        resp = client.get("/health/ready")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "ready" in data
+        assert "checks" in data
+        assert isinstance(data["checks"], dict)
+
+    def test_readiness_checks_rpc(self, client: TestClient) -> None:
+        resp = client.get("/health/ready")
+        data = resp.json()
+        # No chain client injected in test → rpc should be False
+        assert data["checks"]["rpc"] is False
+
+    def test_readiness_checks_bt_connected(self, client: TestClient) -> None:
+        resp = client.get("/health/ready")
+        data = resp.json()
+        # No neuron in test → bt_connected should be False
+        assert data["checks"]["bt_connected"] is False
+
+    def test_readiness_not_ready_without_deps(self, client: TestClient) -> None:
+        resp = client.get("/health/ready")
+        data = resp.json()
+        # Without chain client and neuron, not fully ready
+        assert data["ready"] is False

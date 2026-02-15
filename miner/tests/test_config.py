@@ -68,3 +68,8 @@ class TestConfigTimeouts:
     def test_default_http_timeout(self) -> None:
         config = Config()
         assert config.http_timeout == 30
+
+    def test_http_timeout_zero_raises(self) -> None:
+        config = _config(odds_api_key="key", http_timeout=0)
+        with pytest.raises(ValueError, match="HTTP_TIMEOUT"):
+            config.validate()

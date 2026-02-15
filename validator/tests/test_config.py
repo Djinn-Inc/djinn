@@ -85,3 +85,51 @@ class TestConfigTimeouts:
     def test_default_rpc_timeout(self) -> None:
         config = Config()
         assert config.rpc_timeout == 30
+
+    def test_http_timeout_zero_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", http_timeout=0)
+        with pytest.raises(ValueError, match="HTTP_TIMEOUT"):
+            config.validate()
+
+    def test_rpc_timeout_zero_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", rpc_timeout=0)
+        with pytest.raises(ValueError, match="RPC_TIMEOUT"):
+            config.validate()
+
+
+class TestConfigAddressValidation:
+    def test_valid_address_accepted(self) -> None:
+        config = _config(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="0x1234567890abcdef1234567890abcdef12345678",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+        )
+        warnings = config.validate()
+        assert not any("not a valid" in w for w in warnings)
+
+    def test_invalid_address_format_raises(self) -> None:
+        config = _config(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="not-an-address",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+        )
+        with pytest.raises(ValueError, match="not a valid Ethereum address"):
+            config.validate()
+
+    def test_short_address_raises(self) -> None:
+        config = _config(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="0x1234",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+        )
+        with pytest.raises(ValueError, match="not a valid Ethereum address"):
+            config.validate()

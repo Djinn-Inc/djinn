@@ -58,6 +58,7 @@ class Config:
 
     def validate(self) -> list[str]:
         """Validate config at startup. Returns list of warnings (empty = all good)."""
+        import re
         warnings = []
         if self.api_port < 1 or self.api_port > 65535:
             raise ValueError(f"API_PORT must be 1-65535, got {self.api_port}")
@@ -65,6 +66,13 @@ class Config:
             warnings.append("SPORTS_API_KEY not set — outcome resolution will fail")
         if self.bt_network in ("finney", "mainnet"):
             for name in ("escrow_address", "signal_commitment_address", "account_address", "collateral_address"):
-                if not getattr(self, name):
+                addr = getattr(self, name)
+                if not addr:
                     warnings.append(f"{name.upper()} not set — chain interactions will fail")
+                elif not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
+                    raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
+        if self.http_timeout < 1:
+            raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")
+        if self.rpc_timeout < 1:
+            raise ValueError(f"RPC_TIMEOUT must be >= 1, got {self.rpc_timeout}")
         return warnings

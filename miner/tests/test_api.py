@@ -302,3 +302,18 @@ class TestInputValidation:
             }],
         })
         assert resp.status_code == 422
+
+
+class TestReadinessEndpoint:
+    def test_readiness_returns_checks(self, app: TestClient) -> None:
+        resp = app.get("/health/ready")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "ready" in data
+        assert "checks" in data
+        assert isinstance(data["checks"], dict)
+
+    def test_readiness_checks_odds_api(self, app: TestClient) -> None:
+        resp = app.get("/health/ready")
+        data = resp.json()
+        assert "odds_api_connected" in data["checks"]
