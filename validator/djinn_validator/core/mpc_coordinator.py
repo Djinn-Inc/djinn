@@ -254,6 +254,35 @@ class MPCCoordinator:
             del self._sessions[oldest_sid]
             log.warning("mpc_session_evicted_oldest", session_id=oldest_sid)
 
+    def replace_session_id(self, old_id: str, new_id: str) -> bool:
+        """Atomically rename a session's ID. Used by participants to match coordinator's ID.
+
+        Returns True if the rename succeeded, False if old_id not found or new_id already exists.
+        """
+        with self._lock:
+            session = self._sessions.get(old_id)
+            if session is None:
+                return False
+            if new_id in self._sessions:
+                return False
+            del self._sessions[old_id]
+            session.session_id = new_id
+            self._sessions[new_id] = session
+            return True
+
+    def set_result(self, session_id: str, result: MPCResult) -> bool:
+        """Set the final result on a session. Used by participants receiving coordinator's broadcast.
+
+        Returns True if the result was set, False if the session was not found.
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            session.result = result
+            session.status = SessionStatus.COMPLETE
+            return True
+
     def cleanup_expired(self) -> int:
         """Remove expired sessions. Returns count of removed sessions."""
         now = time.monotonic()

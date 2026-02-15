@@ -95,6 +95,29 @@ class OutcomeAttestation:
 
 _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]{1,256}$")
 
+# Supported sport keys from The Odds API.
+# Prevents arbitrary path injection into the API URL.
+SUPPORTED_SPORTS: frozenset[str] = frozenset({
+    "americanfootball_nfl",
+    "americanfootball_ncaaf",
+    "basketball_nba",
+    "basketball_ncaab",
+    "baseball_mlb",
+    "icehockey_nhl",
+    "soccer_epl",
+    "soccer_usa_mls",
+    "soccer_spain_la_liga",
+    "soccer_germany_bundesliga",
+    "soccer_italy_serie_a",
+    "soccer_france_ligue_one",
+    "soccer_uefa_champs_league",
+    "mma_mixed_martial_arts",
+    "tennis_atp_aus_open",
+    "tennis_atp_us_open",
+    "tennis_atp_wimbledon",
+    "tennis_atp_french_open",
+})
+
 # Regex patterns for different pick formats
 _SPREAD_RE = re.compile(
     r"^(.+?)\s+([+-]?\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$"
@@ -285,6 +308,8 @@ class OutcomeAttestor:
 
     MAX_PENDING_SIGNALS = 10_000
     MAX_ATTESTATIONS_PER_SIGNAL = 100
+    CIRCUIT_BREAKER_THRESHOLD = 5  # Open circuit after this many consecutive failures
+    CIRCUIT_BREAKER_RESET_SECONDS = 60.0  # Wait this long before retrying after circuit opens
 
     def __init__(self, sports_api_key: str = "") -> None:
         self._api_key = sports_api_key
@@ -292,6 +317,8 @@ class OutcomeAttestor:
         self._attestations: dict[str, list[OutcomeAttestation]] = {}
         self._pending_signals: dict[str, SignalMetadata] = {}
         self._lock = asyncio.Lock()
+        self._consecutive_api_failures = 0
+        self._circuit_opened_at: float | None = None  # monotonic timestamp
 
     def register_signal(self, metadata: SignalMetadata) -> None:
         """Register a purchased signal for outcome tracking."""
@@ -311,28 +338,105 @@ class OutcomeAttestor:
         """Return all unresolved signals."""
         return [s for s in self._pending_signals.values() if not s.resolved]
 
+    def _is_circuit_open(self) -> bool:
+        """Check if the circuit breaker is open (API calls should be skipped)."""
+        if self._consecutive_api_failures < self.CIRCUIT_BREAKER_THRESHOLD:
+            return False
+        if self._circuit_opened_at is None:
+            return False
+        elapsed = time.monotonic() - self._circuit_opened_at
+        if elapsed >= self.CIRCUIT_BREAKER_RESET_SECONDS:
+            # Half-open: allow one attempt to see if API recovered
+            return False
+        return True
+
+    def _record_api_success(self) -> None:
+        """Reset circuit breaker on successful API call."""
+        self._consecutive_api_failures = 0
+        self._circuit_opened_at = None
+
+    def _record_api_failure(self) -> None:
+        """Track API failure and open circuit if threshold reached."""
+        self._consecutive_api_failures += 1
+        if self._consecutive_api_failures >= self.CIRCUIT_BREAKER_THRESHOLD:
+            if self._circuit_opened_at is None:
+                self._circuit_opened_at = time.monotonic()
+                log.warning(
+                    "sports_api_circuit_opened",
+                    consecutive_failures=self._consecutive_api_failures,
+                    reset_after_s=self.CIRCUIT_BREAKER_RESET_SECONDS,
+                )
+
     async def fetch_event_result(self, event_id: str, sport: str = "basketball_nba") -> EventResult:
         """Fetch event result from The Odds API scores endpoint."""
         if not _SAFE_ID_RE.match(event_id):
             log.warning("invalid_event_id", event_id=event_id[:50])
             return EventResult(event_id=event_id, status="error")
-        if not _SAFE_ID_RE.match(sport):
-            log.warning("invalid_sport_key", sport=sport[:50])
+        if sport not in SUPPORTED_SPORTS:
+            log.warning("unsupported_sport_key", sport=sport[:50])
             return EventResult(event_id=event_id, status="error")
         if not self._api_key:
             log.warning("no_sports_api_key", event_id=event_id)
             return EventResult(event_id=event_id, status="pending")
 
-        try:
-            url = f"https://api.the-odds-api.com/v4/sports/{sport}/scores"
-            params = {
-                "apiKey": self._api_key,
-                "eventIds": event_id,
-            }
-            resp = await self._client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        # Circuit breaker: skip API call if too many recent failures
+        if self._is_circuit_open():
+            log.debug("sports_api_circuit_open", event_id=event_id)
+            return EventResult(event_id=event_id, status="pending")
 
+        url = f"https://api.the-odds-api.com/v4/sports/{sport}/scores"
+        params = {
+            "apiKey": self._api_key,
+            "eventIds": event_id,
+        }
+
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = await self._client.get(url, params=params)
+                if resp.status_code >= 500:
+                    log.warning(
+                        "sports_api_server_error",
+                        event_id=event_id,
+                        status=resp.status_code,
+                        attempt=attempt + 1,
+                    )
+                    if attempt < 2:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    self._record_api_failure()
+                    return EventResult(event_id=event_id, status="error")
+                if resp.status_code >= 400:
+                    log.error(
+                        "sports_api_client_error",
+                        event_id=event_id,
+                        status=resp.status_code,
+                    )
+                    # 4xx errors don't count as infrastructure failure
+                    return EventResult(event_id=event_id, status="error")
+                data = resp.json()
+                self._record_api_success()
+                break
+            except httpx.HTTPError as e:
+                last_error = e
+                log.warning(
+                    "sports_api_network_error",
+                    event_id=event_id,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                    attempt=attempt + 1,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                self._record_api_failure()
+                return EventResult(event_id=event_id, status="error")
+        else:
+            log.error("sports_api_exhausted_retries", event_id=event_id, error=str(last_error))
+            self._record_api_failure()
+            return EventResult(event_id=event_id, status="error")
+
+        try:
             if not data:
                 return EventResult(event_id=event_id, status="pending")
 
@@ -372,8 +476,8 @@ class OutcomeAttestor:
                 raw_data=event,
             )
 
-        except (httpx.HTTPError, ValueError) as e:
-            log.error("sports_api_error", event_id=event_id, error=str(e))
+        except (ValueError, KeyError, IndexError) as e:
+            log.error("sports_api_parse_error", event_id=event_id, error=str(e))
             return EventResult(event_id=event_id, status="error")
 
     async def resolve_signal(

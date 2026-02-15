@@ -59,7 +59,7 @@ class LineResult(BaseModel):
 
     index: int = Field(ge=1, le=10)
     available: bool
-    bookmakers: list[BookmakerAvailability] = Field(default_factory=list)
+    bookmakers: list[BookmakerAvailability] = Field(default_factory=list, max_length=50)
 
 
 class CheckResponse(BaseModel):

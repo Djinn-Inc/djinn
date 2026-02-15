@@ -213,7 +213,13 @@ async def async_main() -> None:
     log.info("shutting_down")
     for t in running_tasks:
         t.cancel()
-    await asyncio.gather(*running_tasks, return_exceptions=True)
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*running_tasks, return_exceptions=True),
+            timeout=15.0,
+        )
+    except asyncio.TimeoutError:
+        log.warning("shutdown_timeout", msg="Tasks did not finish within 15s")
     try:
         await outcome_attestor.close()
     except Exception as e:

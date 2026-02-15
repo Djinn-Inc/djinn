@@ -71,6 +71,7 @@ from djinn_validator.core.mpc import (
 from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
 from djinn_validator.core.mpc_orchestrator import MPCOrchestrator
 from djinn_validator.core.outcomes import (
+    SUPPORTED_SPORTS,
     Outcome,
     OutcomeAttestor,
     SignalMetadata,
@@ -269,6 +270,8 @@ def create_app(
     async def register_signal(signal_id: str, req: RegisterSignalRequest) -> RegisterSignalResponse:
         """Register a purchased signal for automatic outcome tracking."""
         _validate_signal_id_path(signal_id)
+        if req.sport not in SUPPORTED_SPORTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported sport key: {req.sport}")
         pick = parse_pick(req.pick)
         metadata = SignalMetadata(
             signal_id=signal_id,
@@ -449,9 +452,8 @@ def create_app(
             threshold=req.threshold,
         )
         # Override the session_id to match coordinator's
-        _mpc._sessions.pop(session.session_id)
-        session.session_id = req.session_id
-        _mpc._sessions[req.session_id] = session
+        if not _mpc.replace_session_id(session.session_id, req.session_id):
+            raise HTTPException(status_code=409, detail="Session ID conflict")
 
         return MPCInitResponse(
             session_id=req.session_id,
@@ -483,18 +485,15 @@ def create_app(
     async def mpc_result(req: MPCResultRequest, request: Request) -> MPCResultResponse:
         """Accept the coordinator's final MPC result broadcast."""
         await validate_signed_request(request, _get_validator_hotkeys())
-        session = _mpc.get_session(req.session_id)
-        if session is None:
+        result = MPCResult(
+            available=req.available,
+            participating_validators=req.participating_validators,
+        )
+        if not _mpc.set_result(req.session_id, result):
             return MPCResultResponse(
                 session_id=req.session_id,
                 acknowledged=False,
             )
-
-        session.result = MPCResult(
-            available=req.available,
-            participating_validators=req.participating_validators,
-        )
-        session.status = SessionStatus.COMPLETE
 
         log.info(
             "mpc_result_received",

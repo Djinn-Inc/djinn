@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from djinn_validator.core.mpc import Round1Message, generate_beaver_triples
+from djinn_validator.core.mpc import MPCResult, Round1Message, generate_beaver_triples
 from djinn_validator.core.mpc_coordinator import (
     MPCCoordinator,
     MPCSessionState,
@@ -319,3 +319,88 @@ class TestMaxSessionsEviction:
         coord.create_session("sig-3", [1], 1, [1, 2, 3], 3)
         assert coord.get_session(s1.session_id) is None
         assert len(coord._sessions) == 2
+
+
+class TestReplaceSessionId:
+    """Tests for the replace_session_id method."""
+
+    def test_replace_succeeds(self) -> None:
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        old_id = session.session_id
+        assert coord.replace_session_id(old_id, "new-id")
+        assert coord.get_session(old_id) is None
+        assert coord.get_session("new-id") is not None
+        assert coord.get_session("new-id").signal_id == "sig-1"
+
+    def test_replace_old_id_not_found(self) -> None:
+        coord = MPCCoordinator()
+        assert not coord.replace_session_id("nonexistent", "new-id")
+
+    def test_replace_new_id_already_exists(self) -> None:
+        coord = MPCCoordinator()
+        s1 = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        s2 = coord.create_session("sig-2", [2], 1, [1, 2, 3], 3)
+        # Can't rename s1 to s2's ID
+        assert not coord.replace_session_id(s1.session_id, s2.session_id)
+        # s1 should still exist with its original ID
+        assert coord.get_session(s1.session_id) is not None
+
+    def test_replace_is_threadsafe(self) -> None:
+        import threading
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        old_id = session.session_id
+        results = []
+
+        def rename(new_id: str) -> None:
+            results.append(coord.replace_session_id(old_id, new_id))
+
+        t1 = threading.Thread(target=rename, args=("new-a",))
+        t2 = threading.Thread(target=rename, args=("new-b",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        # Exactly one should succeed
+        assert sum(results) == 1
+
+
+class TestSetResult:
+    """Tests for the set_result method."""
+
+    def test_set_result_succeeds(self) -> None:
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        result = MPCResult(available=True, participating_validators=3)
+        assert coord.set_result(session.session_id, result)
+        updated = coord.get_session(session.session_id)
+        assert updated.result is not None
+        assert updated.result.available is True
+        assert updated.status == SessionStatus.COMPLETE
+
+    def test_set_result_nonexistent_session(self) -> None:
+        coord = MPCCoordinator()
+        result = MPCResult(available=False, participating_validators=0)
+        assert not coord.set_result("nonexistent", result)
+
+    def test_set_result_is_threadsafe(self) -> None:
+        import threading
+        coord = MPCCoordinator()
+        session = coord.create_session("sig-1", [1], 1, [1, 2, 3], 3)
+        errors = []
+
+        def set_res(available: bool) -> None:
+            try:
+                coord.set_result(session.session_id, MPCResult(available=available, participating_validators=3))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=set_res, args=(i % 2 == 0,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        updated = coord.get_session(session.session_id)
+        assert updated.status == SessionStatus.COMPLETE

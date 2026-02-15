@@ -164,6 +164,24 @@ class MPCInitRequest(BaseModel):
     # This validator's Beaver triple shares (one dict per gate)
     triple_shares: list[dict[str, str]] = Field(default_factory=list, max_length=20)  # hex-encoded
 
+    @field_validator("available_indices")
+    @classmethod
+    def validate_mpc_indices(cls, v: list[int]) -> list[int]:
+        for idx in v:
+            if idx < 1 or idx > 10:
+                raise ValueError(f"available_indices values must be 1-10, got {idx}")
+        return v
+
+    @field_validator("participant_xs")
+    @classmethod
+    def validate_participant_xs(cls, v: list[int]) -> list[int]:
+        for x in v:
+            if x < 1 or x > 255:
+                raise ValueError(f"participant_xs values must be 1-255, got {x}")
+        if len(set(v)) != len(v):
+            raise ValueError("participant_xs must not contain duplicates")
+        return v
+
 
 class MPCInitResponse(BaseModel):
     session_id: str

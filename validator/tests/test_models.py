@@ -314,3 +314,53 @@ class TestMPCBoundsValidation:
                 participant_xs=[1, 2],
                 threshold=0,
             )
+
+    def test_participant_xs_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=1,
+                participant_xs=[0, 2],  # 0 is out of range
+            )
+
+    def test_participant_xs_too_high(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=1,
+                participant_xs=[1, 256],  # 256 is out of range
+            )
+
+    def test_participant_xs_duplicates_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=1,
+                participant_xs=[1, 1, 2],  # duplicate
+            )
+
+    def test_mpc_available_indices_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[0],  # 0 is out of range
+                coordinator_x=1,
+                participant_xs=[1, 2],
+            )
+
+    def test_mpc_available_indices_too_high(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[11],  # 11 is out of range
+                coordinator_x=1,
+                participant_xs=[1, 2],
+            )

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import time
+from unittest.mock import AsyncMock, patch
+
+import httpx
 import pytest
 
 from djinn_validator.core.outcomes import (
+    SUPPORTED_SPORTS,
     EventResult,
     Outcome,
     OutcomeAttestor,
@@ -529,3 +534,371 @@ class TestOutcomeAttestor:
         removed = attestor.cleanup_resolved(max_age_seconds=1)
         assert removed == 5
         assert attestor.get_pending_signals() == []
+
+
+# ---------------------------------------------------------------------------
+# fetch_event_result Retry Behavior
+# ---------------------------------------------------------------------------
+
+
+class TestFetchEventResultRetry:
+    """Tests for HTTP retry logic in fetch_event_result."""
+
+    def _make_response(self, status_code: int, json_data: list | None = None) -> httpx.Response:
+        """Create a mock httpx.Response."""
+        resp = httpx.Response(
+            status_code=status_code,
+            json=json_data if json_data is not None else [],
+            request=httpx.Request("GET", "https://api.the-odds-api.com/v4/sports/basketball_nba/scores"),
+        )
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_5xx_retries_then_returns_error(self) -> None:
+        """Server errors (5xx) should be retried up to 3 times."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(503))
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_5xx_then_success(self) -> None:
+        """Recovery after initial 5xx should return valid data."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[
+            self._make_response(502),
+            self._make_response(200, []),
+        ])
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "pending"  # Empty data → pending
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_4xx_no_retry(self) -> None:
+        """Client errors (4xx) should NOT be retried."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(401))
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 1  # No retry
+
+    @pytest.mark.asyncio
+    async def test_404_no_retry(self) -> None:
+        """404 is a client error — no retry."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(404))
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_network_error_retries(self) -> None:
+        """Network errors (httpx.HTTPError) should be retried."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_network_error_then_success(self) -> None:
+        """Recovery after network error should return valid data."""
+        completed_event = [{
+            "home_team": "Lakers",
+            "away_team": "Celtics",
+            "completed": True,
+            "scores": [
+                {"name": "Lakers", "score": "110"},
+                {"name": "Celtics", "score": "105"},
+            ],
+        }]
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[
+            httpx.ConnectError("connection refused"),
+            self._make_response(200, completed_event),
+        ])
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "final"
+        assert result.home_score == 110
+        assert result.away_score == 105
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_invalid_event_id_skips_http(self) -> None:
+        """Invalid event ID should return error without making HTTP call."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evil;drop table", "basketball_nba")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_sport_skips_http(self) -> None:
+        """Invalid sport key should return error without making HTTP call."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "bad sport!")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_unsupported_sport_skips_http(self) -> None:
+        """Valid-looking but unsupported sport key should return error."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "cricket_ipl")
+
+        assert result.status == "error"
+        assert mock_client.get.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_returns_pending(self) -> None:
+        """No API key should return pending without HTTP call."""
+        attestor = OutcomeAttestor(sports_api_key="")
+        mock_client = AsyncMock()
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "pending"
+        assert mock_client.get.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_200_completed_event_parsing(self) -> None:
+        """Successful response with completed game parses correctly."""
+        event_data = [{
+            "home_team": "Los Angeles Lakers",
+            "away_team": "Boston Celtics",
+            "completed": True,
+            "scores": [
+                {"name": "Los Angeles Lakers", "score": "115"},
+                {"name": "Boston Celtics", "score": "108"},
+            ],
+        }]
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(200, event_data))
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "final"
+        assert result.home_team == "Los Angeles Lakers"
+        assert result.away_team == "Boston Celtics"
+        assert result.home_score == 115
+        assert result.away_score == 108
+
+    @pytest.mark.asyncio
+    async def test_200_pending_event(self) -> None:
+        """Successful response with non-completed game returns pending."""
+        event_data = [{
+            "home_team": "Lakers",
+            "away_team": "Celtics",
+            "completed": False,
+        }]
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(200, event_data))
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_200_empty_response(self) -> None:
+        """Empty array response returns pending."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(200, []))
+        attestor._client = mock_client
+
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert result.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_5xx_backoff_delays(self) -> None:
+        """Verify that 5xx retries use increasing backoff delays."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(500))
+        attestor._client = mock_client
+
+        sleep_calls = []
+        async def mock_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", side_effect=mock_sleep):
+            await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        # First retry: 1.0s, second retry: 2.0s
+        assert sleep_calls == [1.0, 2.0]
+
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker Tests
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreaker:
+    """Tests for the sports API circuit breaker."""
+
+    def _make_response(self, status_code: int, json_data: list | None = None) -> httpx.Response:
+        resp = httpx.Response(
+            status_code=status_code,
+            json=json_data if json_data is not None else [],
+            request=httpx.Request("GET", "https://api.the-odds-api.com/v4/sports/basketball_nba/scores"),
+        )
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_circuit_opens_after_threshold_failures(self) -> None:
+        """Circuit opens after CIRCUIT_BREAKER_THRESHOLD consecutive failures."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 3
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(500))
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            # Each call counts as 1 failure (after exhausting 3 retries)
+            for _ in range(3):
+                await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert attestor._consecutive_api_failures == 3
+        assert attestor._circuit_opened_at is not None
+
+    @pytest.mark.asyncio
+    async def test_circuit_open_skips_api_call(self) -> None:
+        """When circuit is open, API calls are skipped and return pending."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 2
+        attestor.CIRCUIT_BREAKER_RESET_SECONDS = 60.0
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(500))
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            # Trigger circuit breaker (2 failures)
+            for _ in range(2):
+                await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        call_count_before = mock_client.get.call_count
+
+        # Next call should be skipped entirely
+        result = await attestor.fetch_event_result("evt2", "basketball_nba")
+        assert result.status == "pending"
+        assert mock_client.get.call_count == call_count_before  # No new API call
+
+    @pytest.mark.asyncio
+    async def test_circuit_resets_after_timeout(self) -> None:
+        """Circuit resets to half-open after CIRCUIT_BREAKER_RESET_SECONDS."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 2
+        attestor.CIRCUIT_BREAKER_RESET_SECONDS = 10.0
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(500))
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            for _ in range(2):
+                await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert attestor._is_circuit_open()
+
+        # Move time forward past reset
+        attestor._circuit_opened_at = time.monotonic() - 11.0
+
+        assert not attestor._is_circuit_open()  # Half-open now
+
+    @pytest.mark.asyncio
+    async def test_success_resets_circuit(self) -> None:
+        """A successful API call fully resets the circuit breaker."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 2
+        mock_client = AsyncMock()
+        attestor._client = mock_client
+
+        # Simulate failures to open circuit
+        attestor._consecutive_api_failures = 5
+        attestor._circuit_opened_at = time.monotonic() - 100  # Expired, half-open
+
+        # Next call succeeds
+        mock_client.get = AsyncMock(return_value=self._make_response(200, []))
+        result = await attestor.fetch_event_result("evt1", "basketball_nba")
+        assert result.status == "pending"  # Empty data → pending
+
+        # Circuit should be fully reset
+        assert attestor._consecutive_api_failures == 0
+        assert attestor._circuit_opened_at is None
+
+    @pytest.mark.asyncio
+    async def test_4xx_does_not_increment_failures(self) -> None:
+        """Client errors (4xx) don't affect the circuit breaker."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 3
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=self._make_response(401))
+        attestor._client = mock_client
+
+        for _ in range(5):
+            await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert attestor._consecutive_api_failures == 0
+        assert not attestor._is_circuit_open()
+
+    @pytest.mark.asyncio
+    async def test_network_error_increments_failures(self) -> None:
+        """Network errors increment the circuit breaker failure counter."""
+        attestor = OutcomeAttestor(sports_api_key="test-key")
+        attestor.CIRCUIT_BREAKER_THRESHOLD = 2
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        attestor._client = mock_client
+
+        with patch("djinn_validator.core.outcomes.asyncio.sleep", new_callable=AsyncMock):
+            for _ in range(2):
+                await attestor.fetch_event_result("evt1", "basketball_nba")
+
+        assert attestor._consecutive_api_failures == 2
+        assert attestor._is_circuit_open()
