@@ -88,6 +88,7 @@ class SessionCapture:
 
     def get(self, query_id: str) -> CapturedSession | None:
         """Retrieve a captured session by query ID."""
+        self._evict_expired()
         return self._sessions.get(query_id)
 
     def remove(self, query_id: str) -> None:

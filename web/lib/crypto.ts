@@ -151,7 +151,13 @@ function toHex(bytes: Uint8Array): string {
     .join("");
 }
 
+// Max hex string length: 64KB (32KB binary). Prevents DoS via oversized inputs.
+const MAX_HEX_LENGTH = 131_072;
+
 function fromHex(hex: string): Uint8Array {
+  if (hex.length > MAX_HEX_LENGTH) {
+    throw new Error(`Hex string too large: ${hex.length} chars (max ${MAX_HEX_LENGTH})`);
+  }
   if (hex.length % 2 !== 0) {
     throw new Error("Hex string must have even length");
   }

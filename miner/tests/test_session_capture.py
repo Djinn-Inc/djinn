@@ -59,11 +59,11 @@ class TestSessionCapture:
 
     def test_ttl_expiration(self) -> None:
         cap = SessionCapture()
-        cap._SESSION_TTL = 0  # Expire immediately
         cap.record(_make_session("q-1"))
-        # Force eviction on next record
-        cap._timestamps["q-1"] = time.monotonic() - 1
         cap.record(_make_session("q-2"))
+        # Backdate only q-1 past TTL
+        cap._timestamps["q-1"] = time.monotonic() - cap._SESSION_TTL - 1
+        # get() now triggers eviction of expired sessions
         assert cap.get("q-1") is None
         assert cap.get("q-2") is not None
 
@@ -83,3 +83,16 @@ class TestSessionCapture:
         # This should not crash even with empty timestamps
         cap.record(_make_session("q-1"))
         assert cap.count == 1
+
+    def test_get_evicts_expired(self) -> None:
+        """get() should evict expired sessions, not just record()."""
+        cap = SessionCapture()
+        cap.record(_make_session("q-1"))
+        cap.record(_make_session("q-2"))
+        assert cap.count == 2
+        # Backdate q-1 past TTL
+        cap._timestamps["q-1"] = time.monotonic() - cap._SESSION_TTL - 1
+        # get() triggers eviction
+        result = cap.get("q-1")
+        assert result is None
+        assert cap.count == 1  # Only q-2 remains

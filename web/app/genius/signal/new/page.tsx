@@ -126,8 +126,24 @@ export default function CreateSignal() {
             .join(""),
       );
 
+      const expiresInNum = Number(expiresIn);
+      const maxPriceNum = Number(maxPriceBps);
+      const slaNum = Number(slaMultiplier);
+      if (!Number.isFinite(expiresInNum) || expiresInNum <= 0) {
+        setStepError("Invalid expiration time");
+        return;
+      }
+      if (!Number.isFinite(maxPriceNum) || maxPriceNum <= 0 || maxPriceNum > 100) {
+        setStepError("Invalid max price (must be 0-100%)");
+        return;
+      }
+      if (!Number.isFinite(slaNum) || slaNum <= 0 || slaNum > 100) {
+        setStepError("Invalid SLA multiplier (must be 0-100%)");
+        return;
+      }
+
       const expiresAt = BigInt(
-        Math.floor(Date.now() / 1000) + Number(expiresIn) * 3600,
+        Math.floor(Date.now() / 1000) + expiresInNum * 3600,
       );
 
       // Step 4: Commit on-chain
@@ -136,8 +152,8 @@ export default function CreateSignal() {
         encryptedBlob: "0x" + toHex(encoder.encode(encryptedBlob)),
         commitHash,
         sport,
-        maxPriceBps: BigInt(Math.round(Number(maxPriceBps) * 100)),
-        slaMultiplierBps: BigInt(Math.round(Number(slaMultiplier) * 100)),
+        maxPriceBps: BigInt(Math.round(maxPriceNum * 100)),
+        slaMultiplierBps: BigInt(Math.round(slaNum * 100)),
         expiresAt,
         decoyLines,
         availableSportsbooks: selectedSportsbooks,

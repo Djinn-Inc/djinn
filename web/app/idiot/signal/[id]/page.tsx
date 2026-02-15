@@ -170,8 +170,21 @@ export default function PurchaseSignal() {
       // Step 3: Execute on-chain purchase
       setStep("purchasing_chain");
 
-      const notionalBig = BigInt(Math.floor(Number(notional) * 1_000_000));
-      const oddsBig = BigInt(Math.floor(Number(odds) * 100));
+      const notionalNum = Number(notional);
+      const oddsNum = Number(odds);
+      if (!Number.isFinite(notionalNum) || notionalNum <= 0) {
+        setStepError("Invalid notional amount");
+        setStep("error");
+        return;
+      }
+      if (!Number.isFinite(oddsNum) || oddsNum < 1.01) {
+        setStepError("Invalid odds value");
+        setStep("error");
+        return;
+      }
+
+      const notionalBig = BigInt(Math.floor(notionalNum * 1_000_000));
+      const oddsBig = BigInt(Math.floor(oddsNum * 100));
 
       await purchase(signalId, notionalBig, oddsBig);
 
@@ -190,13 +203,30 @@ export default function PurchaseSignal() {
             ? signal.encryptedBlob.slice(2)
             : signal.encryptedBlob;
           const blobStr = new TextDecoder().decode(fromHex(blobBytes));
-          const [iv, ciphertext] = blobStr.split(":");
+          const colonIdx = blobStr.indexOf(":");
 
-          if (iv && ciphertext) {
-            const plaintext = await decrypt(ciphertext, iv, keyBytes);
-            const parsed = JSON.parse(plaintext);
-            setDecryptedPick(parsed);
+          if (colonIdx === -1) {
+            throw new Error("Invalid encrypted blob format (missing iv:ciphertext separator)");
           }
+
+          const iv = blobStr.slice(0, colonIdx);
+          const ciphertext = blobStr.slice(colonIdx + 1);
+
+          if (!iv || !ciphertext) {
+            throw new Error("Invalid encrypted blob format (empty iv or ciphertext)");
+          }
+
+          const plaintext = await decrypt(ciphertext, iv, keyBytes);
+          let parsed: { realIndex: number; pick: string };
+          try {
+            parsed = JSON.parse(plaintext);
+          } catch {
+            throw new Error("Decrypted data is not valid JSON — key may be incorrect");
+          }
+          if (typeof parsed.realIndex !== "number" || typeof parsed.pick !== "string") {
+            throw new Error("Decrypted data missing required fields (realIndex, pick)");
+          }
+          setDecryptedPick(parsed);
         } catch (decryptErr) {
           setStepError(
             `Signal purchased but decryption failed: ${decryptErr instanceof Error ? decryptErr.message : "unknown error"}. The key share may need Shamir reconstruction.`,

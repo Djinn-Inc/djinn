@@ -227,6 +227,17 @@ describe("Hex helpers", () => {
     const bytes = fromHex("AABB");
     expect(Array.from(bytes)).toEqual([0xaa, 0xbb]);
   });
+
+  it("fromHex rejects oversized input", () => {
+    const huge = "ab".repeat(70_000); // 140,000 chars > 131,072 limit
+    expect(() => fromHex(huge)).toThrow("too large");
+  });
+
+  it("fromHex accepts input at max size boundary", () => {
+    const atLimit = "ab".repeat(65_536); // 131,072 chars = exactly at limit
+    const bytes = fromHex(atLimit);
+    expect(bytes.length).toBe(65_536);
+  });
 });
 
 // ---------------------------------------------------------------------------
