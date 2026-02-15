@@ -145,7 +145,13 @@ class OddsApiClient:
                 )
                 await asyncio.sleep(delay)
 
-        log.error("odds_api_retries_exhausted", sport=sport, attempts=self._max_retries + 1)
+        log.error(
+            "odds_api_retries_exhausted",
+            sport=sport,
+            url=url,
+            attempts=self._max_retries + 1,
+            last_error=str(last_exc),
+        )
         raise last_exc  # type: ignore[misc]
 
     def _resolve_sport_key(self, sport: str) -> str:

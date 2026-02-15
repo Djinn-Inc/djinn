@@ -180,12 +180,24 @@ export class MinerClient {
 // Singleton instances (configured from env vars)
 // ---------------------------------------------------------------------------
 
-const VALIDATOR_URLS = (
-  process.env.NEXT_PUBLIC_VALIDATOR_URL ?? "http://localhost:8421"
+function getEnvOrDevDefault(envVar: string, devDefault: string): string {
+  const val = process.env[envVar];
+  if (val) return val;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${envVar} must be set in production`);
+  }
+  return devDefault;
+}
+
+const VALIDATOR_URLS = getEnvOrDevDefault(
+  "NEXT_PUBLIC_VALIDATOR_URL",
+  "http://localhost:8421",
 ).split(",");
 
-const MINER_URL =
-  process.env.NEXT_PUBLIC_MINER_URL ?? "http://localhost:8422";
+const MINER_URL = getEnvOrDevDefault(
+  "NEXT_PUBLIC_MINER_URL",
+  "http://localhost:8422",
+);
 
 export function getValidatorClients(): ValidatorClient[] {
   return VALIDATOR_URLS.map((url) => new ValidatorClient(url.trim()));
