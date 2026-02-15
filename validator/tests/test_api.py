@@ -120,3 +120,36 @@ class TestAnalytics:
         })
         assert resp.status_code == 200
         assert resp.json()["received"] is True
+
+
+class TestMetricsEndpoint:
+    def test_metrics_returns_prometheus_format(self, client: TestClient) -> None:
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert "text/plain" in resp.headers.get("content-type", "")
+        text = resp.text
+        assert "djinn_validator" in text
+
+    def test_metrics_after_store_share(self, client: TestClient) -> None:
+        # Store a share to increment counters
+        client.post("/v1/signal", json={
+            "signal_id": "met-1",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "abcdef",
+            "encrypted_key_share": "deadbeef",
+        })
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert "shares_stored" in resp.text
+
+
+class TestBodySizeLimit:
+    def test_oversized_body_rejected(self, client: TestClient) -> None:
+        huge_body = "x" * (1_048_576 + 1)
+        resp = client.post(
+            "/v1/signal",
+            content=huge_body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(huge_body))},
+        )
+        assert resp.status_code == 413

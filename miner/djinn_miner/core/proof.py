@@ -78,7 +78,7 @@ class SessionCapture:
     def record(self, session: CapturedSession) -> None:
         """Record a captured HTTP session."""
         self._evict_expired()
-        if len(self._sessions) >= self._MAX_SESSIONS:
+        if len(self._sessions) >= self._MAX_SESSIONS and self._timestamps:
             oldest = min(self._timestamps, key=self._timestamps.get)  # type: ignore[arg-type]
             self._sessions.pop(oldest, None)
             self._timestamps.pop(oldest, None)

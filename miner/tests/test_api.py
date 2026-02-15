@@ -209,3 +209,39 @@ class TestProofEndpoint:
         resp = app.post("/v1/proof", json=body)
         assert resp.status_code == 200
         assert resp.json()["status"] == "submitted"
+
+
+class TestMetricsEndpoint:
+    def test_metrics_returns_prometheus_format(self, app: TestClient) -> None:
+        resp = app.get("/metrics")
+        assert resp.status_code == 200
+        assert "text/plain" in resp.headers.get("content-type", "")
+        text = resp.text
+        assert "djinn_miner" in text
+
+    def test_metrics_after_check(self, app: TestClient) -> None:
+        app.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                "event_id": "event-lakers-celtics-001",
+                "home_team": "Los Angeles Lakers",
+                "away_team": "Boston Celtics",
+                "market": "h2h",
+                "line": None,
+                "side": "Los Angeles Lakers",
+            }],
+        })
+        resp = app.get("/metrics")
+        assert "checks_processed" in resp.text
+
+
+class TestBodySizeLimit:
+    def test_oversized_body_rejected(self, app: TestClient) -> None:
+        huge_body = "x" * (1_048_576 + 1)
+        resp = app.post(
+            "/v1/check",
+            content=huge_body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(huge_body))},
+        )
+        assert resp.status_code == 413
