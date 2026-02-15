@@ -79,6 +79,9 @@ async def epoch_loop(
                 m = scorer.get_or_create(uid, hotkey)
                 m.consecutive_epochs += 1
 
+        except asyncio.CancelledError:
+            log.info("epoch_loop_cancelled")
+            return
         except Exception as e:
             log.error("epoch_error", error=str(e), exc_info=True)
 

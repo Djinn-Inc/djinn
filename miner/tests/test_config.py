@@ -64,6 +64,18 @@ class TestConfigValidation:
             config.validate()
 
 
+class TestConfigNetworkWarning:
+    def test_known_network_no_warning(self) -> None:
+        config = _config(odds_api_key="key", bt_network="finney")
+        warnings = config.validate()
+        assert not any("BT_NETWORK" in w for w in warnings)
+
+    def test_unknown_network_warns(self) -> None:
+        config = _config(odds_api_key="key", bt_network="devnet-42")
+        warnings = config.validate()
+        assert any("BT_NETWORK" in w for w in warnings)
+
+
 class TestConfigTimeouts:
     def test_default_http_timeout(self) -> None:
         config = Config()

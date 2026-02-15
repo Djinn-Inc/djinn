@@ -43,6 +43,9 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
             else:
                 health.set_bt_connected(True)
 
+        except asyncio.CancelledError:
+            log.info("bt_sync_loop_cancelled")
+            return
         except Exception as e:
             log.error("bt_sync_error", error=str(e))
 
@@ -62,7 +65,9 @@ async def run_server(app: object, host: str, port: int) -> None:
 async def async_main() -> None:
     """Start miner with concurrent API server and BT sync."""
     config = Config()
-    config.validate()
+    warnings = config.validate()
+    for w in warnings:
+        log.warning("config_warning", msg=w)
 
     # Session capture for proof generation
     session_capture = SessionCapture()

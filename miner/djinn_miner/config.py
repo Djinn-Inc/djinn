@@ -51,10 +51,17 @@ class Config:
     # Timeouts (seconds)
     http_timeout: int = _int_env("HTTP_TIMEOUT", "30")
 
-    def validate(self) -> None:
-        """Validate config at startup. Raises ValueError on issues."""
+    def validate(self) -> list[str]:
+        """Validate config at startup. Raises ValueError on hard errors, returns warnings."""
+        warnings: list[str] = []
         if not self.odds_api_key:
             raise ValueError("ODDS_API_KEY is required. Get one at https://the-odds-api.com")
+        known_networks = ("finney", "mainnet", "test", "local", "mock")
+        if self.bt_network not in known_networks:
+            warnings.append(
+                f"BT_NETWORK={self.bt_network!r} is not a recognized network "
+                f"({', '.join(known_networks)})"
+            )
         if self.api_port < 1 or self.api_port > 65535:
             raise ValueError(f"API_PORT must be 1-65535, got {self.api_port}")
         if self.odds_cache_ttl < 0:
@@ -63,3 +70,4 @@ class Config:
             raise ValueError(f"LINE_TOLERANCE must be >= 0, got {self.line_tolerance}")
         if self.http_timeout < 1:
             raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")
+        return warnings

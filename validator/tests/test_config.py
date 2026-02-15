@@ -77,6 +77,22 @@ class TestConfigValidation:
             config.validate()
 
 
+class TestConfigNetworkWarning:
+    def test_known_network_no_warning(self) -> None:
+        config = _config(bt_network="finney", sports_api_key="key",
+                         escrow_address="0x1234567890abcdef1234567890abcdef12345678",
+                         signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+                         account_address="0x1234567890abcdef1234567890abcdef12345678",
+                         collateral_address="0x1234567890abcdef1234567890abcdef12345678")
+        warnings = config.validate()
+        assert not any("BT_NETWORK" in w for w in warnings)
+
+    def test_unknown_network_warns(self) -> None:
+        config = _config(bt_network="devnet-42", sports_api_key="key")
+        warnings = config.validate()
+        assert any("BT_NETWORK" in w for w in warnings)
+
+
 class TestConfigTimeouts:
     def test_default_http_timeout(self) -> None:
         config = Config()

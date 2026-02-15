@@ -110,7 +110,7 @@ class MPCOrchestrator:
                             x=data["share_x"],
                             y=int(data["share_y"], 16),
                         ))
-                except Exception as e:
+                except (httpx.HTTPError, KeyError, ValueError) as e:
                     log.warning(
                         "peer_share_request_failed",
                         peer_uid=peer["uid"],
@@ -244,7 +244,7 @@ class MPCOrchestrator:
                     )
                     if resp.status_code == 200 and resp.json().get("accepted"):
                         accepted_peers.append(peer)
-                except Exception as e:
+                except (httpx.HTTPError, KeyError, ValueError) as e:
                     log.warning(
                         "mpc_init_failed",
                         peer_uid=peer["uid"],
@@ -286,7 +286,7 @@ class MPCOrchestrator:
                                 "participating_validators": session.result.participating_validators,
                             },
                         )
-                    except Exception as e:
+                    except httpx.HTTPError as e:
                         log.warning(
                             "mpc_result_broadcast_failed",
                             peer_uid=peer["uid"],
