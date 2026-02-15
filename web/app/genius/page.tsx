@@ -6,8 +6,8 @@ import { usePrivy } from "@privy-io/react-auth";
 import QualityScore from "@/components/QualityScore";
 import { useCollateral, useDepositCollateral, useWithdrawCollateral } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
-import { SignalStatus } from "@/lib/types";
 
 export default function GeniusDashboard() {
   const { authenticated, user } = usePrivy();
@@ -16,6 +16,7 @@ export default function GeniusDashboard() {
   const { deposit: depositCollateral, loading: depositLoading } = useDepositCollateral();
   const { withdraw: withdrawCollateral, loading: withdrawLoading } = useWithdrawCollateral();
   const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address);
+  const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -77,7 +78,7 @@ export default function GeniusDashboard() {
             Quality Score
           </p>
           <div className="mt-3">
-            <QualityScore score={0} size="md" />
+            <QualityScore score={Number(aggregateQualityScore)} size="md" />
           </div>
         </div>
 
@@ -167,14 +168,42 @@ export default function GeniusDashboard() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td
-                  colSpan={6}
-                  className="text-center text-slate-500 py-8"
-                >
-                  No audit history yet
-                </td>
-              </tr>
+              {auditsLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                    Loading...
+                  </td>
+                </tr>
+              ) : audits.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                    No audit history yet
+                  </td>
+                </tr>
+              ) : (
+                audits.map((a, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-3">{a.cycle.toString()}</td>
+                    <td className="py-3">{truncateAddress(a.idiot)}</td>
+                    <td className="py-3">-</td>
+                    <td className="py-3">
+                      <span className={Number(a.qualityScore) >= 0 ? "text-green-600" : "text-red-500"}>
+                        {Number(a.qualityScore) >= 0 ? "+" : ""}{a.qualityScore.toString()}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      {a.isEarlyExit ? (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700">Early Exit</span>
+                      ) : Number(a.qualityScore) >= 0 ? (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
+                      ) : (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-slate-500">Block {a.blockNumber}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

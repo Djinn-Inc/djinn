@@ -1,25 +1,19 @@
-"""HTTP attestation proof generation.
+"""Proof generation with TLSNotary integration.
 
-Captures and signs HTTP response data from sportsbook API queries,
-creating verifiable attestations that validators can independently check.
+Supports two proof modes:
+1. TLSNotary (production): Calls `djinn-tlsn-prover` Rust binary for an
+   MPC-TLS attested session. The resulting Presentation is cryptographically
+   bound to the server's TLS certificate and transcript.
+2. HTTP attestation (fallback): SHA-256 hash of the captured response with
+   parsed summary. Validators re-query the same endpoint for verification.
 
 Architecture:
 - Phase 1 (fast): Miner queries The Odds API, captures raw HTTP response
-- Phase 2 (async): Miner creates an attestation proof from the captured data
-- Validators can re-query the same endpoint within a time window to verify
+- Phase 2 (async): Miner generates TLSNotary proof or HTTP attestation
+- Validators verify the proof using the `djinn-tlsn-verifier` binary
 
-Proof structure:
-- request_url: The exact URL queried (minus API key)
-- response_hash: SHA-256 of the raw response body
-- response_summary: Parsed key facts (event IDs, bookmaker names, timestamps)
-- captured_at: Unix timestamp of the query
-- miner_signature: Ed25519 signature over the proof payload
-
-PRODUCTION TODO: Replace this with TLSNotary proofs via a Rust CLI wrapper.
-TLSNotary would cryptographically prove the TLS session itself (server cert +
-transcript), making it impossible to fabricate responses. The current approach
-relies on validators re-querying within a time window for independent verification.
-The ProofResponse interface is designed to be TLSNotary-compatible.
+The ProofGenerator auto-detects TLSNotary availability and falls back to
+HTTP attestation when the Rust binary is not installed.
 """
 
 from __future__ import annotations
@@ -30,9 +24,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import base64
+
 import structlog
 
 from djinn_miner.api.models import ProofResponse
+from djinn_miner.core import tlsn as tlsn_module
 
 log = structlog.get_logger()
 
@@ -92,28 +89,47 @@ class SessionCapture:
 
 
 class ProofGenerator:
-    """Generates attestation proofs from captured HTTP sessions.
+    """Generates proofs from captured HTTP sessions.
 
-    Creates cryptographic attestations of Odds API queries that validators
-    can independently verify by re-querying the same endpoint.
+    Tries TLSNotary first (Rust binary), falls back to HTTP attestation.
     """
 
     def __init__(self, session_capture: SessionCapture | None = None) -> None:
         self._capture = session_capture or SessionCapture()
         self._generated_count = 0
+        self._tlsn_available = tlsn_module.is_available()
+        if self._tlsn_available:
+            log.info("tlsn_prover_available")
+        else:
+            log.info("tlsn_prover_not_found_using_http_attestation")
 
     @property
     def session_capture(self) -> SessionCapture:
         return self._capture
 
-    async def generate(self, query_id: str, session_data: str = "") -> ProofResponse:
-        """Generate an attestation proof for a captured HTTP session.
+    @property
+    def tlsn_available(self) -> bool:
+        return self._tlsn_available
 
-        If a captured session exists for query_id, creates a full attestation.
-        Otherwise, falls back to a basic hash proof from session_data.
+    async def generate(self, query_id: str, session_data: str = "") -> ProofResponse:
+        """Generate a proof for a captured HTTP session.
+
+        Priority:
+        1. TLSNotary proof (if binary available and session has URL with API key)
+        2. HTTP attestation (if captured session exists)
+        3. Basic hash proof (fallback)
         """
         session = self._capture.get(query_id)
 
+        # Try TLSNotary first
+        if self._tlsn_available and session is not None:
+            tlsn_result = await self._try_tlsn_proof(session)
+            if tlsn_result is not None:
+                self._capture.remove(query_id)
+                self._generated_count += 1
+                return tlsn_result
+
+        # Fall back to HTTP attestation
         if session is not None:
             proof = self._create_attestation(session)
             self._capture.remove(query_id)
@@ -157,6 +173,51 @@ class ProofGenerator:
             proof_hash=proof_hash,
             status="submitted",
             message="basic hash proof (no captured session)",
+        )
+
+    async def _try_tlsn_proof(
+        self, session: CapturedSession
+    ) -> ProofResponse | None:
+        """Attempt to generate a TLSNotary proof for the session."""
+        # Reconstruct the original URL with API key for TLSNotary
+        # The session stores URL without key, but we need the full URL for TLS
+        url = session.request_url
+        if session.request_params:
+            params = "&".join(f"{k}={v}" for k, v in session.request_params.items())
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{params}"
+
+        result = await tlsn_module.generate_proof(url)
+
+        if not result.success:
+            log.warning(
+                "tlsn_proof_failed_falling_back",
+                query_id=session.query_id,
+                error=result.error,
+            )
+            return None
+
+        # Hash the presentation for the proof_hash field
+        proof_hash = hashlib.sha256(result.presentation_bytes).hexdigest()
+        presentation_b64 = base64.b64encode(result.presentation_bytes).decode()
+
+        log.info(
+            "tlsn_proof_generated",
+            query_id=session.query_id,
+            proof_hash=proof_hash[:16],
+            size=len(result.presentation_bytes),
+        )
+
+        return ProofResponse(
+            query_id=session.query_id,
+            proof_hash=proof_hash,
+            status="submitted",
+            message=json.dumps({
+                "type": "tlsnotary",
+                "server": result.server,
+                "presentation": presentation_b64,
+                "size": len(result.presentation_bytes),
+            }),
         )
 
     def _create_attestation(self, session: CapturedSession) -> AttestationProof:

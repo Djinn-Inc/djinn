@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function IdiotDashboard() {
@@ -16,6 +17,8 @@ export default function IdiotDashboard() {
     useCreditBalance(address);
   const { deposit: depositEscrow, loading: depositLoading } = useDepositEscrow();
   const { withdraw: withdrawEscrow, loading: withdrawLoading } = useWithdrawEscrow();
+
+  const { purchases, loading: purchasesLoading } = usePurchaseHistory(address);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -97,7 +100,9 @@ export default function IdiotDashboard() {
           <p className="text-xs text-slate-500 uppercase tracking-wide">
             Total Purchased
           </p>
-          <p className="text-2xl font-bold text-slate-900 mt-2">0</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">
+            {purchasesLoading ? "..." : purchases.length}
+          </p>
           <p className="text-xs text-slate-500 mt-1">Signals bought</p>
         </div>
       </div>
@@ -240,11 +245,35 @@ export default function IdiotDashboard() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={7} className="text-center text-slate-500 py-8">
-                  No purchases yet
-                </td>
-              </tr>
+              {purchasesLoading ? (
+                <tr>
+                  <td colSpan={7} className="text-center text-slate-500 py-8">
+                    Loading...
+                  </td>
+                </tr>
+              ) : purchases.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center text-slate-500 py-8">
+                    No purchases yet
+                  </td>
+                </tr>
+              ) : (
+                purchases.map((p) => (
+                  <tr key={p.purchaseId} className="border-b border-slate-100">
+                    <td className="py-3">#{p.purchaseId}</td>
+                    <td className="py-3">{truncateAddress(p.signalId)}</td>
+                    <td className="py-3">-</td>
+                    <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
+                    <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
+                    <td className="py-3">
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
+                        Pending
+                      </span>
+                    </td>
+                    <td className="py-3 text-slate-500">Block {p.blockNumber}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

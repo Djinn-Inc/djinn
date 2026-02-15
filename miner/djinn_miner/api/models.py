@@ -63,10 +63,10 @@ class CheckResponse(BaseModel):
 
 
 class ProofRequest(BaseModel):
-    """POST /v1/proof — Submit a TLSNotary proof (stub)."""
+    """POST /v1/proof — Request proof generation for a previous check query."""
 
     query_id: str = Field(description="ID of the original check query")
-    session_data: str = Field(default="", description="TLS session data to prove")
+    session_data: str = Field(default="", description="Optional session data for fallback proof")
 
 
 class ProofResponse(BaseModel):

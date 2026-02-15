@@ -11,6 +11,12 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from djinn_miner.api.metrics import (
+    CHECKS_PROCESSED,
+    LINES_CHECKED,
+    PROOFS_GENERATED,
+    metrics_response,
+)
 from djinn_miner.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
@@ -67,6 +73,10 @@ def create_app(
 
         available_indices = [r.index for r in results if r.available]
 
+        CHECKS_PROCESSED.inc()
+        for r in results:
+            LINES_CHECKED.labels(result="available" if r.available else "unavailable").inc()
+
         log.info(
             "check_complete",
             total=len(request.lines),
@@ -88,7 +98,9 @@ def create_app(
         used during Phase 1. Currently returns a mock proof.
         """
         result = await proof_gen.generate(request.query_id, request.session_data)
-        log.info("proof_generated", query_id=request.query_id, status=result.status)
+        proof_type = "tlsnotary" if "tlsnotary" in (result.message or "") else "http_attestation"
+        PROOFS_GENERATED.labels(type=proof_type).inc()
+        log.info("proof_generated", query_id=request.query_id, status=result.status, type=proof_type)
         return result
 
     @app.get("/health", response_model=HealthResponse)
@@ -96,5 +108,14 @@ def create_app(
         """Health check endpoint for validator pings."""
         health_tracker.record_ping()
         return health_tracker.get_status()
+
+    @app.get("/metrics")
+    async def metrics() -> bytes:
+        """Prometheus metrics endpoint."""
+        from fastapi.responses import Response
+        return Response(
+            content=metrics_response(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     return app

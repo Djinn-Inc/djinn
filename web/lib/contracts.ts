@@ -17,6 +17,9 @@ export const ADDRESSES = {
   account:
     process.env.NEXT_PUBLIC_ACCOUNT_ADDRESS ??
     "0x0000000000000000000000000000000000000000",
+  audit:
+    process.env.NEXT_PUBLIC_AUDIT_ADDRESS ??
+    "0x0000000000000000000000000000000000000000",
   usdc:
     process.env.NEXT_PUBLIC_USDC_ADDRESS ??
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -43,7 +46,8 @@ export const ESCROW_ABI = [
   "function getPurchasesBySignal(uint256 signalId) external view returns (uint256[])",
   "event Deposited(address indexed user, uint256 amount)",
   "event Withdrawn(address indexed user, uint256 amount)",
-  "event SignalPurchased(uint256 indexed signalId, address indexed buyer, uint256 notional, uint256 feePaid, uint256 creditUsed, uint256 usdcPaid)",
+  "event SignalPurchased(uint256 indexed signalId, address indexed buyer, uint256 purchaseId, uint256 notional, uint256 feePaid, uint256 creditUsed, uint256 usdcPaid)",
+  "event OutcomeUpdated(uint256 indexed purchaseId, uint8 outcome)",
 ] as const;
 
 export const COLLATERAL_ABI = [
@@ -65,6 +69,11 @@ export const ACCOUNT_ABI = [
   "function getCurrentCycle(address genius, address idiot) external view returns (uint256)",
   "function isAuditReady(address genius, address idiot) external view returns (bool)",
   "function getSignalCount(address genius, address idiot) external view returns (uint256)",
+] as const;
+
+export const AUDIT_ABI = [
+  "event AuditSettled(address indexed genius, address indexed idiot, uint256 cycle, int256 qualityScore, uint256 trancheA, uint256 trancheB, uint256 protocolFee)",
+  "event EarlyExitSettled(address indexed genius, address indexed idiot, uint256 cycle, int256 qualityScore, uint256 creditsAwarded)",
 ] as const;
 
 export const ERC20_ABI = [
@@ -122,6 +131,16 @@ export function getAccountContract(
   return new ethers.Contract(
     ADDRESSES.account,
     ACCOUNT_ABI,
+    signerOrProvider
+  );
+}
+
+export function getAuditContract(
+  signerOrProvider: ethers.Signer | ethers.Provider
+) {
+  return new ethers.Contract(
+    ADDRESSES.audit,
+    AUDIT_ABI,
     signerOrProvider
   );
 }

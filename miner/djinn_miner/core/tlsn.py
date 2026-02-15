@@ -1,0 +1,166 @@
+"""TLSNotary proof generation via Rust CLI wrapper.
+
+Calls the `djinn-tlsn-prover` binary to perform an MPC-TLS handshake with
+a target server (e.g. The Odds API) via a TLSNotary Notary server. The
+binary outputs a serialized Presentation file that validators can verify.
+
+When the binary is not available (dev mode), falls back to HTTP attestation.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shutil
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import structlog
+
+log = structlog.get_logger()
+
+# Default binary location (can be overridden via env)
+PROVER_BINARY = os.getenv(
+    "TLSN_PROVER_BINARY",
+    shutil.which("djinn-tlsn-prover") or "djinn-tlsn-prover",
+)
+
+NOTARY_HOST = os.getenv("TLSN_NOTARY_HOST", "127.0.0.1")
+NOTARY_PORT = int(os.getenv("TLSN_NOTARY_PORT", "7047"))
+
+# Headers whose values should be redacted from the proof
+REDACT_HEADERS = os.getenv(
+    "TLSN_REDACT_HEADERS", "authorization,apikey,x-api-key"
+)
+
+
+@dataclass
+class TLSNProofResult:
+    """Result of a TLSNotary proof generation."""
+
+    success: bool
+    presentation_path: str | None = None
+    presentation_bytes: bytes | None = None
+    server: str = ""
+    error: str = ""
+
+
+def is_available() -> bool:
+    """Check if the TLSNotary prover binary is available."""
+    binary = shutil.which(PROVER_BINARY)
+    if binary:
+        return True
+    # Check if the configured path exists directly
+    return os.path.isfile(PROVER_BINARY) and os.access(PROVER_BINARY, os.X_OK)
+
+
+async def generate_proof(
+    url: str,
+    *,
+    notary_host: str | None = None,
+    notary_port: int | None = None,
+    output_dir: str | None = None,
+    timeout: float = 60.0,
+) -> TLSNProofResult:
+    """Generate a TLSNotary proof for an HTTPS request.
+
+    Args:
+        url: Full URL to fetch (with query params, including API key).
+        notary_host: Notary server hostname. Defaults to TLSN_NOTARY_HOST env.
+        notary_port: Notary server port. Defaults to TLSN_NOTARY_PORT env.
+        output_dir: Directory for the presentation file. Uses tempdir if None.
+        timeout: Max seconds to wait for proof generation.
+
+    Returns:
+        TLSNProofResult with the serialized presentation bytes on success.
+    """
+    host = notary_host or NOTARY_HOST
+    port = notary_port or NOTARY_PORT
+
+    # Create output file
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, "presentation.bin")
+    else:
+        tmp = tempfile.mkdtemp(prefix="djinn-tlsn-")
+        output_path = os.path.join(tmp, "presentation.bin")
+
+    cmd = [
+        PROVER_BINARY,
+        "--url", url,
+        "--notary-host", host,
+        "--notary-port", str(port),
+        "--output", output_path,
+        "--redact-headers", REDACT_HEADERS,
+    ]
+
+    log.info(
+        "tlsn_proof_starting",
+        notary=f"{host}:{port}",
+        output=output_path,
+    )
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        log.error("tlsn_proof_timeout", timeout=timeout)
+        return TLSNProofResult(
+            success=False,
+            error=f"proof generation timed out after {timeout}s",
+        )
+    except FileNotFoundError:
+        log.error("tlsn_binary_not_found", binary=PROVER_BINARY)
+        return TLSNProofResult(
+            success=False,
+            error=f"TLSNotary binary not found: {PROVER_BINARY}",
+        )
+
+    if proc.returncode != 0:
+        error_msg = stderr.decode().strip() if stderr else "unknown error"
+        log.error(
+            "tlsn_proof_failed",
+            returncode=proc.returncode,
+            error=error_msg[:500],
+        )
+        return TLSNProofResult(
+            success=False,
+            error=f"prover exited with code {proc.returncode}: {error_msg[:500]}",
+        )
+
+    # Parse stdout JSON summary
+    try:
+        summary = json.loads(stdout.decode().strip())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        summary = {}
+
+    # Read presentation bytes
+    presentation_path = Path(output_path)
+    if not presentation_path.exists():
+        return TLSNProofResult(
+            success=False,
+            error="presentation file was not created",
+        )
+
+    presentation_bytes = presentation_path.read_bytes()
+
+    log.info(
+        "tlsn_proof_generated",
+        size=len(presentation_bytes),
+        server=summary.get("server", ""),
+    )
+
+    return TLSNProofResult(
+        success=True,
+        presentation_path=str(presentation_path),
+        presentation_bytes=presentation_bytes,
+        server=summary.get("server", ""),
+    )

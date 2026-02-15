@@ -25,6 +25,13 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from djinn_validator.api.metrics import (
+    ACTIVE_SHARES,
+    OUTCOMES_ATTESTED,
+    PURCHASES_PROCESSED,
+    SHARES_STORED,
+    metrics_response,
+)
 from djinn_validator.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
@@ -120,6 +127,9 @@ def create_app(
             encrypted_key_share=encrypted,
         )
 
+        SHARES_STORED.inc()
+        ACTIVE_SHARES.set(share_store.count)
+
         return StoreShareResponse(signal_id=req.signal_id, stored=True)
 
     @app.post("/v1/signal/{signal_id}/purchase", response_model=PurchaseResponse)
@@ -157,6 +167,7 @@ def create_app(
         purchase_orch.set_mpc_result(signal_id, req.buyer_address, mpc_result)
 
         if not mpc_result.available:
+            PURCHASES_PROCESSED.labels(result="unavailable").inc()
             return PurchaseResponse(
                 signal_id=signal_id,
                 status="unavailable",
@@ -176,6 +187,9 @@ def create_app(
                 available=True,
                 message="Share release failed",
             )
+
+        PURCHASES_PROCESSED.labels(result="available").inc()
+        ACTIVE_SHARES.set(share_store.count)
 
         return PurchaseResponse(
             signal_id=signal_id,
@@ -236,6 +250,7 @@ def create_app(
             outcome=outcome,
             event_result=event_result,
         )
+        OUTCOMES_ATTESTED.labels(outcome=outcome.value).inc()
 
         # Check if consensus is reached
         total_validators = 10  # Default; in production read from metagraph
@@ -392,6 +407,15 @@ def create_app(
             available=session.result.available if session.result else None,
             participants_responded=responded,
             total_participants=len(session.participant_xs),
+        )
+
+    @app.get("/metrics")
+    async def metrics() -> bytes:
+        """Prometheus metrics endpoint."""
+        from fastapi.responses import Response
+        return Response(
+            content=metrics_response(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
     return app
