@@ -7,8 +7,12 @@ from pydantic import ValidationError
 
 from djinn_validator.api.models import (
     AnalyticsRequest,
+    MPCInitRequest,
+    MPCResultRequest,
     MPCRound1Request,
+    OutcomeRequest,
     PurchaseRequest,
+    RegisterSignalRequest,
     StoreShareRequest,
 )
 
@@ -121,3 +125,112 @@ class TestAnalyticsRequest:
     def test_with_data(self) -> None:
         req = AnalyticsRequest(event_type="click", data={"page": "/signals"})
         assert req.data["page"] == "/signals"
+
+    def test_event_type_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            AnalyticsRequest(event_type="x" * 200)
+
+
+class TestStringLengthLimits:
+    """Verify max_length constraints on all string fields."""
+
+    def test_signal_id_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            StoreShareRequest(
+                signal_id="x" * 300,
+                genius_address="0xGenius",
+                share_x=1,
+                share_y="abcdef",
+                encrypted_key_share="deadbeef",
+            )
+
+    def test_buyer_address_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            PurchaseRequest(
+                buyer_address="x" * 300,
+                sportsbook="dk",
+                available_indices=[1],
+            )
+
+    def test_outcome_validator_hotkey_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            OutcomeRequest(
+                signal_id="sig-1",
+                event_id="ev-1",
+                outcome=1,
+                validator_hotkey="x" * 300,
+            )
+
+    def test_register_pick_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            RegisterSignalRequest(
+                sport="nba",
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                pick="x" * 600,
+            )
+
+    def test_mpc_d_value_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCRound1Request(
+                session_id="s-1",
+                gate_idx=0,
+                validator_x=1,
+                d_value="a" * 300,
+                e_value="ff",
+            )
+
+
+class TestMPCBoundsValidation:
+    """Verify bounds on MPC numeric fields."""
+
+    def test_coordinator_x_too_low(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=0,
+                participant_xs=[1, 2],
+            )
+
+    def test_coordinator_x_too_high(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=256,
+                participant_xs=[1, 2],
+            )
+
+    def test_gate_idx_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCRound1Request(
+                session_id="s-1",
+                gate_idx=-1,
+                validator_x=1,
+                d_value="ab",
+                e_value="cd",
+            )
+
+    def test_participating_validators_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCResultRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available=True,
+                participating_validators=-1,
+            )
+
+    def test_threshold_bounds(self) -> None:
+        with pytest.raises(ValidationError):
+            MPCInitRequest(
+                session_id="s-1",
+                signal_id="sig-1",
+                available_indices=[1],
+                coordinator_x=1,
+                participant_xs=[1, 2],
+                threshold=0,
+            )

@@ -111,3 +111,63 @@ class TestProofRequest:
     def test_with_session_data(self) -> None:
         req = ProofRequest(query_id="q-1", session_data="some-session")
         assert req.session_data == "some-session"
+
+    def test_query_id_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            ProofRequest(query_id="x" * 300)
+
+    def test_session_data_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            ProofRequest(query_id="q-1", session_data="x" * 20_000)
+
+
+class TestStringLengthLimits:
+    """Verify max_length constraints on CandidateLine fields."""
+
+    def test_sport_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            CandidateLine(
+                index=1,
+                sport="x" * 200,
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                market="h2h",
+                side="A",
+            )
+
+    def test_event_id_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            CandidateLine(
+                index=1,
+                sport="nba",
+                event_id="x" * 300,
+                home_team="A",
+                away_team="B",
+                market="h2h",
+                side="A",
+            )
+
+    def test_team_name_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            CandidateLine(
+                index=1,
+                sport="nba",
+                event_id="ev-1",
+                home_team="x" * 300,
+                away_team="B",
+                market="h2h",
+                side="A",
+            )
+
+    def test_market_too_long(self) -> None:
+        with pytest.raises(ValidationError):
+            CandidateLine(
+                index=1,
+                sport="nba",
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                market="x" * 100,
+                side="A",
+            )

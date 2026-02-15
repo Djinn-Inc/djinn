@@ -13,16 +13,17 @@ class CandidateLine(BaseModel):
     """
 
     index: int = Field(ge=1, le=10, description="Line index (1-10)")
-    sport: str = Field(description="Sport key, e.g. 'basketball_nba'")
-    event_id: str = Field(description="Unique event identifier")
-    home_team: str = Field(description="Home team name")
-    away_team: str = Field(description="Away team name")
-    market: str = Field(description="Market type: 'spreads', 'totals', or 'h2h'")
+    sport: str = Field(max_length=128, description="Sport key, e.g. 'basketball_nba'")
+    event_id: str = Field(max_length=256, description="Unique event identifier")
+    home_team: str = Field(max_length=256, description="Home team name")
+    away_team: str = Field(max_length=256, description="Away team name")
+    market: str = Field(max_length=64, description="Market type: 'spreads', 'totals', or 'h2h'")
     line: float | None = Field(
         default=None,
         description="Line value (e.g. -3.0 for spreads, 218.5 for totals). None for h2h.",
     )
     side: str = Field(
+        max_length=256,
         description="Which side: team name for spreads/h2h, 'Over'/'Under' for totals",
     )
 
@@ -65,8 +66,8 @@ class CheckResponse(BaseModel):
 class ProofRequest(BaseModel):
     """POST /v1/proof — Request proof generation for a previous check query."""
 
-    query_id: str = Field(description="ID of the original check query")
-    session_data: str = Field(default="", description="Optional session data for fallback proof")
+    query_id: str = Field(max_length=256, description="ID of the original check query")
+    session_data: str = Field(default="", max_length=10_000, description="Optional session data for fallback proof")
 
 
 class ProofResponse(BaseModel):

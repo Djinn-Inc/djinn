@@ -95,7 +95,10 @@ class ChainClient:
         signal_address: str = "",
         account_address: str = "",
     ) -> None:
-        self._w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+        self._w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(
+            rpc_url,
+            request_kwargs={"timeout": 30},
+        ))
         self._escrow: AsyncContract | None = None
         self._signal: AsyncContract | None = None
         self._account: AsyncContract | None = None

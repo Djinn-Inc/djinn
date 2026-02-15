@@ -18,11 +18,11 @@ def _validate_hex(v: str, field_name: str) -> str:
 class StoreShareRequest(BaseModel):
     """POST /v1/signal — Accept encrypted key share from a Genius."""
 
-    signal_id: str
-    genius_address: str
+    signal_id: str = Field(max_length=256)
+    genius_address: str = Field(max_length=256)
     share_x: int = Field(ge=1, le=10)
-    share_y: str  # Hex-encoded field element
-    encrypted_key_share: str  # Hex-encoded encrypted AES key share
+    share_y: str = Field(max_length=512)  # Hex-encoded field element
+    encrypted_key_share: str = Field(max_length=4096)  # Hex-encoded encrypted AES key share
 
     @field_validator("share_y")
     @classmethod
@@ -43,8 +43,8 @@ class StoreShareResponse(BaseModel):
 class PurchaseRequest(BaseModel):
     """POST /v1/signal/{id}/purchase — Buyer requests a signal purchase."""
 
-    buyer_address: str
-    sportsbook: str
+    buyer_address: str = Field(max_length=256)
+    sportsbook: str = Field(max_length=256)
     available_indices: list[int] = Field(min_length=1, max_length=10)
 
 
@@ -59,10 +59,10 @@ class PurchaseResponse(BaseModel):
 class OutcomeRequest(BaseModel):
     """POST /v1/signal/{id}/outcome — Submit an outcome attestation."""
 
-    signal_id: str
-    event_id: str
+    signal_id: str = Field(max_length=256)
+    event_id: str = Field(max_length=256)
     outcome: int = Field(ge=0, le=3)  # 0=Pending, 1=Favorable, 2=Unfavorable, 3=Void
-    validator_hotkey: str
+    validator_hotkey: str = Field(max_length=256)
 
 
 class OutcomeResponse(BaseModel):
@@ -75,11 +75,11 @@ class OutcomeResponse(BaseModel):
 class RegisterSignalRequest(BaseModel):
     """POST /v1/signal/{id}/register — Register a purchased signal for outcome tracking."""
 
-    sport: str  # The Odds API sport key, e.g., "basketball_nba"
-    event_id: str  # The Odds API event ID
-    home_team: str
-    away_team: str
-    pick: str  # e.g., "Lakers -3.5 (-110)"
+    sport: str = Field(max_length=128)  # The Odds API sport key, e.g., "basketball_nba"
+    event_id: str = Field(max_length=256)  # The Odds API event ID
+    home_team: str = Field(max_length=256)
+    away_team: str = Field(max_length=256)
+    pick: str = Field(max_length=512)  # e.g., "Lakers -3.5 (-110)"
 
 
 class RegisterSignalResponse(BaseModel):
@@ -110,8 +110,8 @@ class HealthResponse(BaseModel):
 class AnalyticsRequest(BaseModel):
     """POST /v1/analytics/attempt — Fire-and-forget analytics."""
 
-    event_type: str
-    data: dict = Field(default_factory=dict)
+    event_type: str = Field(max_length=128)
+    data: dict = Field(default_factory=dict, max_length=50)
 
 
 # ---------------------------------------------------------------------------
@@ -122,14 +122,14 @@ class AnalyticsRequest(BaseModel):
 class MPCInitRequest(BaseModel):
     """POST /v1/mpc/init — Coordinator invites this validator to an MPC session."""
 
-    session_id: str
-    signal_id: str
-    available_indices: list[int]
-    coordinator_x: int
-    participant_xs: list[int]
-    threshold: int = 7
+    session_id: str = Field(max_length=256)
+    signal_id: str = Field(max_length=256)
+    available_indices: list[int] = Field(max_length=10)
+    coordinator_x: int = Field(ge=1, le=255)
+    participant_xs: list[int] = Field(max_length=20)
+    threshold: int = Field(default=7, ge=1, le=20)
     # This validator's Beaver triple shares (one dict per gate)
-    triple_shares: list[dict[str, str]] = Field(default_factory=list)  # hex-encoded
+    triple_shares: list[dict[str, str]] = Field(default_factory=list, max_length=20)  # hex-encoded
 
 
 class MPCInitResponse(BaseModel):
@@ -141,11 +141,11 @@ class MPCInitResponse(BaseModel):
 class MPCRound1Request(BaseModel):
     """POST /v1/mpc/round1 — Submit Round 1 message (d, e values) for a gate."""
 
-    session_id: str
-    gate_idx: int
-    validator_x: int
-    d_value: str  # Hex-encoded
-    e_value: str  # Hex-encoded
+    session_id: str = Field(max_length=256)
+    gate_idx: int = Field(ge=0, le=20)
+    validator_x: int = Field(ge=1, le=255)
+    d_value: str = Field(max_length=260)  # Hex-encoded
+    e_value: str = Field(max_length=260)  # Hex-encoded
 
     @field_validator("d_value", "e_value")
     @classmethod
@@ -162,10 +162,10 @@ class MPCRound1Response(BaseModel):
 class MPCResultRequest(BaseModel):
     """POST /v1/mpc/result — Coordinator broadcasts the opened result."""
 
-    session_id: str
-    signal_id: str
+    session_id: str = Field(max_length=256)
+    signal_id: str = Field(max_length=256)
     available: bool
-    participating_validators: int
+    participating_validators: int = Field(ge=0, le=255)
 
 
 class MPCResultResponse(BaseModel):

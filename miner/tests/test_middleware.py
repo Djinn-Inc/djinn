@@ -1,0 +1,168 @@
+"""Tests for miner API middleware (rate limiting, request ID, CORS)."""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from djinn_miner.api.middleware import (
+    RateLimitMiddleware,
+    RateLimiter,
+    RequestIdMiddleware,
+    TokenBucket,
+    get_cors_origins,
+)
+
+
+class TestTokenBucket:
+    def test_initial_capacity(self) -> None:
+        b = TokenBucket(capacity=10, refill_rate=1)
+        assert b.tokens == 10
+
+    def test_consume_within_capacity(self) -> None:
+        b = TokenBucket(capacity=5, refill_rate=1)
+        for _ in range(5):
+            assert b.consume() is True
+        assert b.consume() is False
+
+    def test_refill(self) -> None:
+        b = TokenBucket(capacity=2, refill_rate=100)
+        b.consume()
+        b.consume()
+        assert b.consume() is False
+        # Simulate time passing
+        b.last_refill = time.monotonic() - 1.0
+        assert b.consume() is True
+
+
+class TestRateLimiter:
+    def test_allows_within_limit(self) -> None:
+        limiter = RateLimiter(capacity=5, rate=1)
+        for _ in range(5):
+            assert limiter.allow("1.2.3.4") is True
+
+    def test_blocks_over_limit(self) -> None:
+        limiter = RateLimiter(capacity=2, rate=0.001)
+        limiter.allow("1.2.3.4")
+        limiter.allow("1.2.3.4")
+        assert limiter.allow("1.2.3.4") is False
+
+    def test_different_ips_independent(self) -> None:
+        limiter = RateLimiter(capacity=1, rate=0.001)
+        assert limiter.allow("1.1.1.1") is True
+        assert limiter.allow("2.2.2.2") is True
+        assert limiter.allow("1.1.1.1") is False
+
+    def test_evict_oldest_when_full(self) -> None:
+        limiter = RateLimiter(capacity=10, rate=10)
+        limiter._MAX_BUCKETS = 3
+        limiter.allow("1.1.1.1")
+        limiter.allow("2.2.2.2")
+        limiter.allow("3.3.3.3")
+        # 4th IP should trigger eviction of oldest
+        limiter.allow("4.4.4.4")
+        assert len(limiter._buckets) <= 3
+
+    def test_stale_bucket_cleanup(self) -> None:
+        limiter = RateLimiter(capacity=5, rate=1)
+        limiter.allow("1.1.1.1")
+        # Simulate stale bucket
+        limiter._buckets["1.1.1.1"].last_refill = time.monotonic() - 600
+        limiter._last_cleanup = time.monotonic() - 600
+        limiter._maybe_cleanup()
+        assert "1.1.1.1" not in limiter._buckets
+
+
+class TestRateLimitMiddleware:
+    @pytest.fixture
+    def limited_app(self) -> TestClient:
+        app = FastAPI()
+        limiter = RateLimiter(capacity=3, rate=0.001)
+        app.add_middleware(RateLimitMiddleware, limiter=limiter)
+
+        @app.get("/test")
+        async def test_ep() -> dict:
+            return {"ok": True}
+
+        @app.get("/health")
+        async def health() -> dict:
+            return {"status": "ok"}
+
+        @app.get("/metrics")
+        async def metrics() -> dict:
+            return {"metrics": True}
+
+        return TestClient(app)
+
+    def test_allows_requests(self, limited_app: TestClient) -> None:
+        resp = limited_app.get("/test")
+        assert resp.status_code == 200
+
+    def test_rate_limits(self, limited_app: TestClient) -> None:
+        for _ in range(3):
+            limited_app.get("/test")
+        resp = limited_app.get("/test")
+        assert resp.status_code == 429
+        assert "Retry-After" in resp.headers
+
+    def test_health_bypasses_limit(self, limited_app: TestClient) -> None:
+        for _ in range(3):
+            limited_app.get("/test")
+        resp = limited_app.get("/health")
+        assert resp.status_code == 200
+
+    def test_metrics_bypasses_limit(self, limited_app: TestClient) -> None:
+        for _ in range(3):
+            limited_app.get("/test")
+        resp = limited_app.get("/metrics")
+        assert resp.status_code == 200
+
+
+class TestRequestIdMiddleware:
+    @pytest.fixture
+    def traced_app(self) -> TestClient:
+        app = FastAPI()
+        app.add_middleware(RequestIdMiddleware)
+
+        @app.get("/test")
+        async def test_ep() -> dict:
+            return {"ok": True}
+
+        return TestClient(app)
+
+    def test_generates_request_id(self, traced_app: TestClient) -> None:
+        resp = traced_app.get("/test")
+        assert "x-request-id" in resp.headers
+        assert len(resp.headers["x-request-id"]) == 32
+
+    def test_forwards_existing_request_id(self, traced_app: TestClient) -> None:
+        resp = traced_app.get("/test", headers={"X-Request-ID": "my-trace-abc"})
+        assert resp.headers["x-request-id"] == "my-trace-abc"
+
+    def test_unique_ids_per_request(self, traced_app: TestClient) -> None:
+        r1 = traced_app.get("/test")
+        r2 = traced_app.get("/test")
+        assert r1.headers["x-request-id"] != r2.headers["x-request-id"]
+
+
+class TestCorsOrigins:
+    def test_empty_returns_wildcard(self) -> None:
+        assert get_cors_origins("") == ["*"]
+
+    def test_single_origin(self) -> None:
+        assert get_cors_origins("https://djinn.io") == ["https://djinn.io"]
+
+    def test_multiple_origins(self) -> None:
+        result = get_cors_origins("https://djinn.io, https://app.djinn.io")
+        assert result == ["https://djinn.io", "https://app.djinn.io"]
+
+    def test_strips_whitespace(self) -> None:
+        result = get_cors_origins("  https://a.io  ,  https://b.io  ")
+        assert result == ["https://a.io", "https://b.io"]
+
+    def test_ignores_empty_entries(self) -> None:
+        result = get_cors_origins("https://a.io,,https://b.io")
+        assert result == ["https://a.io", "https://b.io"]

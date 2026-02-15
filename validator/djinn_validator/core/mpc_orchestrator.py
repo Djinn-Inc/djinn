@@ -194,8 +194,9 @@ class MPCOrchestrator:
         4. Compute and broadcast result
         """
         my_x = local_share.x
-        participant_xs = [my_x] + [p["uid"] + 1 for p in peers]  # Use uid+1 as share x
-        participant_xs = sorted(participant_xs)
+        raw_xs = [my_x] + [p["uid"] + 1 for p in peers]  # Use uid+1 as share x
+        # Validate x-coordinates are in valid range and unique
+        participant_xs = sorted(set(x for x in raw_xs if 1 <= x <= 255))
 
         if len(participant_xs) < self._threshold:
             log.warning(

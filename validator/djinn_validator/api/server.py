@@ -131,7 +131,9 @@ def create_app(
     # Rate limiting
     limiter = RateLimiter(default_capacity=60, default_rate=10)
     limiter.set_path_limit("/v1/signal", capacity=20, rate=2)  # Share storage: 2/sec
+    limiter.set_path_limit("/v1/signals/resolve", capacity=10, rate=1)  # Resolution: 1/sec
     limiter.set_path_limit("/v1/mpc/", capacity=100, rate=50)  # MPC: higher for multi-round
+    limiter.set_path_limit("/v1/analytics", capacity=30, rate=5)  # Analytics: 5/sec
     app.add_middleware(RateLimitMiddleware, limiter=limiter)
 
     # Request ID tracing (outermost — must be added last)
