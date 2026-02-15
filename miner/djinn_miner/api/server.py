@@ -55,8 +55,14 @@ def create_app(
 
     # Catch unhandled exceptions — never leak stack traces to clients
     @app.exception_handler(Exception)
-    async def _unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
-        log.error("unhandled_exception", error=str(exc), exc_info=True)
+    async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+        log.error(
+            "unhandled_exception",
+            error=str(exc),
+            path=request.url.path,
+            method=request.method,
+            exc_info=True,
+        )
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
@@ -75,8 +81,12 @@ def create_app(
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > 1_048_576:
-            return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+        if content_length:
+            try:
+                if int(content_length) > 1_048_576:
+                    return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+            except (ValueError, OverflowError):
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
         return await call_next(request)
 
     app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=rate_limit_capacity, rate=rate_limit_rate))

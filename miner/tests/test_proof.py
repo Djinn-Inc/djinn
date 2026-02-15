@@ -55,6 +55,29 @@ class TestSessionCapture:
         assert capture.get("q0") is not None
         assert capture.get("q4") is not None
 
+    def test_eviction_on_max_capacity(self) -> None:
+        """When reaching max capacity, oldest session is evicted."""
+        capture = SessionCapture()
+        capture._MAX_SESSIONS = 3  # Lower for testing
+        for i in range(4):
+            capture.record(CapturedSession(query_id=f"q{i}", request_url=f"https://example.com/{i}"))
+        assert capture.count == 3
+        assert capture.get("q0") is None  # Oldest evicted
+        assert capture.get("q3") is not None
+
+    def test_expired_sessions_evicted(self) -> None:
+        """Expired sessions are cleaned up on record()."""
+        capture = SessionCapture()
+        old_session = CapturedSession(query_id="old", request_url="https://example.com")
+        capture.record(old_session)
+        # Backdate the timestamp
+        capture._timestamps["old"] = time.time() - capture._SESSION_TTL - 1
+
+        # Recording a new session triggers eviction
+        capture.record(CapturedSession(query_id="new", request_url="https://example.com/new"))
+        assert capture.get("old") is None
+        assert capture.get("new") is not None
+
     def test_overwrite_session(self) -> None:
         capture = SessionCapture()
         s1 = CapturedSession(query_id="q1", request_url="https://example.com/first")
@@ -244,6 +267,25 @@ class TestResponseSummary:
     def test_non_list_response(self) -> None:
         summary = ProofGenerator._parse_response_summary(b'{"error": "invalid"}')
         assert summary["event_count"] == 0
+
+    def test_binary_data(self) -> None:
+        """Binary data with null bytes should not crash parser."""
+        summary = ProofGenerator._parse_response_summary(b"\x00\xff\xfe binary")
+        assert summary["event_count"] == 0
+        assert summary.get("error") == "unparseable"
+
+    def test_nested_non_dict_events(self) -> None:
+        """Events list with non-dict elements should be skipped."""
+        data = json.dumps([42, "string", None, {"id": "real-event"}]).encode()
+        summary = ProofGenerator._parse_response_summary(data)
+        assert summary["event_count"] == 1
+
+    def test_events_missing_id(self) -> None:
+        """Events without 'id' field should not be counted."""
+        data = json.dumps([{"bookmakers": [{"key": "bk1"}]}, {"id": ""}]).encode()
+        summary = ProofGenerator._parse_response_summary(data)
+        assert summary["event_count"] == 0
+        assert summary["bookmaker_count"] == 1
 
     def test_events_without_bookmakers(self) -> None:
         data = json.dumps([{"id": "e1"}, {"id": "e2"}]).encode()

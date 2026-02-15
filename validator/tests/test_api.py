@@ -214,6 +214,14 @@ class TestBodySizeLimit:
         )
         assert resp.status_code == 413
 
+    def test_invalid_content_length_rejected(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/signal",
+            content="{}",
+            headers={"Content-Type": "application/json", "Content-Length": "not-a-number"},
+        )
+        assert resp.status_code == 400
+
 
 class TestInputValidation:
     """Test that invalid inputs are properly rejected."""

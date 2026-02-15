@@ -246,6 +246,23 @@ class TestBodySizeLimit:
         )
         assert resp.status_code == 413
 
+    def test_invalid_content_length_rejected(self, app: TestClient) -> None:
+        """Non-numeric content-length should return 400."""
+        resp = app.post(
+            "/v1/check",
+            content="{}",
+            headers={"Content-Type": "application/json", "Content-Length": "not-a-number"},
+        )
+        assert resp.status_code == 400
+
+    def test_missing_content_length_allowed(self, app: TestClient) -> None:
+        """Requests without content-length header should pass through."""
+        resp = app.post("/v1/check", json={"lines": [{
+            "index": 1, "sport": "basketball_nba", "event_id": "ev",
+            "home_team": "A", "away_team": "B", "market": "h2h", "side": "A",
+        }]})
+        assert resp.status_code == 200
+
 
 class TestInputValidation:
     """Test that invalid inputs are properly rejected."""

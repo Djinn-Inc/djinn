@@ -144,9 +144,14 @@ def create_app(
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > 1_048_576:
-            from starlette.responses import JSONResponse
-            return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+        if content_length:
+            try:
+                if int(content_length) > 1_048_576:
+                    from starlette.responses import JSONResponse
+                    return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+            except (ValueError, OverflowError):
+                from starlette.responses import JSONResponse
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
         return await call_next(request)
 
     # Rate limiting
