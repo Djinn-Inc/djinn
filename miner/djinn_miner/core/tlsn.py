@@ -113,12 +113,14 @@ async def generate_proof(
         )
     except asyncio.TimeoutError:
         log.error("tlsn_proof_timeout", timeout=timeout)
+        _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
             error=f"proof generation timed out after {timeout}s",
         )
     except FileNotFoundError:
         log.error("tlsn_binary_not_found", binary=PROVER_BINARY)
+        _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
             error=f"TLSNotary binary not found: {PROVER_BINARY}",
@@ -131,6 +133,7 @@ async def generate_proof(
             returncode=proc.returncode,
             error=error_msg[:500],
         )
+        _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
             error=f"prover exited with code {proc.returncode}: {error_msg[:500]}",
@@ -145,12 +148,14 @@ async def generate_proof(
     # Read presentation bytes
     presentation_path = Path(output_path)
     if not presentation_path.exists():
+        _cleanup_dir(output_path)
         return TLSNProofResult(
             success=False,
             error="presentation file was not created",
         )
 
     presentation_bytes = presentation_path.read_bytes()
+    _cleanup_dir(output_path)
 
     log.info(
         "tlsn_proof_generated",
@@ -164,3 +169,15 @@ async def generate_proof(
         presentation_bytes=presentation_bytes,
         server=summary.get("server", ""),
     )
+
+
+def _cleanup_dir(file_path: str) -> None:
+    """Remove temp file and its parent directory if it's a temp dir."""
+    try:
+        parent = os.path.dirname(file_path)
+        if os.path.isfile(file_path):
+            os.unlink(file_path)
+        if parent and os.path.basename(parent).startswith("djinn-tlsn-"):
+            shutil.rmtree(parent, ignore_errors=True)
+    except OSError:
+        pass

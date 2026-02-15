@@ -143,11 +143,18 @@ def create_app(
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:
         """Accept and store an encrypted key share from a Genius."""
+        from djinn_validator.utils.crypto import BN254_PRIME
+
         try:
-            share = Share(x=req.share_x, y=int(req.share_y, 16))
+            share_y = int(req.share_y, 16)
             encrypted = bytes.fromhex(req.encrypted_key_share)
         except (ValueError, TypeError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
+
+        if share_y >= BN254_PRIME:
+            raise HTTPException(status_code=400, detail="share_y must be less than BN254 prime")
+
+        share = Share(x=req.share_x, y=share_y)
 
         share_store.store(
             signal_id=req.signal_id,

@@ -32,6 +32,7 @@ log = structlog.get_logger()
 async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
     """Background loop: keep metagraph fresh and check registration."""
     log.info("bt_sync_loop_started")
+    consecutive_errors = 0
 
     while True:
         try:
@@ -43,11 +44,17 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
             else:
                 health.set_bt_connected(True)
 
+            consecutive_errors = 0
+
         except asyncio.CancelledError:
             log.info("bt_sync_loop_cancelled")
             return
         except Exception as e:
-            log.error("bt_sync_error", error=str(e))
+            consecutive_errors += 1
+            backoff = min(60 * (2 ** consecutive_errors), 600)
+            log.error("bt_sync_error", error=str(e), consecutive=consecutive_errors, backoff_s=backoff)
+            await asyncio.sleep(backoff)
+            continue
 
         await asyncio.sleep(60)  # Sync every 60 seconds
 

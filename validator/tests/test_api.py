@@ -77,6 +77,40 @@ class TestStoreShare:
         assert data["stored"] is True
         assert share_store.has("sig-1")
 
+    def test_rejects_share_y_exceeding_prime(self, client: TestClient) -> None:
+        from djinn_validator.utils.crypto import BN254_PRIME
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-bad",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": hex(BN254_PRIME + 1),
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 400
+        assert "BN254" in resp.json()["detail"]
+
+    def test_rejects_invalid_share_x(self, client: TestClient) -> None:
+        """Pydantic rejects share_x outside [1, 10] with 422."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-bad",
+            "genius_address": "0xGenius",
+            "share_x": 0,
+            "share_y": hex(42),
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 422
+
+    def test_rejects_invalid_hex(self, client: TestClient) -> None:
+        """Pydantic hex validator rejects non-hex share_y with 422."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-bad",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "not-hex",
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 422
+
 
 class TestPurchase:
     def test_purchase_nonexistent_signal(self, client: TestClient) -> None:

@@ -59,10 +59,8 @@ class TestGenerateProof:
                     pathlib.Path(arg_list[i + 1]).write_bytes(fake_presentation)
                     break
 
-            async def communicate():
-                stdout = json.dumps({"status": "success", "server": "api.the-odds-api.com"}).encode()
-                return stdout, b""
-            proc.communicate = communicate
+            stdout = json.dumps({"status": "success", "server": "api.the-odds-api.com"}).encode()
+            proc.communicate = AsyncMock(return_value=(stdout, b""))
             return proc
 
         with patch("djinn_miner.core.tlsn.asyncio.create_subprocess_exec", side_effect=mock_subprocess):
@@ -92,10 +90,10 @@ class TestGenerateProof:
         """Timeout returns graceful error."""
         async def mock_subprocess(*args, **kwargs):
             proc = MagicMock()
-            async def communicate():
-                await asyncio.sleep(100)
-                return b"", b""
-            proc.communicate = communicate
+            # Use MagicMock (not async) for communicate — the mocked
+            # wait_for raises TimeoutError before awaiting the coroutine,
+            # so an async function would create an unawaited coroutine warning.
+            proc.communicate = MagicMock()
             return proc
 
         with patch("djinn_miner.core.tlsn.asyncio.create_subprocess_exec", side_effect=mock_subprocess):
@@ -111,9 +109,7 @@ class TestGenerateProof:
         async def mock_subprocess(*args, **kwargs):
             proc = MagicMock()
             proc.returncode = 1
-            async def communicate():
-                return b"", b"TLS handshake failed"
-            proc.communicate = communicate
+            proc.communicate = AsyncMock(return_value=(b"", b"TLS handshake failed"))
             return proc
 
         with patch("djinn_miner.core.tlsn.asyncio.create_subprocess_exec", side_effect=mock_subprocess):

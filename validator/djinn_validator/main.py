@@ -37,6 +37,7 @@ async def epoch_loop(
 ) -> None:
     """Main validator epoch loop: sync metagraph, score miners, set weights."""
     log.info("epoch_loop_started")
+    consecutive_errors = 0
 
     while True:
         try:
@@ -79,11 +80,17 @@ async def epoch_loop(
                 m = scorer.get_or_create(uid, hotkey)
                 m.consecutive_epochs += 1
 
+            consecutive_errors = 0
+
         except asyncio.CancelledError:
             log.info("epoch_loop_cancelled")
             return
         except Exception as e:
-            log.error("epoch_error", error=str(e), exc_info=True)
+            consecutive_errors += 1
+            backoff = min(12 * (2 ** consecutive_errors), 300)
+            log.error("epoch_error", error=str(e), consecutive=consecutive_errors, backoff_s=backoff, exc_info=True)
+            await asyncio.sleep(backoff)
+            continue
 
         # Wait for next epoch (~12 seconds per Bittensor block, tempo ~100 blocks)
         await asyncio.sleep(12)

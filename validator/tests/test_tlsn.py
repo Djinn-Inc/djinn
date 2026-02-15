@@ -142,7 +142,10 @@ class TestVerifyProof:
             "djinn_validator.core.tlsn.asyncio.create_subprocess_exec",
         ) as mock_exec:
             proc = MagicMock()
-            proc.communicate = AsyncMock(return_value=(b"", b""))
+            # Use MagicMock (not AsyncMock) for communicate — the mocked
+            # wait_for raises TimeoutError before awaiting the coroutine,
+            # so an AsyncMock would create an unawaited coroutine warning.
+            proc.communicate = MagicMock()
             mock_exec.return_value = proc
 
             with patch(
