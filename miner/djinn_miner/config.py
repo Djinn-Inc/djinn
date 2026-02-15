@@ -48,6 +48,9 @@ class Config:
     # Line matching tolerance: how close a sportsbook line must be to match
     line_tolerance: float = _float_env("LINE_TOLERANCE", "0.5")
 
+    # Timeouts (seconds)
+    http_timeout: int = _int_env("HTTP_TIMEOUT", "30")
+
     def validate(self) -> None:
         """Validate config at startup. Raises ValueError on issues."""
         if not self.odds_api_key:

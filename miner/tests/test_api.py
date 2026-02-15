@@ -245,3 +245,60 @@ class TestBodySizeLimit:
             headers={"Content-Type": "application/json", "Content-Length": str(len(huge_body))},
         )
         assert resp.status_code == 413
+
+
+class TestInputValidation:
+    """Test that invalid inputs are properly rejected."""
+
+    def test_check_missing_lines(self, app: TestClient) -> None:
+        resp = app.post("/v1/check", json={})
+        assert resp.status_code == 422
+
+    def test_check_invalid_index(self, app: TestClient) -> None:
+        resp = app.post("/v1/check", json={
+            "lines": [{
+                "index": 0,
+                "sport": "nba",
+                "event_id": "ev",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 422
+
+    def test_check_too_many_lines(self, app: TestClient) -> None:
+        line = {
+            "index": 1,
+            "sport": "nba",
+            "event_id": "ev",
+            "home_team": "A",
+            "away_team": "B",
+            "market": "h2h",
+            "side": "A",
+        }
+        resp = app.post("/v1/check", json={"lines": [line] * 11})
+        assert resp.status_code == 422
+
+    def test_proof_missing_query_id(self, app: TestClient) -> None:
+        resp = app.post("/v1/proof", json={})
+        assert resp.status_code == 422
+
+    def test_nonexistent_endpoint_returns_404(self, app: TestClient) -> None:
+        resp = app.get("/v1/doesnotexist")
+        assert resp.status_code in (404, 405)
+
+    def test_string_too_long(self, app: TestClient) -> None:
+        resp = app.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "x" * 200,
+                "event_id": "ev",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 422

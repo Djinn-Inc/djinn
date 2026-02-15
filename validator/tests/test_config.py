@@ -75,3 +75,13 @@ class TestConfigValidation:
         config = _config(api_port=70000)
         with pytest.raises(ValueError, match="API_PORT"):
             config.validate()
+
+
+class TestConfigTimeouts:
+    def test_default_http_timeout(self) -> None:
+        config = Config()
+        assert config.http_timeout == 30
+
+    def test_default_rpc_timeout(self) -> None:
+        config = Config()
+        assert config.rpc_timeout == 30

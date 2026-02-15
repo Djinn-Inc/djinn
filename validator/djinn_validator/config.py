@@ -43,6 +43,10 @@ class Config:
     # Sports data
     sports_api_key: str = os.getenv("SPORTS_API_KEY", "")
 
+    # Timeouts (seconds)
+    http_timeout: int = _int_env("HTTP_TIMEOUT", "30")
+    rpc_timeout: int = _int_env("RPC_TIMEOUT", "30")
+
     # Protocol constants
     signals_per_cycle: int = 10
     shares_total: int = 10

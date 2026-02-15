@@ -153,3 +153,85 @@ class TestBodySizeLimit:
             headers={"Content-Type": "application/json", "Content-Length": str(len(huge_body))},
         )
         assert resp.status_code == 413
+
+
+class TestInputValidation:
+    """Test that invalid inputs are properly rejected."""
+
+    def test_store_share_missing_fields(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal", json={"signal_id": "sig-1"})
+        assert resp.status_code == 422
+
+    def test_store_share_invalid_hex(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-1",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "not-hex!",
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 422
+
+    def test_purchase_empty_indices(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/sig-1/purchase", json={
+            "buyer_address": "0xBuyer",
+            "sportsbook": "DK",
+            "available_indices": [],
+        })
+        assert resp.status_code == 422
+
+    def test_outcome_invalid_value(self, client: TestClient) -> None:
+        resp = client.post("/v1/signal/sig-1/outcome", json={
+            "signal_id": "sig-1",
+            "event_id": "ev-1",
+            "outcome": 5,
+            "validator_hotkey": "5xxx",
+        })
+        assert resp.status_code == 422
+
+    def test_analytics_oversized_data(self, client: TestClient) -> None:
+        resp = client.post("/v1/analytics/attempt", json={
+            "event_type": "test",
+            "data": {f"k{i}": i for i in range(60)},
+        })
+        assert resp.status_code == 422
+
+    def test_mpc_init_coordinator_x_out_of_range(self, client: TestClient) -> None:
+        resp = client.post("/v1/mpc/init", json={
+            "session_id": "s-1",
+            "signal_id": "sig-1",
+            "available_indices": [1],
+            "coordinator_x": 0,
+            "participant_xs": [1, 2],
+        })
+        assert resp.status_code == 422
+
+    def test_nonexistent_endpoint_returns_404(self, client: TestClient) -> None:
+        resp = client.get("/v1/doesnotexist")
+        assert resp.status_code in (404, 405)
+
+
+class TestMPCEndpoints:
+    def test_mpc_status_nonexistent_session(self, client: TestClient) -> None:
+        resp = client.get("/v1/mpc/nonexistent-session-id/status")
+        assert resp.status_code == 404
+
+    def test_mpc_result_nonexistent_session(self, client: TestClient) -> None:
+        resp = client.post("/v1/mpc/result", json={
+            "session_id": "nonexistent",
+            "signal_id": "sig-1",
+            "available": True,
+            "participating_validators": 3,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["acknowledged"] is False
+
+    def test_mpc_round1_invalid_hex(self, client: TestClient) -> None:
+        resp = client.post("/v1/mpc/round1", json={
+            "session_id": "s-1",
+            "gate_idx": 0,
+            "validator_x": 1,
+            "d_value": "not-hex!",
+            "e_value": "ff",
+        })
+        assert resp.status_code == 422

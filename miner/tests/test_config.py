@@ -62,3 +62,9 @@ class TestConfigValidation:
         config = _config(odds_api_key="key", line_tolerance=-0.1)
         with pytest.raises(ValueError, match="LINE_TOLERANCE"):
             config.validate()
+
+
+class TestConfigTimeouts:
+    def test_default_http_timeout(self) -> None:
+        config = Config()
+        assert config.http_timeout == 30
