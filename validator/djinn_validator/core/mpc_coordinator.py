@@ -27,6 +27,7 @@ from djinn_validator.core.mpc import (
     SecureMPCSession,
     _split_secret_at_points,
     generate_beaver_triples,
+    generate_ot_beaver_triples,
     secure_check_availability,
 )
 from djinn_validator.utils.crypto import BN254_PRIME, Share
@@ -93,18 +94,51 @@ class MPCCoordinator:
         coordinator_x: int,
         participant_xs: list[int],
         threshold: int = 7,
+        use_ot: bool | None = None,
     ) -> MPCSessionState:
-        """Create a new MPC session as coordinator."""
+        """Create a new MPC session as coordinator.
+
+        Args:
+            use_ot: If True, use OT-based triple generation (no trusted dealer).
+                    If None (default), uses OT when >= 2 participants, otherwise
+                    falls back to trusted dealer for single-participant mode.
+        """
         session_id = f"mpc-{signal_id}-{secrets.token_hex(8)}"
 
-        # Generate Beaver triples for the computation
         n_mults = max(len(available_indices), 1)
-        triples = generate_beaver_triples(
-            count=n_mults,
-            n=len(participant_xs),
-            k=threshold,
-            x_coords=sorted(participant_xs),
-        )
+        sorted_xs = sorted(participant_xs)
+
+        # Use OT-based triples when multiple participants are available.
+        # Single-participant mode uses trusted dealer (no OT possible with 1 party).
+        should_use_ot = use_ot if use_ot is not None else len(participant_xs) >= 2
+
+        if should_use_ot and len(participant_xs) >= 2:
+            triples = generate_ot_beaver_triples(
+                count=n_mults,
+                n=len(participant_xs),
+                k=threshold,
+                x_coords=sorted_xs,
+                party_ids=sorted_xs,
+            )
+            log.info(
+                "beaver_triples_generated",
+                method="ot",
+                count=n_mults,
+                participants=len(participant_xs),
+            )
+        else:
+            triples = generate_beaver_triples(
+                count=n_mults,
+                n=len(participant_xs),
+                k=threshold,
+                x_coords=sorted_xs,
+            )
+            log.info(
+                "beaver_triples_generated",
+                method="trusted_dealer",
+                count=n_mults,
+                participants=len(participant_xs),
+            )
 
         session = MPCSessionState(
             session_id=session_id,

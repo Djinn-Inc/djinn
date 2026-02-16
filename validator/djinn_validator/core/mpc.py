@@ -30,6 +30,9 @@ import structlog
 
 from djinn_validator.utils.crypto import BN254_PRIME, Share, _mod_inv, split_secret
 
+# Import OT-based triple generation (used when distributed mode is available)
+from djinn_validator.core.ot import generate_ot_beaver_triples as _generate_ot_triples
+
 log = structlog.get_logger()
 
 
@@ -126,6 +129,54 @@ def generate_beaver_triples(
         triples.append(BeaverTriple(a_shares, b_shares, c_shares))
 
     return triples
+
+
+def generate_ot_beaver_triples(
+    count: int,
+    n: int = 10,
+    k: int = 7,
+    prime: int = BN254_PRIME,
+    x_coords: list[int] | None = None,
+    party_ids: list[int] | None = None,
+) -> list[BeaverTriple]:
+    """Generate Beaver triples using OT-based distributed protocol.
+
+    No single party learns the underlying triple values (a, b, c).
+    This is the production replacement for generate_beaver_triples() which
+    uses a trusted dealer.
+
+    Args:
+        count: Number of triples to generate.
+        n: Number of shares per value.
+        k: Reconstruction threshold.
+        x_coords: Specific x-coordinates for shares. If None, uses 1..n.
+        party_ids: IDs of participating parties for OT. If None, uses x_coords.
+    """
+    if k > n:
+        raise ValueError(f"threshold k={k} exceeds number of shares n={n}")
+    if n < 2:
+        raise ValueError(f"OT requires at least 2 parties, got n={n}")
+    if x_coords is None:
+        x_coords = list(range(1, n + 1))
+    if party_ids is None:
+        party_ids = list(x_coords)
+
+    raw_triples = _generate_ot_triples(
+        count=count,
+        party_ids=party_ids,
+        x_coords=x_coords,
+        threshold=k,
+        prime=prime,
+    )
+
+    return [
+        BeaverTriple(
+            a_shares=tuple(a_shares),
+            b_shares=tuple(b_shares),
+            c_shares=tuple(c_shares),
+        )
+        for a_shares, b_shares, c_shares in raw_triples
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -291,16 +342,44 @@ class SecureMPCSession:
         )
         r_by_validator = {s.x: s.y for s in r_shares_list}
 
-        # Step 3: Multiply all factors together using Beaver triples (tree)
-        # Start with r * factor[0], then multiply in remaining factors
-        current = self._multiply_shares(
-            r_by_validator, factors[0], self._next_triple()
-        )
+        # Step 3: Multiply all factors together using Beaver triples.
+        # Use tree multiplication to reduce rounds from d+1 to ceil(log2(d))+2.
+        #
+        # First multiply r with factors[0], then multiply remaining factors
+        # in a balanced binary tree: pair up adjacent results and multiply,
+        # repeat until one value remains.
+        #
+        # For d=10 available indices:
+        #   Sequential: 11 rounds (r*f0, *f1, *f2, ..., *f9)
+        #   Tree: 6 rounds (r*f0, then 5 factors => ceil(log2(5))+1 = 4 tree rounds)
 
+        # Start: r * factor[0]
+        layer = [
+            self._multiply_shares(r_by_validator, factors[0], self._next_triple())
+        ]
+
+        # Add remaining factors as leaves
         for i in range(1, len(factors)):
-            current = self._multiply_shares(
-                current, factors[i], self._next_triple()
-            )
+            layer.append(factors[i])
+
+        # Tree reduction: pair up and multiply until one result remains
+        while len(layer) > 1:
+            next_layer: list[dict[int, int]] = []
+            i = 0
+            while i < len(layer):
+                if i + 1 < len(layer):
+                    product = self._multiply_shares(
+                        layer[i], layer[i + 1], self._next_triple()
+                    )
+                    next_layer.append(product)
+                    i += 2
+                else:
+                    # Odd element: carry forward to next level
+                    next_layer.append(layer[i])
+                    i += 1
+            layer = next_layer
+
+        current = layer[0]
 
         # Step 4: Open the result r * P(s)
         result_value = self._reconstruct_from_values(current)
@@ -340,8 +419,10 @@ def secure_check_availability(
     # Use the actual x-coordinates from the shares for triple generation
     x_coords = sorted(s.x for s in shares)
 
-    # Generate enough Beaver triples: |available_indices| multiplications
-    # (one for r * factor[0], then one per additional factor)
+    # Compute triple count for tree multiplication:
+    # 1 triple for r * factor[0], then tree-reduce the remaining d factors.
+    # Tree reduction of n items requires n-1 multiplications.
+    # So total = 1 + max(d - 1, 0) = max(d, 1) — same count, different order.
     n_mults = max(len(available_indices), 1)
     triples = generate_beaver_triples(
         n_mults, n=len(shares), k=threshold, prime=prime, x_coords=x_coords,

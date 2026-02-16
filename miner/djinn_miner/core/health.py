@@ -16,6 +16,10 @@ class HealthTracker:
 
     Uptime accounts for 15% of miner scoring (PDF v9), so responsiveness
     to health pings directly affects emissions.
+
+    Thread safety: Not needed. All callers run on the asyncio event loop
+    (single-threaded). Python's GIL protects the simple attribute assignments
+    regardless.
     """
 
     CONSECUTIVE_FAILURE_THRESHOLD = 3

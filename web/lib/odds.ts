@@ -243,6 +243,9 @@ export function extractBets(event: OddsEvent): AvailableBet[] {
               side: outcome.name,
               line: outcome.point ?? null,
               avgPrice: outcome.price,
+              bookCount: 1,
+              minPrice: outcome.price,
+              maxPrice: outcome.price,
             },
           });
         }
