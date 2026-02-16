@@ -150,6 +150,37 @@ jobs:
       - name: Run subgraph tests
         run: npx graph test
 
+  slither:
+    name: Solidity Static Analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Slither
+        run: pip install slither-analyzer
+      - name: Run Slither
+        run: |
+          slither . \
+            --filter-paths "test/|script/|lib/" \
+            --exclude-dependencies \
+            --exclude naming-convention,solc-version,pragma \
+            --sarif results.sarif \
+            2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slither-results
+          path: contracts/results.sarif
+          retention-days: 30
+
   security-scan:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
