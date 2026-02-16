@@ -119,9 +119,19 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     error Unauthorized();
     error ZeroAddress();
     error NotionalTooLarge(uint256 provided, uint256 max);
+    error OddsOutOfRange(uint256 odds);
 
     /// @notice Maximum notional per purchase (1 billion USDC in 6 decimals)
     uint256 public constant MAX_NOTIONAL = 1e15;
+
+    /// @notice Odds precision: 1e6 = 1.0x decimal
+    uint256 public constant ODDS_PRECISION = 1e6;
+
+    /// @notice Minimum odds: 1.01x (prevents sub-1.0 odds that break circuit math)
+    uint256 public constant MIN_ODDS = 1_010_000;
+
+    /// @notice Maximum odds: 1000x (prevents unreasonable values)
+    uint256 public constant MAX_ODDS = 1_000_000_000;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -256,6 +266,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         // --- Validate inputs ---
         if (notional == 0) revert ZeroAmount();
         if (notional > MAX_NOTIONAL) revert NotionalTooLarge(notional, MAX_NOTIONAL);
+        if (odds < MIN_ODDS || odds > MAX_ODDS) revert OddsOutOfRange(odds);
 
         // --- Validate dependencies are wired up ---
         if (address(signalCommitment) == address(0)) revert ContractNotSet("SignalCommitment");

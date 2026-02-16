@@ -281,17 +281,18 @@ def _determine_h2h(
 
 
 def _team_matches(pick_team: str, full_name: str) -> bool:
-    """Fuzzy match: pick might use city or mascot, full_name is "City Mascot"."""
+    """Word-boundary match: pick might use city or mascot, full_name is "City Mascot"."""
     pick_lower = pick_team.lower()
     full_lower = full_name.lower()
     # Exact match
     if pick_lower == full_lower:
         return True
-    # Pick is a substring (e.g., "Lakers" in "Los Angeles Lakers")
-    if pick_lower in full_lower:
+    # Word-boundary match (e.g., "Lakers" matches "Los Angeles Lakers")
+    words = full_lower.split()
+    if pick_lower in words:
         return True
-    # Full name ends with pick (mascot match)
-    if full_lower.endswith(pick_lower):
+    # Multi-word pick (e.g., "Kansas City" in "Kansas City Chiefs")
+    if len(pick_lower.split()) > 1 and full_lower.startswith(pick_lower + " "):
         return True
     return False
 

@@ -96,7 +96,7 @@ ACCOUNT_ABI = [
         "inputs": [
             {"name": "genius", "type": "address"},
             {"name": "idiot", "type": "address"},
-            {"name": "signalId", "type": "uint256"},
+            {"name": "purchaseId", "type": "uint256"},
             {"name": "outcome", "type": "uint8"},
         ],
         "name": "recordOutcome",

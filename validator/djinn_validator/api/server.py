@@ -224,21 +224,25 @@ def create_app(
     # Request body size limit (1MB default, 5MB for OT endpoints)
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
+        from starlette.responses import JSONResponse
+
+        max_size = 5_242_880 if request.url.path.startswith("/v1/mpc/ot/") else 1_048_576
         content_length = request.headers.get("content-length")
         if content_length:
-            # OT endpoints carry larger payloads (DH group elements)
-            max_size = 5_242_880 if request.url.path.startswith("/v1/mpc/ot/") else 1_048_576
             try:
                 if int(content_length) > max_size:
-                    from starlette.responses import JSONResponse
-
                     return JSONResponse(
                         status_code=413, content={"detail": f"Request body too large (max {max_size // 1048576}MB)"}
                     )
             except (ValueError, OverflowError):
-                from starlette.responses import JSONResponse
-
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+        elif request.method in ("POST", "PUT", "PATCH"):
+            # Reject requests without Content-Length to prevent chunked encoding bypass
+            te = request.headers.get("transfer-encoding", "").lower()
+            if "chunked" in te:
+                return JSONResponse(
+                    status_code=411, content={"detail": "Content-Length header required"}
+                )
         return await call_next(request)
 
     # Rate limiting

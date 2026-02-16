@@ -293,11 +293,14 @@ class MPCSessionStatusResponse(BaseModel):
 
 
 class ShareInfoResponse(BaseModel):
-    """GET /v1/signal/{id}/share_info — Return share x-coordinate for MPC."""
+    """GET /v1/signal/{id}/share_info — Return share coordinates for MPC.
+
+    Requires validator-signed request authentication.
+    """
 
     signal_id: str
     share_x: int
-    share_y: str  # Hex-encoded
+    share_y: str  # Hex-encoded y-coordinate (authenticated endpoint only)
 
 
 # ---------------------------------------------------------------------------
