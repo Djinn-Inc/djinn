@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Purchase, Outcome, Signal, AccountState} from "./interfaces/IDjinn.sol";
 
 /// @notice Minimal interface for the Escrow contract
@@ -52,7 +53,7 @@ struct AuditResult {
 ///         Computes the Quality Score per the whitepaper formula, distributes damages
 ///         across Tranche A (USDC refund) and Tranche B (Credits), collects a 0.5%
 ///         protocol fee on total notional, and releases remaining collateral locks.
-contract Audit is Ownable, Pausable {
+contract Audit is Ownable, Pausable, ReentrancyGuard {
     // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
@@ -192,7 +193,7 @@ contract Audit is Ownable, Pausable {
     ///      Computes the Quality Score, executes settlement, and starts a new cycle.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function trigger(address genius, address idiot) external whenNotPaused {
+    function trigger(address genius, address idiot) external whenNotPaused nonReentrant {
         _validateDependencies();
         if (!account.isAuditReady(genius, idiot)) {
             revert NotAuditReady(genius, idiot);
@@ -251,7 +252,7 @@ contract Audit is Ownable, Pausable {
     ///         protocol fee, collateral release, and cycle advancement.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function settle(address genius, address idiot) external whenNotPaused {
+    function settle(address genius, address idiot) external whenNotPaused nonReentrant {
         _validateDependencies();
         if (!account.isAuditReady(genius, idiot)) {
             revert NotAuditReady(genius, idiot);
@@ -271,7 +272,7 @@ contract Audit is Ownable, Pausable {
     ///         (not USDC), per whitepaper: "insufficient sample for USDC movement."
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function earlyExit(address genius, address idiot) external whenNotPaused {
+    function earlyExit(address genius, address idiot) external whenNotPaused nonReentrant {
         _validateDependencies();
 
         // Only the genius or idiot can trigger early exit

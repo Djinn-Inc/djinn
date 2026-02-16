@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Outcome, Purchase, Signal, SignalStatus} from "./interfaces/IDjinn.sol";
 
 /// @notice Minimal interface for the SignalCommitment contract
@@ -35,7 +36,7 @@ interface IAccount {
 ///         Buyers deposit USDC ahead of time for instant purchases. Fees are split between
 ///         escrowed USDC and Djinn Credits (credits used first). A fee pool tracks collections
 ///         per genius-idiot-cycle for audit-time refunds.
-contract Escrow is Ownable, Pausable {
+contract Escrow is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // -------------------------------------------------------------------------
@@ -217,7 +218,7 @@ contract Escrow is Ownable, Pausable {
 
     /// @notice Withdraw unused USDC from escrow
     /// @param amount Amount of USDC to withdraw (6 decimals)
-    function withdraw(uint256 amount) external whenNotPaused {
+    function withdraw(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 bal = balances[msg.sender];
         if (bal < amount) revert InsufficientBalance(bal, amount);
@@ -238,6 +239,7 @@ contract Escrow is Ownable, Pausable {
     function purchase(uint256 signalId, uint256 notional, uint256 odds)
         external
         whenNotPaused
+        nonReentrant
         returns (uint256 purchaseId)
     {
         // --- Validate dependencies are wired up ---
@@ -313,7 +315,7 @@ contract Escrow is Ownable, Pausable {
     /// @param idiot  Idiot address who receives the refund
     /// @param cycle  The audit cycle for the fee pool lookup
     /// @param amount USDC amount to refund
-    function refund(address genius, address idiot, uint256 cycle, uint256 amount) external onlyAudit {
+    function refund(address genius, address idiot, uint256 cycle, uint256 amount) external onlyAudit nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 poolBalance = feePool[genius][idiot][cycle];
         if (poolBalance < amount) revert InsufficientBalance(poolBalance, amount);
