@@ -235,7 +235,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     ///         purchase across all protocol contracts.
     /// @param signalId On-chain signal identifier
     /// @param notional Reference amount chosen by the buyer (6-decimal USDC scale)
-    /// @param odds Decimal odds scaled by 100 (e.g. 191 = 1.91x = -110 American)
+    /// @param odds Decimal odds scaled by 1e6 (e.g. 1_910_000 = 1.91x = -110 American)
     /// @return purchaseId The auto-incremented purchase identifier
     function purchase(uint256 signalId, uint256 notional, uint256 odds)
         external
