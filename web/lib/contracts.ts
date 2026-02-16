@@ -37,6 +37,16 @@ export const ADDRESSES = {
   ),
 } as const;
 
+// Warn in production if core contracts are not configured
+if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
+  const required = ["signalCommitment", "escrow", "collateral", "account", "audit"] as const;
+  for (const name of required) {
+    if (ADDRESSES[name] === ZERO_ADDRESS) {
+      console.warn(`[Djinn] Contract address for ${name} is not configured (zero address). Set NEXT_PUBLIC_${name.replace(/([A-Z])/g, "_$1").toUpperCase()}_ADDRESS.`);
+    }
+  }
+}
+
 // Minimal ABIs — only the functions used by the client
 
 export const SIGNAL_COMMITMENT_ABI = [

@@ -172,15 +172,15 @@ export default function PurchaseSignal() {
       // Step 3: Execute on-chain purchase
       setStep("purchasing_chain");
 
-      const notionalNum = Number(notional);
-      const oddsNum = Number(odds);
-      if (!Number.isFinite(notionalNum) || notionalNum <= 0) {
+      const notionalNum = parseFloat(notional);
+      const oddsNum = parseFloat(odds);
+      if (isNaN(notionalNum) || !Number.isFinite(notionalNum) || notionalNum <= 0) {
         setStepError("Invalid notional amount");
         setStep("error");
         return;
       }
-      if (!Number.isFinite(oddsNum) || oddsNum < 1.01) {
-        setStepError("Invalid odds value");
+      if (isNaN(oddsNum) || !Number.isFinite(oddsNum) || oddsNum < 1.01) {
+        setStepError("Invalid odds (must be at least 1.01)");
         setStep("error");
         return;
       }
@@ -489,8 +489,9 @@ export default function PurchaseSignal() {
             ) : (
               <form onSubmit={handlePurchase} className="space-y-4">
                 <div>
-                  <label className="label">Notional (USDC)</label>
+                  <label htmlFor="notional" className="label">Notional (USDC)</label>
                   <input
+                    id="notional"
                     type="number"
                     value={notional}
                     onChange={(e) => setNotional(e.target.value)}
@@ -506,8 +507,9 @@ export default function PurchaseSignal() {
                 </div>
 
                 <div>
-                  <label className="label">Odds (decimal)</label>
+                  <label htmlFor="odds" className="label">Odds (decimal)</label>
                   <input
+                    id="odds"
                     type="number"
                     value={odds}
                     onChange={(e) => setOdds(e.target.value)}
@@ -551,7 +553,7 @@ export default function PurchaseSignal() {
                 )}
 
                 {(purchaseError || stepError) && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3" role="alert">
                     <p className="text-xs text-red-600">
                       {purchaseError || stepError}
                     </p>
@@ -559,7 +561,7 @@ export default function PurchaseSignal() {
                 )}
 
                 {isProcessing && (
-                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3" aria-live="polite">
                     <p className="text-xs text-blue-600">
                       {stepLabel[step] ?? "Processing..."}
                     </p>

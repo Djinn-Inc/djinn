@@ -91,11 +91,13 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
             setError(false);
           }}
           placeholder="Enter beta password"
+          aria-label="Beta password"
+          aria-invalid={error || undefined}
           className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 transition-colors text-center"
           autoFocus
         />
         {error && (
-          <p className="text-sm text-red-500 text-center mt-2">
+          <p className="text-sm text-red-500 text-center mt-2" role="alert">
             Incorrect password
           </p>
         )}

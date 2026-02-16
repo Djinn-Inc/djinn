@@ -215,20 +215,20 @@ export default function CreateSignal() {
             .join(""),
       );
 
-      const expiresInNum = Number(expiresIn);
-      const maxPriceNum = Number(maxPriceBps);
-      const slaNum = Number(slaMultiplier);
-      if (!Number.isFinite(expiresInNum) || expiresInNum <= 0) {
+      const expiresInNum = parseFloat(expiresIn);
+      const maxPriceNum = parseFloat(maxPriceBps);
+      const slaNum = parseFloat(slaMultiplier);
+      if (isNaN(expiresInNum) || !Number.isFinite(expiresInNum) || expiresInNum <= 0) {
         setStepError("Invalid expiration time");
         setStep("configure");
         return;
       }
-      if (!Number.isFinite(maxPriceNum) || maxPriceNum <= 0 || maxPriceNum > 100) {
+      if (isNaN(maxPriceNum) || !Number.isFinite(maxPriceNum) || maxPriceNum <= 0 || maxPriceNum > 100) {
         setStepError("Invalid max price (must be 0-100%)");
         setStep("configure");
         return;
       }
-      if (!Number.isFinite(slaNum) || slaNum <= 0 || slaNum > 100) {
+      if (isNaN(slaNum) || !Number.isFinite(slaNum) || slaNum <= 0 || slaNum > 100) {
         setStepError("Invalid SLA multiplier (must be 0-100%)");
         setStep("configure");
         return;
@@ -409,6 +409,7 @@ export default function CreateSignal() {
               placeholder={`Search ${selectedSport.label} teams...`}
               className="input w-full"
               autoComplete="off"
+              aria-label={`Search ${selectedSport.label} teams`}
             />
           </div>
         )}
@@ -423,7 +424,7 @@ export default function CreateSignal() {
 
         {/* Error */}
         {eventsError && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-4 mb-6">
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4 mb-6" role="alert">
             <p className="text-sm text-red-600">{eventsError}</p>
             <button
               onClick={() => fetchEvents(selectedSport)}
@@ -569,8 +570,9 @@ export default function CreateSignal() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="label">Max Price (%)</label>
+            <label htmlFor="maxPriceBps" className="label">Max Price (%)</label>
             <input
+              id="maxPriceBps"
               type="number"
               value={maxPriceBps}
               onChange={(e) => setMaxPriceBps(e.target.value)}
@@ -584,8 +586,9 @@ export default function CreateSignal() {
             <p className="text-xs text-slate-500 mt-1">Fee as % of notional (max 50%)</p>
           </div>
           <div>
-            <label className="label">SLA Multiplier (%)</label>
+            <label htmlFor="slaMultiplier" className="label">SLA Multiplier (%)</label>
             <input
+              id="slaMultiplier"
               type="number"
               value={slaMultiplier}
               onChange={(e) => setSlaMultiplier(e.target.value)}
@@ -601,8 +604,9 @@ export default function CreateSignal() {
         </div>
 
         <div>
-          <label className="label">Expires In (hours)</label>
+          <label htmlFor="expiresIn" className="label">Expires In (hours)</label>
           <input
+            id="expiresIn"
             type="number"
             value={expiresIn}
             onChange={(e) => setExpiresIn(e.target.value)}
@@ -635,13 +639,13 @@ export default function CreateSignal() {
         </div>
 
         {(commitError || stepError) && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4" role="alert">
             <p className="text-sm text-red-600">{commitError || stepError}</p>
           </div>
         )}
 
         {isProcessing && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4" aria-live="polite">
             <p className="text-sm text-blue-600">
               {step === "committing"
                 ? "Encrypting and committing signal on-chain..."

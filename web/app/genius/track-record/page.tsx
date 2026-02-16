@@ -255,7 +255,7 @@ export default function TrackRecordPage() {
             ) : (
               <>
                 {submitError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-3">
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-3" role="alert">
                     <p className="text-xs text-red-600">{submitError}</p>
                   </div>
                 )}
@@ -305,8 +305,9 @@ export default function TrackRecordPage() {
             </p>
 
             <div className="mb-4">
-              <label className="label">Upload JSON File</label>
+              <label htmlFor="signalFile" className="label">Upload JSON File</label>
               <input
+                id="signalFile"
                 type="file"
                 accept=".json"
                 onChange={handleFileUpload}
@@ -315,8 +316,9 @@ export default function TrackRecordPage() {
             </div>
 
             <div className="mb-4">
-              <label className="label">Or Paste JSON</label>
+              <label htmlFor="signalJson" className="label">Or Paste JSON</label>
               <textarea
+                id="signalJson"
                 value={signalJson}
                 onChange={(e) => setSignalJson(e.target.value)}
                 placeholder={EXAMPLE_SIGNAL}
@@ -326,13 +328,13 @@ export default function TrackRecordPage() {
             </div>
 
             {errorMsg && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4">
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
                 <p className="text-xs text-red-600">{errorMsg}</p>
               </div>
             )}
 
             {state === "generating" && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4">
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
                 <p className="text-xs text-blue-600">
                   Generating Groth16 proof... This may take a few seconds.
                 </p>

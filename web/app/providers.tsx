@@ -5,6 +5,12 @@ import { baseSepolia } from "viem/chains";
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
+if (!PRIVY_APP_ID && typeof window !== "undefined") {
+  console.warn(
+    "[Djinn] NEXT_PUBLIC_PRIVY_APP_ID is not set. Authentication will not work.",
+  );
+}
+
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PrivyProvider

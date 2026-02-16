@@ -116,15 +116,16 @@ export default function IdiotDashboard() {
         </h2>
         <div className="card">
           {txError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
               <p className="text-xs text-red-600">{txError}</p>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="label">Deposit USDC</label>
+              <label htmlFor="depositEscrow" className="label">Deposit USDC</label>
               <div className="flex gap-2">
                 <input
+                  id="depositEscrow"
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
@@ -144,9 +145,10 @@ export default function IdiotDashboard() {
               </p>
             </div>
             <div>
-              <label className="label">Withdraw USDC</label>
+              <label htmlFor="withdrawEscrow" className="label">Withdraw USDC</label>
               <div className="flex gap-2">
                 <input
+                  id="withdrawEscrow"
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
@@ -180,6 +182,7 @@ export default function IdiotDashboard() {
               className="input w-auto"
               value={sportFilter}
               onChange={(e) => setSportFilter(e.target.value)}
+              aria-label="Filter by sport"
             >
               <option value="">All Sports</option>
               <option value="NFL">NFL</option>

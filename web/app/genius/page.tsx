@@ -306,15 +306,16 @@ export default function GeniusDashboard() {
         </h2>
         <div className="card">
           {txError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
               <p className="text-xs text-red-600">{txError}</p>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="label">Deposit USDC Collateral</label>
+              <label htmlFor="depositCollateral" className="label">Deposit USDC Collateral</label>
               <div className="flex gap-2">
                 <input
+                  id="depositCollateral"
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
@@ -331,9 +332,10 @@ export default function GeniusDashboard() {
               </div>
             </div>
             <div>
-              <label className="label">Withdraw Available Collateral</label>
+              <label htmlFor="withdrawCollateral" className="label">Withdraw Available Collateral</label>
               <div className="flex gap-2">
                 <input
+                  id="withdrawCollateral"
                   type="number"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
