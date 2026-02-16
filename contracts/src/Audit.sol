@@ -325,19 +325,18 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     }
 
     /// @dev Distributes damages for a negative Quality Score in standard (non-early-exit) mode.
-    ///      Tranche A: USDC refund capped at total USDC fees paid (slashed from Genius collateral).
+    ///      Tranche A: USDC slashed from Genius collateral, sent directly to Idiot wallet.
     ///      Tranche B: excess damages minted as Credits.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    /// @param cycle The current audit cycle
     /// @param totalDamages Absolute value of the negative Quality Score
     /// @param totalUsdcFeesPaid Total USDC fees the Idiot paid this cycle
-    /// @return trancheA USDC refunded to the Idiot
+    /// @return trancheA USDC sent to the Idiot from Genius collateral
     /// @return trancheB Credits minted to the Idiot
     function _distributeDamages(
         address genius,
         address idiot,
-        uint256 cycle,
+        uint256,
         uint256 totalDamages,
         uint256 totalUsdcFeesPaid
     ) internal returns (uint256 trancheA, uint256 trancheB) {
@@ -350,29 +349,14 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
             trancheB = totalDamages - trancheA;
         }
 
-        // Slash Genius collateral and send USDC to Escrow for Idiot refund
+        // Slash Genius collateral — send USDC directly to the Idiot
         if (trancheA > 0) {
-            collateral.slash(genius, trancheA, address(escrow));
-            _refundFromFeePool(genius, idiot, cycle, trancheA);
+            collateral.slash(genius, trancheA, idiot);
         }
 
         // Mint Credits for Tranche B
         if (trancheB > 0) {
             creditLedger.mint(idiot, trancheB);
-        }
-    }
-
-    /// @dev Refunds USDC to the Idiot via the Escrow fee pool.
-    ///      Capped at the available fee pool balance.
-    /// @param genius The Genius address
-    /// @param idiot The Idiot address
-    /// @param cycle The current audit cycle
-    /// @param amount Amount to refund
-    function _refundFromFeePool(address genius, address idiot, uint256 cycle, uint256 amount) internal {
-        uint256 poolBalance = escrow.feePool(genius, idiot, cycle);
-        uint256 refundAmount = amount < poolBalance ? amount : poolBalance;
-        if (refundAmount > 0) {
-            escrow.refund(genius, idiot, cycle, refundAmount);
         }
     }
 

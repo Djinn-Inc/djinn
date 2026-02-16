@@ -75,7 +75,8 @@ export function handleCreditsBurned(event: CreditsBurned): void {
     event.params.from,
     event.block.timestamp
   );
-  creditBalance.balance = creditBalance.balance.minus(event.params.amount);
+  let newBalance = creditBalance.balance.minus(event.params.amount);
+  creditBalance.balance = newBalance.gt(BigInt.zero()) ? newBalance : BigInt.zero();
   creditBalance.totalBurned = creditBalance.totalBurned.plus(
     event.params.amount
   );
@@ -86,7 +87,8 @@ export function handleCreditsBurned(event: CreditsBurned): void {
   let idiotId = event.params.from.toHexString();
   let idiot = Idiot.load(idiotId);
   if (idiot != null) {
-    idiot.creditBalance = idiot.creditBalance.minus(event.params.amount);
+    let newIdiotBalance = idiot.creditBalance.minus(event.params.amount);
+    idiot.creditBalance = newIdiotBalance.gt(BigInt.zero()) ? newIdiotBalance : BigInt.zero();
     idiot.save();
   }
 

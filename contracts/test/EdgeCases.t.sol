@@ -518,7 +518,7 @@ contract EdgeCaseIntegrationTest is Test {
 
         // 11th signal should fail on account recording (but purchase might go through
         // depending on whether the limit is enforced at Account level)
-        uint256 sigId = _createSignal();
+        uint256 sigId11 = _createSignal();
         uint256 lockAmount = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
         uint256 fee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
         uint256 protocolFee = (NOTIONAL * 50) / 10_000;
@@ -527,7 +527,7 @@ contract EdgeCaseIntegrationTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CycleSignalLimitReached.selector, genius, idiot, 10));
         vm.prank(idiot);
-        escrow.purchase(sigId, NOTIONAL, ODDS);
+        escrow.purchase(sigId11, NOTIONAL, ODDS);
     }
 
     // ─── Zero Notional Edge

@@ -83,34 +83,44 @@ async def verify_proof(
         f.write(presentation_bytes)
         presentation_path = f.name
 
-    cmd = [VERIFIER_BINARY, "--presentation", presentation_path]
+    base_cmd = [VERIFIER_BINARY, "--presentation", presentation_path]
 
-    # If we have trusted notary keys, pass the first one for now.
-    # In production, try each trusted key until one matches.
-    if TRUSTED_NOTARY_KEYS:
-        cmd.extend(["--notary-pubkey", next(iter(TRUSTED_NOTARY_KEYS))])
+    # Try each trusted notary key until one succeeds
+    keys_to_try = list(TRUSTED_NOTARY_KEYS) if TRUSTED_NOTARY_KEYS else [None]
+    last_error = ""
+    proc = None
+    stdout = b""
+    stderr = b""
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
-        _cleanup(presentation_path)
-        return TLSNVerifyResult(verified=False, error=f"verification timed out after {timeout}s")
-    except FileNotFoundError:
-        _cleanup(presentation_path)
-        return TLSNVerifyResult(
-            verified=False,
-            error=f"TLSNotary verifier binary not found: {VERIFIER_BINARY}",
-        )
-    finally:
-        _cleanup(presentation_path)
+    for key_path in keys_to_try:
+        cmd = list(base_cmd)
+        if key_path is not None:
+            cmd.extend(["--notary-pubkey", key_path])
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            if proc.returncode == 0:
+                break
+            last_error = stderr.decode().strip() if stderr else "unknown error"
+            log.debug("tlsn_key_mismatch", key=key_path, error=last_error[:200])
+        except TimeoutError:
+            _cleanup(presentation_path)
+            return TLSNVerifyResult(verified=False, error=f"verification timed out after {timeout}s")
+        except FileNotFoundError:
+            _cleanup(presentation_path)
+            return TLSNVerifyResult(
+                verified=False,
+                error=f"TLSNotary verifier binary not found: {VERIFIER_BINARY}",
+            )
 
-    if proc.returncode != 0:
-        error_msg = stderr.decode().strip() if stderr else "unknown error"
+    _cleanup(presentation_path)
+
+    if proc is None or proc.returncode != 0:
+        error_msg = last_error or (stderr.decode().strip() if stderr else "unknown error")
         # Try to parse stdout for structured error
         try:
             result = json.loads(stdout.decode().strip())

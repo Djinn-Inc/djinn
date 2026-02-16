@@ -317,7 +317,7 @@ contract AuditIntegrationTest is Test {
         (uint256[] memory notionals, uint256[] memory oddsArr) = _uniformArrays();
         _create10Signals(outcomes, notionals, oddsArr);
 
-        uint256 idiotBalBefore = escrow.getBalance(idiot);
+        uint256 idiotUsdcBefore = usdc.balanceOf(idiot);
         uint256 creditsBefore = creditLedger.balanceOf(idiot);
 
         // Total damages = 10 * 1000e6 * 15000/10000 = 15_000e6
@@ -332,8 +332,8 @@ contract AuditIntegrationTest is Test {
 
         audit.trigger(genius, idiot);
 
-        // Idiot gets USDC refund (tranche A) back to escrow balance
-        assertEq(escrow.getBalance(idiot), idiotBalBefore + expectedTrancheA, "Idiot should get tranche A USDC refund");
+        // Idiot gets USDC refund (tranche A) directly to wallet from genius collateral
+        assertEq(usdc.balanceOf(idiot), idiotUsdcBefore + expectedTrancheA, "Idiot should get tranche A USDC refund");
 
         // Idiot gets credits (tranche B)
         assertEq(creditLedger.balanceOf(idiot), creditsBefore + expectedTrancheB, "Idiot should get tranche B credits");
@@ -389,14 +389,14 @@ contract AuditIntegrationTest is Test {
 
         assertTrue(expectedDamages < expectedTotalFees, "Damages should be less than fees for this test");
 
-        uint256 idiotBalBefore = escrow.getBalance(idiot);
+        uint256 idiotUsdcBefore = usdc.balanceOf(idiot);
 
         audit.trigger(genius, idiot);
 
         AuditResult memory result = audit.getAuditResult(genius, idiot, 0);
         assertEq(result.trancheA, expectedDamages, "Tranche A should equal total damages");
         assertEq(result.trancheB, 0, "Tranche B should be zero when damages < fees");
-        assertEq(escrow.getBalance(idiot), idiotBalBefore + expectedDamages, "Idiot should get full damage refund");
+        assertEq(usdc.balanceOf(idiot), idiotUsdcBefore + expectedDamages, "Idiot should get full damage refund");
     }
 
     // ─── Protocol Fee
@@ -585,7 +585,7 @@ contract AuditIntegrationTest is Test {
         assertEq(score, expected, "Mixed outcome score mismatch");
         assertTrue(score < 0, "Score should be negative for this mix");
 
-        uint256 idiotBalBefore = escrow.getBalance(idiot);
+        uint256 idiotUsdcBefore = usdc.balanceOf(idiot);
 
         audit.trigger(genius, idiot);
 
@@ -599,7 +599,7 @@ contract AuditIntegrationTest is Test {
         assertEq(result.trancheA, expectedA, "Tranche A mismatch in mixed scenario");
         assertEq(result.trancheB, expectedB, "Tranche B mismatch in mixed scenario");
 
-        assertEq(escrow.getBalance(idiot), idiotBalBefore + expectedA, "Idiot refund wrong");
+        assertEq(usdc.balanceOf(idiot), idiotUsdcBefore + expectedA, "Idiot refund wrong");
         assertEq(creditLedger.balanceOf(idiot), expectedB, "Credits mismatch");
         assertEq(account.getCurrentCycle(genius, idiot), 1, "New cycle should start");
     }

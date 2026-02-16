@@ -197,11 +197,17 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         emit AuthorizedCallerSet(caller, _authorized);
     }
 
+    error PurchaseNotFound(uint256 purchaseId);
+    error OutcomeAlreadySet(uint256 purchaseId, Outcome current);
+
     /// @notice Update the outcome of a purchase. Called by authorized contracts (e.g. oracle/validator).
     /// @param purchaseId The purchase to update
-    /// @param outcome The new outcome
+    /// @param outcome The new outcome (must not be Pending)
     function setOutcome(uint256 purchaseId, Outcome outcome) external {
         if (!authorizedCallers[msg.sender]) revert Unauthorized();
+        if (purchaseId >= nextPurchaseId) revert PurchaseNotFound(purchaseId);
+        Outcome current = _purchases[purchaseId].outcome;
+        if (current != Outcome.Pending) revert OutcomeAlreadySet(purchaseId, current);
         _purchases[purchaseId].outcome = outcome;
         emit OutcomeUpdated(purchaseId, outcome);
     }
@@ -212,11 +218,11 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Deposit USDC into escrow. Caller must have approved this contract.
     /// @param amount Amount of USDC to deposit (6 decimals)
-    function deposit(uint256 amount) external whenNotPaused {
+    function deposit(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
 
-        balances[msg.sender] += amount;
         usdc.safeTransferFrom(msg.sender, address(this), amount);
+        balances[msg.sender] += amount;
 
         emit Deposited(msg.sender, amount);
     }
