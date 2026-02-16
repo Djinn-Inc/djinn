@@ -18,10 +18,6 @@ export interface TrackRecordProofEntry {
   blockNumber: number;
 }
 
-const TRACK_RECORD_SUBMITTED_TOPIC = ethers.id(
-  "TrackRecordSubmitted(uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes32)"
-);
-
 export function useTrackRecordProofs(geniusAddress?: string) {
   const provider = useEthersProvider();
   const [proofs, setProofs] = useState<TrackRecordProofEntry[]>([]);

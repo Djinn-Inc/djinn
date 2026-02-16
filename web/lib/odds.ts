@@ -429,15 +429,3 @@ export function generateDecoys(
 
   return decoys.slice(0, count);
 }
-
-/** Interleave multiple arrays: take one from each in round-robin. */
-function interleave<T>(...arrays: T[][]): T[] {
-  const result: T[] = [];
-  const maxLen = Math.max(...arrays.map((a) => a.length), 0);
-  for (let i = 0; i < maxLen; i++) {
-    for (const arr of arrays) {
-      if (i < arr.length) result.push(arr[i]);
-    }
-  }
-  return result;
-}
