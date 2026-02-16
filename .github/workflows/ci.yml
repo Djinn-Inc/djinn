@@ -112,3 +112,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f ${{ matrix.service }}/Dockerfile -t djinn-${{ matrix.service }}:ci ${{ matrix.service }}
+
+  integration:
+    name: Docker Integration Tests
+    runs-on: ubuntu-latest
+    needs: [docker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install httpx
+      - name: Start services
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8421/health > /dev/null 2>&1 && \
+               curl -sf http://localhost:8422/health > /dev/null 2>&1; then
+              echo "Services ready"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+      - name: Run integration tests
+        run: python tests/integration/test_docker_e2e.py
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml logs
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml down -v

@@ -16,6 +16,7 @@ import {
   truncateAddress,
 } from "@/lib/types";
 import type { CandidateLine } from "@/lib/api";
+import { decoyLineToCandidateLine, parseLine, formatLine } from "@/lib/odds";
 
 type PurchaseStep =
   | "idle"
@@ -125,16 +126,13 @@ export default function PurchaseSignal() {
 
       const miner = getMinerClient();
       const candidateLines: CandidateLine[] = signal.decoyLines.map(
-        (line, i) => ({
-          index: i + 1,
-          sport: signal.sport.toLowerCase().replace(/\s/g, "_"),
-          event_id: `signal_${params.id as string}`,
-          home_team: "TBD",
-          away_team: "TBD",
-          market: "spreads",
-          line: null,
-          side: line,
-        }),
+        (raw, i) =>
+          decoyLineToCandidateLine(
+            raw,
+            i + 1,
+            signal.sport,
+            params.id as string,
+          ),
       );
 
       const checkResult = await miner.checkLines({ lines: candidateLines });
@@ -288,19 +286,23 @@ export default function PurchaseSignal() {
               All Lines
             </h3>
             <div className="space-y-1">
-              {signal.decoyLines.map((line, i) => (
-                <p
-                  key={i}
-                  className={`text-sm font-mono rounded px-3 py-2 ${
-                    i + 1 === decryptedPick.realIndex
-                      ? "bg-green-100 text-green-800 font-bold"
-                      : "bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  {i + 1}. {line}
-                  {i + 1 === decryptedPick.realIndex && " \u2190 REAL"}
-                </p>
-              ))}
+              {signal.decoyLines.map((raw, i) => {
+                const structured = parseLine(raw);
+                const display = structured ? formatLine(structured) : raw;
+                return (
+                  <p
+                    key={i}
+                    className={`text-sm font-mono rounded px-3 py-2 ${
+                      i + 1 === decryptedPick.realIndex
+                        ? "bg-green-100 text-green-800 font-bold"
+                        : "bg-slate-50 text-slate-500"
+                    }`}
+                  >
+                    {i + 1}. {display}
+                    {i + 1 === decryptedPick.realIndex && " \u2190 REAL"}
+                  </p>
+                );
+              })}
             </div>
           </div>
         ) : (
@@ -309,14 +311,18 @@ export default function PurchaseSignal() {
               Lines (decryption key pending)
             </h3>
             <div className="space-y-1">
-              {signal.decoyLines.map((line, i) => (
-                <p
-                  key={i}
-                  className="text-sm text-slate-600 font-mono bg-slate-50 rounded px-3 py-2"
-                >
-                  {i + 1}. {line}
-                </p>
-              ))}
+              {signal.decoyLines.map((raw, i) => {
+                const structured = parseLine(raw);
+                const display = structured ? formatLine(structured) : raw;
+                return (
+                  <p
+                    key={i}
+                    className="text-sm text-slate-600 font-mono bg-slate-50 rounded px-3 py-2"
+                  >
+                    {i + 1}. {display}
+                  </p>
+                );
+              })}
             </div>
           </div>
         )}
@@ -416,26 +422,29 @@ export default function PurchaseSignal() {
               </div>
             </div>
 
-            {/* Decoy Lines */}
+            {/* Lines */}
             <div>
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">
-                Decoy Lines (9 decoys + 1 real &mdash; you cannot tell which is
-                which)
+                Lines (9 decoys + 1 real &mdash; you cannot tell which is which)
               </p>
               <div className="space-y-1">
-                {signal.decoyLines.map((line, i) => (
-                  <p
-                    key={i}
-                    className={`text-xs font-mono rounded px-2 py-1.5 ${
-                      availableIndices.includes(i + 1)
-                        ? "bg-green-50 text-green-700"
-                        : "bg-slate-50 text-slate-500"
-                    }`}
-                  >
-                    {i + 1}. {line}
-                    {availableIndices.includes(i + 1) && " (available)"}
-                  </p>
-                ))}
+                {signal.decoyLines.map((raw, i) => {
+                  const structured = parseLine(raw);
+                  const display = structured ? formatLine(structured) : raw;
+                  return (
+                    <p
+                      key={i}
+                      className={`text-xs font-mono rounded px-2 py-1.5 ${
+                        availableIndices.includes(i + 1)
+                          ? "bg-green-50 text-green-700"
+                          : "bg-slate-50 text-slate-500"
+                      }`}
+                    >
+                      {i + 1}. {display}
+                      {availableIndices.includes(i + 1) && " (available)"}
+                    </p>
+                  );
+                })}
               </div>
             </div>
           </div>

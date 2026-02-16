@@ -101,9 +101,9 @@ describe("SignalCard", () => {
           })}
         />
       );
-      expect(screen.getByText("Over 3.5")).toBeInTheDocument();
-      expect(screen.getByText("Under 7")).toBeInTheDocument();
-      expect(screen.getByText("Decoy Lines (2)")).toBeInTheDocument();
+      expect(screen.getByText(/Over 3\.5/)).toBeInTheDocument();
+      expect(screen.getByText(/Under 7/)).toBeInTheDocument();
+      expect(screen.getByText("Lines (2)")).toBeInTheDocument();
     });
 
     it("hides decoy lines section when array is empty", () => {
@@ -113,7 +113,7 @@ describe("SignalCard", () => {
           signal={createMockSignal({ decoyLines: [] })}
         />
       );
-      expect(screen.queryByText(/Decoy Lines/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Lines \(/)).not.toBeInTheDocument();
     });
 
     it("displays available sportsbooks when present", () => {
