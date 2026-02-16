@@ -13,6 +13,8 @@ import {
 } from "@/lib/crypto";
 import { getValidatorClients } from "@/lib/api";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { fetchProtocolStats } from "@/lib/subgraph";
+import { formatUsdc } from "@/lib/types";
 import {
   SPORT_GROUPS,
   SPORTS,
@@ -79,6 +81,9 @@ export default function CreateSignal() {
   const [expiresIn, setExpiresIn] = useState("24");
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
 
+  // Platform liquidity (from subgraph)
+  const [totalVolume, setTotalVolume] = useState<string | null>(null);
+
   // Progress
   const [txHash, setTxHash] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -125,6 +130,13 @@ export default function CreateSignal() {
       fetchEvents(selectedSport);
     }
   }, [selectedSport, authenticated, fetchEvents]);
+
+  // Fetch platform-wide liquidity once
+  useEffect(() => {
+    fetchProtocolStats().then((stats) => {
+      if (stats?.totalVolume) setTotalVolume(stats.totalVolume);
+    }).catch(() => {});
+  }, []);
 
   const handleSelectBet = (bet: AvailableBet) => {
     setSelectedBet(bet);
@@ -389,7 +401,17 @@ export default function CreateSignal() {
   if (step === "browse") {
     return (
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Signal</h1>
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <h1 className="text-3xl font-bold text-slate-900">Create Signal</h1>
+          {totalVolume && (
+            <div className="text-right flex-shrink-0">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Platform Liquidity</p>
+              <p className="text-sm font-semibold text-genius-700">
+                ${formatUsdc(BigInt(totalVolume))}
+              </p>
+            </div>
+          )}
+        </div>
         <p className="text-slate-500 mb-6">
           Browse live games and pick your bet. The system will auto-generate
           plausible decoy lines from real odds data.

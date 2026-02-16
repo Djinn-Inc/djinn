@@ -12,6 +12,8 @@ export interface SavedSignalData {
   realIndex: number;
   sport: string;
   pick: string;
+  minOdds?: number | null;
+  minOddsAmerican?: string | null;
   slaMultiplierBps: number;
   createdAt: number;
 }
