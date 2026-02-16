@@ -114,7 +114,29 @@ contract Deploy is Script {
         tr_.setZKVerifier(address(zk_));
         console.log("TrackRecord:", address(tr_));
 
-        // ─── 7. Mint test USDC to deployer
+        // ─── 7. Verify wiring
+        // ──────────────────────────────────────────
+        require(address(aud_.escrow()) == address(esc_), "Audit.escrow not wired");
+        require(address(aud_.collateral()) == address(coll_), "Audit.collateral not wired");
+        require(address(aud_.creditLedger()) == address(cl_), "Audit.creditLedger not wired");
+        require(address(aud_.account()) == address(acct_), "Audit.account not wired");
+        require(address(aud_.signalCommitment()) == address(sc_), "Audit.signalCommitment not wired");
+        require(address(esc_.signalCommitment()) == address(sc_), "Escrow.signalCommitment not wired");
+        require(address(esc_.collateral()) == address(coll_), "Escrow.collateral not wired");
+        require(address(esc_.creditLedger()) == address(cl_), "Escrow.creditLedger not wired");
+        require(address(esc_.account()) == address(acct_), "Escrow.account not wired");
+        require(esc_.auditContract() == address(aud_), "Escrow.auditContract not wired");
+        require(coll_.authorized(address(esc_)), "Collateral: Escrow not authorized");
+        require(coll_.authorized(address(aud_)), "Collateral: Audit not authorized");
+        require(cl_.authorizedCallers(address(esc_)), "CreditLedger: Escrow not authorized");
+        require(cl_.authorizedCallers(address(aud_)), "CreditLedger: Audit not authorized");
+        require(acct_.authorizedCallers(address(esc_)), "Account: Escrow not authorized");
+        require(acct_.authorizedCallers(address(aud_)), "Account: Audit not authorized");
+        require(zk_.auditVerifier() == address(audVerifier_), "ZKVerifier.auditVerifier not wired");
+        require(zk_.trackRecordVerifier() == address(trVerifier_), "ZKVerifier.trackRecordVerifier not wired");
+        console.log("All contract wiring verified");
+
+        // ─── 8. Mint test USDC to deployer
         // ──────────────────────────────
         usdc_.mint(deployer, 1_000_000 * 1e6); // 1M USDC
         console.log("Minted 1,000,000 USDC to deployer");

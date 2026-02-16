@@ -29,6 +29,9 @@ contract Account is Ownable {
     /// @dev keccak256(genius, idiot) => purchaseId => Outcome
     mapping(bytes32 => mapping(uint256 => Outcome)) private _outcomes;
 
+    /// @dev keccak256(genius, idiot) => purchaseId => whether recorded in current cycle
+    mapping(bytes32 => mapping(uint256 => bool)) private _purchaseRecorded;
+
     /// @dev address => whether it can call mutating functions
     mapping(address => bool) public authorizedCallers;
 
@@ -122,18 +125,11 @@ contract Account is Ownable {
             revert CycleSignalLimitReached(genius, idiot, SIGNALS_PER_CYCLE);
         }
 
-        if (_outcomes[key][purchaseId] != Outcome.Pending) {
+        if (_purchaseRecorded[key][purchaseId]) {
             revert PurchaseAlreadyRecorded(genius, idiot, purchaseId);
         }
 
-        // Check for duplicate purchaseId in the current cycle's list
-        uint256 len = acct.purchaseIds.length;
-        for (uint256 i; i < len; ++i) {
-            if (acct.purchaseIds[i] == purchaseId) {
-                revert PurchaseAlreadyRecorded(genius, idiot, purchaseId);
-            }
-        }
-
+        _purchaseRecorded[key][purchaseId] = true;
         acct.signalCount++;
         acct.purchaseIds.push(purchaseId);
 
@@ -152,16 +148,9 @@ contract Account is Ownable {
 
         bytes32 key = _accountKey(genius, idiot);
 
-        // Verify the purchaseId belongs to this account's current cycle
-        bool found = false;
-        uint256 len = _accounts[key].purchaseIds.length;
-        for (uint256 i; i < len; ++i) {
-            if (_accounts[key].purchaseIds[i] == purchaseId) {
-                found = true;
-                break;
-            }
+        if (!_purchaseRecorded[key][purchaseId]) {
+            revert PurchaseNotFound(genius, idiot, purchaseId);
         }
-        if (!found) revert PurchaseNotFound(genius, idiot, purchaseId);
 
         if (_outcomes[key][purchaseId] != Outcome.Pending) {
             revert OutcomeAlreadyRecorded(genius, idiot, purchaseId);
@@ -189,6 +178,12 @@ contract Account is Ownable {
 
         bytes32 key = _accountKey(genius, idiot);
         AccountState storage acct = _accounts[key];
+
+        // Clear purchase recorded flags for the current cycle
+        uint256 len = acct.purchaseIds.length;
+        for (uint256 i; i < len; ++i) {
+            delete _purchaseRecorded[key][acct.purchaseIds[i]];
+        }
 
         acct.currentCycle++;
         acct.signalCount = 0;
@@ -226,6 +221,12 @@ contract Account is Ownable {
         // Mark current cycle as settled
         acct.settled = true;
         emit SettledChanged(genius, idiot, true);
+
+        // Clear purchase recorded flags for the current cycle
+        uint256 len = acct.purchaseIds.length;
+        for (uint256 i; i < len; ++i) {
+            delete _purchaseRecorded[key][acct.purchaseIds[i]];
+        }
 
         // Start new cycle
         acct.currentCycle++;
