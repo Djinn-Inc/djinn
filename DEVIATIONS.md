@@ -49,8 +49,8 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Whitepaper Says:** 2-round MPC, no validator learns the actual index
 **What we did:** Implemented `SecureMPCSession` using Beaver triple-based multiplication. The protocol computes r * P(s) where P(x) = ∏(x - a_i) for available indices and r is joint randomness. The result is 0 iff the secret is in the available set. No single party reconstructs the secret — only blinded differences (d = x - a, e = y - b) are opened, where a and b are random Beaver triple values.
 **Protocol details:** Sequential multiplication through Beaver triples. For d available indices, requires d multiplications (each 1 communication round). Uses trusted dealer model for triple generation (production would use OT-based offline phase).
-**Communication rounds:** d + 1 (not 2 as whitepaper states). For d ≤ 10, this is at most 11 rounds. Could be reduced to ceil(log2(d)) + 2 ≈ 6 via tree multiplication (not yet implemented).
-**Remaining work:** Trusted dealer model for triple generation should be replaced with OT-based offline phase in production. Tree multiplication could reduce rounds from d+1 to ceil(log2(d))+2.
+**Communication rounds:** Tree multiplication (implemented in `SecureMPCSession.compute()`) reduces rounds from d+1 to ceil(log2(d))+2 ≈ 6 for d=10. The distributed MPC orchestrator uses sequential gates (d rounds) because each gate requires a network round-trip.
+**Remaining work:** ~~Trusted dealer model for triple generation should be replaced with OT-based offline phase in production.~~ **Resolved in DEV-008.** ~~Tree multiplication could reduce rounds.~~ **Implemented for local MPC; distributed path remains sequential.**
 **Impact:** Security significantly improved — no single aggregator learns the secret index. The core MPC math is production-ready.
 
 ## DEV-007: MPC Distributed Networking Implemented [UPDATES DEV-006]
@@ -109,3 +109,14 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 - **MAC propagation through multiplication**: z = d*e + d*b + e*a + c has MAC γ(z)_j = d*e*α_j + d*γ(b)_j + e*γ(a)_j + γ(c)_j.
 **Security model:** Active security with abort (malicious parties detected, protocol aborts). With 7-of-10 honest majority, guaranteed output delivery.
 **Impact:** 32 new tests verify MAC generation, verification, commitment protocol, authenticated MPC correctness (including randomized trials), and tamper detection for corrupted shares and triples. 725 total tests pass.
+
+## DEV-011: SPDZ Gossip-Abort and Payment Verification [EXTENDS DEV-010]
+
+**Whitepaper Section:** Appendix A — Purchase Flow, Appendix C — MPC Protocol
+**Previous limitations:**
+1. MAC verification failure caused silent local abort — other validators continued computing with corrupted shares.
+2. Purchase endpoint released key shares without verifying on-chain USDC payment.
+**What we did:**
+- **Gossip-abort protocol**: When the coordinator detects MAC verification failure during an authenticated MPC session, it broadcasts `POST /v1/mpc/abort` to all participants. Peers mark the session as FAILED and clean up state. The `compute_gate` endpoint rejects requests (HTTP 409) for aborted sessions.
+- **On-chain payment verification**: The purchase endpoint now queries the Escrow contract via `chain_client.verify_purchase()` before releasing key shares. Returns `"payment_required"` status when `pricePaid == 0`. In dev mode (no chain client), skips the check with a warning for backwards compatibility. Uses `keccak256(signal_id)` for string-to-uint256 mapping.
+**Impact:** Gossip-abort ensures consistency — all honest validators abort together when cheating is detected. Payment verification prevents free signal access. 6 new tests cover abort/payment flows. 736 total validator tests pass.
