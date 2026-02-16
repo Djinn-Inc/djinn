@@ -27,7 +27,7 @@ describe("WalletButton", () => {
       login: mockLogin,
       logout: mockLogout,
       user: null,
-    } as ReturnType<typeof usePrivy>);
+    } as unknown as ReturnType<typeof usePrivy>);
     render(<WalletButton />);
     const btn = screen.getByRole("button");
     expect(btn).toBeDisabled();
@@ -41,7 +41,7 @@ describe("WalletButton", () => {
       login: mockLogin,
       logout: mockLogout,
       user: null,
-    } as ReturnType<typeof usePrivy>);
+    } as unknown as ReturnType<typeof usePrivy>);
     render(<WalletButton />);
     const btn = screen.getByRole("button", { name: /connect wallet/i });
     expect(btn).not.toBeDisabled();
@@ -58,7 +58,7 @@ describe("WalletButton", () => {
       user: {
         wallet: { address: "0x1234567890abcdef1234567890abcdef12345678" },
       },
-    } as unknown as ReturnType<typeof usePrivy>);
+    } as unknown as unknown as ReturnType<typeof usePrivy>);
     render(<WalletButton />);
     // Should show truncated address
     expect(screen.getByText("0x1234...5678")).toBeTruthy();
