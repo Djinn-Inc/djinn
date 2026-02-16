@@ -23,8 +23,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install md-to-pdf
-        run: npm install -g md-to-pdf
+      - name: Install md-to-pdf (pinned version)
+        run: npm install -g md-to-pdf@5.2.4
 
       - name: Generate PDF
         run: |

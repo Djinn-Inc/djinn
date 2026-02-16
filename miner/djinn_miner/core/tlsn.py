@@ -85,10 +85,20 @@ async def generate_proof(
         tmp = tempfile.mkdtemp(prefix="djinn-tlsn-")
         output_path = os.path.join(tmp, "presentation.bin")
 
+    # Split URL at query params to avoid leaking API key in /proc/*/cmdline
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    api_key = query_params.pop("apiKey", [None])[0] or query_params.pop("api_key", [None])[0] or ""
+    # Rebuild URL without API key
+    sanitized_query = urlencode({k: v[0] for k, v in query_params.items()}, doseq=False)
+    sanitized_url = urlunparse(parsed._replace(query=sanitized_query))
+
     cmd = [
         PROVER_BINARY,
         "--url",
-        url,
+        sanitized_url,
         "--notary-host",
         host,
         "--notary-port",
@@ -105,11 +115,15 @@ async def generate_proof(
         output=output_path,
     )
 
+    # Pass API key via environment variable instead of CLI arg (avoids /proc exposure)
+    env = {**os.environ, "ODDS_API_KEY": api_key}
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:

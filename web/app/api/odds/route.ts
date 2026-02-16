@@ -43,9 +43,13 @@ const RATE_LIMIT_MAX_REQUESTS = 30; // 30 requests per minute per IP
 const rateLimitMap: Map<string, number[]> = new Map();
 
 function getRateLimitKey(request: NextRequest): string {
+  // Prefer Next.js-provided IP (set by trusted proxy/platform), fall back to
+  // x-real-ip (single value, harder to spoof than x-forwarded-for).
+  // Avoid x-forwarded-for as primary source since it is trivially spoofable.
   return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.ip ||
     request.headers.get("x-real-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
 }

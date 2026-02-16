@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 import uuid
@@ -22,6 +23,20 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 log = structlog.get_logger()
+
+# Regex patterns for normalizing dynamic path segments in Prometheus metrics
+# Prevents unbounded cardinality from attacker-controlled path params
+_PATH_NORMALIZERS = [
+    (re.compile(r"/v1/signal/[^/]+"), "/v1/signal/{id}"),
+    (re.compile(r"/v1/mpc/[^/]+/status"), "/v1/mpc/{id}/status"),
+]
+
+
+def _normalize_metric_path(path: str) -> str:
+    """Replace dynamic path segments with placeholders to bound metric cardinality."""
+    for pattern, replacement in _PATH_NORMALIZERS:
+        path = pattern.sub(replacement, path)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +79,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
                 response.headers.setdefault(header, value)
             duration_s = time.monotonic() - start
             duration_ms = round(duration_s * 1000, 1)
-            path = request.url.path
+            path = _normalize_metric_path(request.url.path)
             if path not in ("/health", "/health/ready", "/metrics"):
                 from djinn_validator.api.metrics import REQUEST_COUNT, REQUEST_LATENCY
 

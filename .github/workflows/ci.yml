@@ -118,10 +118,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install circom
+      - name: Install circom (pinned v2.1.9)
         run: |
-          curl -L https://github.com/iden3/circom/releases/latest/download/circom-linux-amd64 -o /usr/local/bin/circom
+          curl -L https://github.com/iden3/circom/releases/download/v2.1.9/circom-linux-amd64 -o /usr/local/bin/circom
           chmod +x /usr/local/bin/circom
+          circom --version
       - run: npm ci
       - name: Compile circuits
         run: |
