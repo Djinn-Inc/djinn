@@ -16,7 +16,11 @@ echo ""
 PTAU_FILE="$BUILD_DIR/powersOfTau28_hez_final_16.ptau"
 if [ ! -f "$PTAU_FILE" ]; then
     echo "--- Downloading Powers of Tau (Hermez ceremony, 2^16) ---"
-    curl -L -o "$PTAU_FILE" "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_16.ptau"
+    curl -L --fail -o "$PTAU_FILE" "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_16.ptau" || {
+        echo "ERROR: Failed to download Powers of Tau file"
+        rm -f "$PTAU_FILE"
+        exit 1
+    }
     echo "Powers of Tau downloaded."
 else
     echo "Powers of Tau file found, skipping download."

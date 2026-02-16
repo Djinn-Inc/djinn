@@ -20,7 +20,7 @@ export function middleware(request: NextRequest) {
     const origin = request.headers.get("origin") ?? "";
     const allowedOrigins = [
       process.env.NEXT_PUBLIC_APP_URL || "https://djinn.gg",
-      "http://localhost:3000",
+      ...(process.env.NODE_ENV !== "production" ? ["http://localhost:3000"] : []),
     ];
 
     if (allowedOrigins.includes(origin)) {

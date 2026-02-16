@@ -95,7 +95,11 @@ export function handleDeposited(event: Deposited): void {
 export function handleWithdrawn(event: Withdrawn): void {
   let idiot = getOrCreateIdiot(event.params.user, event.block.timestamp);
   idiot.totalWithdrawn = idiot.totalWithdrawn.plus(event.params.amount);
-  idiot.escrowBalance = idiot.escrowBalance.minus(event.params.amount);
+  if (idiot.escrowBalance.ge(event.params.amount)) {
+    idiot.escrowBalance = idiot.escrowBalance.minus(event.params.amount);
+  } else {
+    idiot.escrowBalance = BigInt.zero();
+  }
   idiot.save();
 }
 
@@ -111,7 +115,11 @@ export function handleSignalPurchased(event: SignalPurchased): void {
   idiot.totalPurchases = idiot.totalPurchases.plus(BigInt.fromI32(1));
   idiot.totalFeesPaid = idiot.totalFeesPaid.plus(event.params.feePaid);
   idiot.totalCreditsUsed = idiot.totalCreditsUsed.plus(event.params.creditUsed);
-  idiot.escrowBalance = idiot.escrowBalance.minus(event.params.usdcPaid);
+  if (idiot.escrowBalance.ge(event.params.usdcPaid)) {
+    idiot.escrowBalance = idiot.escrowBalance.minus(event.params.usdcPaid);
+  } else {
+    idiot.escrowBalance = BigInt.zero();
+  }
   idiot.save();
 
   let genius = getOrCreateGenius(signal.genius, event.block.timestamp);

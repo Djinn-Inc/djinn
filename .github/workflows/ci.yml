@@ -174,8 +174,8 @@ jobs:
             --filter-paths "test/|script/|lib/" \
             --exclude-dependencies \
             --exclude naming-convention,solc-version,pragma \
-            --sarif results.sarif \
-            2>&1 || true
+            --fail-on high \
+            --sarif results.sarif
       - uses: actions/upload-artifact@v4
         if: always()
         with:
