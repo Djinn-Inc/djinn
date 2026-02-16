@@ -69,8 +69,9 @@ export default function CreateSignal() {
   const [decoyLines, setDecoyLines] = useState<StructuredLine[]>([]);
   const [realIndex, setRealIndex] = useState(0);
 
-  // Market odds from the selected bet (display-only reference)
+  // Odds: market reference and genius's minimum acceptable (American format string)
   const [marketOdds, setMarketOdds] = useState<number | null>(null);
+  const [editOdds, setEditOdds] = useState("");
 
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
@@ -130,6 +131,7 @@ export default function CreateSignal() {
     const pick = betToLine(bet);
     setRealPick(pick);
     setMarketOdds(bet.avgPrice);
+    setEditOdds(decimalToAmerican(bet.avgPrice));
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
     const pos = Math.floor(Math.random() * 10);
@@ -194,9 +196,12 @@ export default function CreateSignal() {
       setStep("committing");
 
       const aesKey = generateAesKey();
+      const minOddsDecimal = editOdds ? americanToDecimal(editOdds) : null;
       const pickPayload = JSON.stringify({
         realIndex: realIndex + 1,
         pick: formatLine(realPick),
+        minOdds: minOddsDecimal,
+        minOddsAmerican: editOdds || null,
       });
       const { ciphertext, iv } = await encrypt(pickPayload, aesKey);
       const encryptedBlob = `${iv}:${ciphertext}`;
@@ -299,6 +304,8 @@ export default function CreateSignal() {
           realIndex: realIndex + 1, // 1-indexed as used in ZK circuit
           sport: selectedSport.label,
           pick: formatLine(realPick),
+          minOdds: minOddsDecimal,
+          minOddsAmerican: editOdds || null,
           slaMultiplierBps: Math.round(slaNum * 100),
           createdAt: Math.floor(Date.now() / 1000),
         });
@@ -536,7 +543,7 @@ export default function CreateSignal() {
             </div>
 
             {realPick.market !== "h2h" && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-3">
                 <label htmlFor="editLine" className="text-xs text-genius-700 font-medium whitespace-nowrap">
                   {realPick.market === "spreads" ? "Spread" : "Total"}:
                 </label>
@@ -559,6 +566,35 @@ export default function CreateSignal() {
                 </span>
               </div>
             )}
+
+            {/* Editable odds — available for ALL markets, required for ML */}
+            <div className="flex items-center gap-3">
+              <label htmlFor="editOdds" className="text-xs text-genius-700 font-medium whitespace-nowrap">
+                Min Odds:
+              </label>
+              <input
+                id="editOdds"
+                type="text"
+                value={editOdds}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  // Allow typing: optional minus/plus, digits, nothing else
+                  if (/^[+-]?\d*$/.test(raw)) {
+                    setEditOdds(raw);
+                  }
+                }}
+                placeholder="-110"
+                className="w-28 rounded-lg border border-genius-300 bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 focus:border-genius-400"
+                aria-label="Edit minimum acceptable odds (American format)"
+              />
+              <span className="text-xs text-genius-500">
+                American format (e.g. -110, +150)
+              </span>
+            </div>
+            <p className="text-[11px] text-genius-500 mt-2">
+              Minimum odds you&apos;ll accept. Buyers must place at these odds or better.
+              {realPick.market === "h2h" && " For moneyline bets, this is the key parameter."}
+            </p>
           </div>
         )}
 
@@ -967,4 +1003,12 @@ function decimalToAmerican(decimal: number): string {
     return `${Math.round(-100 / (decimal - 1))}`;
   }
   return "EVEN";
+}
+
+/** Convert American odds string to decimal. Returns null if invalid. */
+function americanToDecimal(american: string): number | null {
+  const n = parseInt(american, 10);
+  if (isNaN(n) || n === 0) return null;
+  if (n > 0) return 1 + n / 100;      // +150 → 2.50
+  return 1 + 100 / Math.abs(n);        // -150 → 1.667
 }
