@@ -138,7 +138,9 @@ contract TrackRecord is Ownable {
         }
 
         // Store the record — read public signals directly to avoid stack depth
-        recordId = recordCount++;
+        unchecked {
+            recordId = recordCount++;
+        }
         VerifiedRecord storage rec = records[recordId];
         rec.genius = msg.sender;
         rec.signalCount = _pubSignals[100];

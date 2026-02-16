@@ -87,6 +87,9 @@ contract SignalCommitment is Ownable {
     /// @notice Signal has already been purchased and cannot be voided
     error SignalAlreadyPurchased(uint256 signalId);
 
+    /// @notice Address must not be zero
+    error ZeroAddress();
+
     /// @notice Caller is not authorized to update signal status
     error CallerNotAuthorized(address caller);
 
@@ -220,6 +223,7 @@ contract SignalCommitment is Ownable {
     /// @param caller The address to authorize or deauthorize
     /// @param authorized Whether the address should be authorized
     function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
+        if (caller == address(0)) revert ZeroAddress();
         authorizedCallers[caller] = authorized;
 
         emit AuthorizedCallerSet(caller, authorized);

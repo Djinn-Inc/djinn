@@ -83,6 +83,9 @@ contract Account is Ownable {
     /// @notice Cannot record Pending as an outcome
     error InvalidOutcome();
 
+    /// @notice Address must not be zero
+    error ZeroAddress();
+
     // ─── Modifiers
     // ──────────────────────────────────────────────────────
 
@@ -130,7 +133,9 @@ contract Account is Ownable {
         }
 
         _purchaseRecorded[key][purchaseId] = true;
-        acct.signalCount++;
+        unchecked {
+            acct.signalCount++;
+        }
         acct.purchaseIds.push(purchaseId);
 
         emit PurchaseRecorded(genius, idiot, purchaseId, acct.signalCount);
@@ -181,11 +186,16 @@ contract Account is Ownable {
 
         // Clear purchase recorded flags for the current cycle
         uint256 len = acct.purchaseIds.length;
-        for (uint256 i; i < len; ++i) {
+        for (uint256 i; i < len;) {
             delete _purchaseRecorded[key][acct.purchaseIds[i]];
+            unchecked {
+                ++i;
+            }
         }
 
-        acct.currentCycle++;
+        unchecked {
+            acct.currentCycle++;
+        }
         acct.signalCount = 0;
         delete acct.purchaseIds;
         acct.settled = false;
@@ -224,12 +234,17 @@ contract Account is Ownable {
 
         // Clear purchase recorded flags for the current cycle
         uint256 len = acct.purchaseIds.length;
-        for (uint256 i; i < len; ++i) {
+        for (uint256 i; i < len;) {
             delete _purchaseRecorded[key][acct.purchaseIds[i]];
+            unchecked {
+                ++i;
+            }
         }
 
         // Start new cycle
-        acct.currentCycle++;
+        unchecked {
+            acct.currentCycle++;
+        }
         acct.signalCount = 0;
         delete acct.purchaseIds;
         acct.settled = false;
@@ -242,6 +257,7 @@ contract Account is Ownable {
     /// @param caller The address to authorize or deauthorize
     /// @param authorized Whether the address should be authorized
     function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
+        if (caller == address(0)) revert ZeroAddress();
         authorizedCallers[caller] = authorized;
 
         emit AuthorizedCallerSet(caller, authorized);

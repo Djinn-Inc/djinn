@@ -188,6 +188,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     /// @param caller The address to authorize or deauthorize
     /// @param _authorized Whether the address should be authorized
     function setAuthorizedCaller(address caller, bool _authorized) external onlyOwner {
+        if (caller == address(0)) revert ZeroAddress();
         authorizedCallers[caller] = _authorized;
         emit AuthorizedCallerSet(caller, _authorized);
     }
@@ -281,7 +282,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         collateral.lock(signalId, sig.genius, lockAmount);
 
         // --- Record purchase ---
-        purchaseId = nextPurchaseId++;
+        unchecked {
+            purchaseId = nextPurchaseId++;
+        }
         _purchases[purchaseId] = Purchase({
             idiot: msg.sender,
             signalId: signalId,

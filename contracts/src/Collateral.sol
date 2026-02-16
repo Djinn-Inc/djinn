@@ -47,6 +47,7 @@ contract Collateral is Ownable, Pausable {
     event AuthorizedUpdated(address indexed caller, bool status);
 
     error Unauthorized();
+    error ZeroAddress();
     error ZeroAmount();
     error InsufficientFreeCollateral(uint256 available, uint256 required);
     error InsufficientSignalLock(uint256 locked, uint256 requested);
@@ -60,6 +61,7 @@ contract Collateral is Ownable, Pausable {
     /// @param _usdc Address of the USDC token contract
     /// @param _owner Address that will own this contract and manage authorized callers
     constructor(address _usdc, address _owner) Ownable(_owner) {
+        if (_usdc == address(0)) revert ZeroAddress();
         usdc = IERC20(_usdc);
     }
 
@@ -67,6 +69,7 @@ contract Collateral is Ownable, Pausable {
     /// @param caller The address to authorize or deauthorize
     /// @param status True to authorize, false to revoke
     function setAuthorized(address caller, bool status) external onlyOwner {
+        if (caller == address(0)) revert ZeroAddress();
         authorized[caller] = status;
         emit AuthorizedUpdated(caller, status);
     }

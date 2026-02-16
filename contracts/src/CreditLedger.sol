@@ -48,6 +48,9 @@ contract CreditLedger is Ownable {
     /// @notice Cannot mint to the zero address
     error MintToZeroAddress();
 
+    /// @notice Address must not be zero
+    error ZeroAddress();
+
     // ─── Modifiers
     // ──────────────────────────────────────────────────────
 
@@ -106,6 +109,7 @@ contract CreditLedger is Ownable {
     /// @param caller The address to authorize or deauthorize
     /// @param authorized Whether the address should be authorized
     function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
+        if (caller == address(0)) revert ZeroAddress();
         authorizedCallers[caller] = authorized;
 
         emit AuthorizedCallerSet(caller, authorized);
