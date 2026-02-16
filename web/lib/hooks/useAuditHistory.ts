@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEthersProvider } from "../hooks";
 import { getAuditsByGenius, getAuditsByIdiot } from "../events";
 import type { AuditEvent } from "../events";
@@ -10,23 +10,37 @@ export function useAuditHistory(geniusAddress?: string) {
   const [audits, setAudits] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !geniusAddress) return;
+    if (!provider || !geniusAddress) {
+      setAudits([]);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const result = await getAuditsByGenius(provider, geniusAddress);
-      setAudits(result);
+      if (!cancelledRef.current) {
+        setAudits(result);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch audit history");
+      if (!cancelledRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to fetch audit history");
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, [provider, geniusAddress]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [refresh]);
 
   // Compute aggregate quality score from audit history
@@ -43,23 +57,37 @@ export function useIdiotAuditHistory(idiotAddress?: string) {
   const [audits, setAudits] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !idiotAddress) return;
+    if (!provider || !idiotAddress) {
+      setAudits([]);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const result = await getAuditsByIdiot(provider, idiotAddress);
-      setAudits(result);
+      if (!cancelledRef.current) {
+        setAudits(result);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch audit history");
+      if (!cancelledRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to fetch audit history");
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, [provider, idiotAddress]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [refresh]);
 
   return { audits, loading, error, refresh };

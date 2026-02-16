@@ -18,7 +18,7 @@ export default function GeniusDashboard() {
   const { withdraw: withdrawCollateral, loading: withdrawLoading } = useWithdrawCollateral();
   const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address);
   const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
-  const { proofs, loading: proofsLoading } = useTrackRecordProofs(address);
+  const { proofs, loading: proofsLoading, error: proofsError } = useTrackRecordProofs(address);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -261,6 +261,10 @@ export default function GeniusDashboard() {
         {proofsLoading ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">Loading proofs...</p>
+          </div>
+        ) : proofsError ? (
+          <div className="card">
+            <p className="text-center text-red-500 py-8">{proofsError}</p>
           </div>
         ) : proofs.length === 0 ? (
           <div className="card">

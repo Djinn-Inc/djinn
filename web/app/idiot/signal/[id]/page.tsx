@@ -115,6 +115,7 @@ export default function PurchaseSignal() {
     if (!buyerAddress) {
       setStepError("Wallet address not available");
       setStep("error");
+      purchaseInFlight.current = false;
       return;
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchLeaderboard,
   isSubgraphConfigured,
@@ -27,6 +27,7 @@ export function useLeaderboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const configured = isSubgraphConfigured();
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!configured) return;
@@ -34,19 +35,28 @@ export function useLeaderboard() {
     setError(null);
     try {
       const entries = await fetchLeaderboard(100);
-      setData(entries.map(toLeaderboardEntry));
+      if (!cancelledRef.current) {
+        setData(entries.map(toLeaderboardEntry));
+      }
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to fetch leaderboard";
-      setError(msg);
-      console.warn("useLeaderboard error:", msg);
+      if (!cancelledRef.current) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to fetch leaderboard";
+        setError(msg);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, [configured]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [refresh]);
 
   return { data, loading, error, configured, refresh };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { useEthersProvider } from "../hooks";
 import { getTrackRecordContract, ADDRESSES } from "../contracts";
@@ -26,10 +26,16 @@ export function useTrackRecordProofs(geniusAddress?: string) {
   const provider = useEthersProvider();
   const [proofs, setProofs] = useState<TrackRecordProofEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !geniusAddress || ADDRESSES.trackRecord === ethers.ZeroAddress) return;
+    if (!provider || !geniusAddress || ADDRESSES.trackRecord === ethers.ZeroAddress) {
+      setProofs([]);
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
       const contract = getTrackRecordContract(provider);
       const filter = contract.filters.TrackRecordSubmitted(null, geniusAddress);
@@ -52,17 +58,27 @@ export function useTrackRecordProofs(geniusAddress?: string) {
       });
 
       entries.sort((a, b) => b.blockNumber - a.blockNumber);
-      setProofs(entries);
+      if (!cancelledRef.current) {
+        setProofs(entries);
+      }
     } catch (err) {
-      console.warn("useTrackRecordProofs error:", err);
+      if (!cancelledRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to fetch track record proofs");
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, [provider, geniusAddress]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [refresh]);
 
-  return { proofs, loading, refresh };
+  return { proofs, loading, error, refresh };
 }

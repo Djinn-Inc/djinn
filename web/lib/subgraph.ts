@@ -8,6 +8,8 @@
 
 const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL || "";
 
+const ETH_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
 export interface SubgraphGeniusEntry {
   id: string;
   totalSignals: string;
@@ -81,9 +83,10 @@ export function isSubgraphConfigured(): boolean {
 export async function fetchLeaderboard(
   limit = 50,
 ): Promise<SubgraphGeniusEntry[]> {
+  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
   const result = await querySubgraph<{ geniuses: SubgraphGeniusEntry[] }>(`{
     geniuses(
-      first: ${limit}
+      first: ${safeLimit}
       orderBy: aggregateQualityScore
       orderDirection: desc
       where: { totalAudits_gt: "0" }
@@ -109,6 +112,8 @@ export async function fetchLeaderboard(
 export async function fetchTrackRecordProofs(
   geniusAddress: string,
 ): Promise<SubgraphTrackRecordProof[]> {
+  if (!ETH_ADDRESS_RE.test(geniusAddress)) return [];
+
   const result = await querySubgraph<{
     trackRecordProofs: SubgraphTrackRecordProof[];
   }>(`{

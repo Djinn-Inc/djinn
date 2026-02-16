@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
   getSignalCommitmentContract,
@@ -110,26 +110,33 @@ export function useEscrowBalance(address: string | undefined) {
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) return;
+    if (!provider || !address) {
+      setBalance(0n);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const contract = getEscrowContract(provider);
       const bal = await contract.getBalance(address);
-      setBalance(BigInt(bal));
+      if (!cancelledRef.current) setBalance(BigInt(bal));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch escrow balance";
-      setError(msg);
-      console.warn("useEscrowBalance error:", msg);
+      if (!cancelledRef.current) {
+        const msg = err instanceof Error ? err.message : "Failed to fetch escrow balance";
+        setError(msg);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) setLoading(false);
     }
   }, [provider, address]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => { cancelledRef.current = true; };
   }, [refresh]);
 
   return { balance, loading, refresh, error };
@@ -144,26 +151,33 @@ export function useCreditBalance(address: string | undefined) {
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) return;
+    if (!provider || !address) {
+      setBalance(0n);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const contract = getCreditLedgerContract(provider);
       const bal = await contract.balanceOf(address);
-      setBalance(BigInt(bal));
+      if (!cancelledRef.current) setBalance(BigInt(bal));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch credit balance";
-      setError(msg);
-      console.warn("useCreditBalance error:", msg);
+      if (!cancelledRef.current) {
+        const msg = err instanceof Error ? err.message : "Failed to fetch credit balance";
+        setError(msg);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) setLoading(false);
     }
   }, [provider, address]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => { cancelledRef.current = true; };
   }, [refresh]);
 
   return { balance, loading, refresh, error };
@@ -180,9 +194,15 @@ export function useCollateral(address: string | undefined) {
   const [available, setAvailable] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) return;
+    if (!provider || !address) {
+      setDeposit(0n);
+      setLocked(0n);
+      setAvailable(0n);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -192,20 +212,25 @@ export function useCollateral(address: string | undefined) {
         contract.getLocked(address),
         contract.getAvailable(address),
       ]);
-      setDeposit(BigInt(d));
-      setLocked(BigInt(l));
-      setAvailable(BigInt(a));
+      if (!cancelledRef.current) {
+        setDeposit(BigInt(d));
+        setLocked(BigInt(l));
+        setAvailable(BigInt(a));
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch collateral";
-      setError(msg);
-      console.warn("useCollateral error:", msg);
+      if (!cancelledRef.current) {
+        const msg = err instanceof Error ? err.message : "Failed to fetch collateral";
+        setError(msg);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) setLoading(false);
     }
   }, [provider, address]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     refresh();
+    return () => { cancelledRef.current = true; };
   }, [refresh]);
 
   return { deposit, locked, available, loading, refresh, error };
@@ -223,7 +248,10 @@ export function useSignal(signalId: bigint | undefined) {
 
   useEffect(() => {
     let cancelled = false;
-    if (!provider || signalId === undefined) return;
+    if (!provider || signalId === undefined) {
+      setSignal(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
