@@ -165,6 +165,16 @@ class MPCInitRequest(BaseModel):
     triple_shares: list[dict[str, str]] = Field(default_factory=list, max_length=20)  # hex-encoded
     # This validator's share of the random mask r (hex-encoded)
     r_share_y: str | None = None
+    # SPDZ authenticated MPC fields (optional — absent for semi-honest mode)
+    authenticated: bool = False
+    # Authenticated triple shares: [{a: {y: hex, mac: hex}, b: ..., c: ...}]
+    auth_triple_shares: list[dict[str, dict[str, str]]] | None = None
+    # MAC key share for this validator (hex-encoded)
+    alpha_share: str | None = None
+    # Authenticated r share: {y: hex, mac: hex}
+    auth_r_share: dict[str, str] | None = None
+    # Authenticated secret share: {y: hex, mac: hex}
+    auth_secret_share: dict[str, str] | None = None
 
     @field_validator("available_indices")
     @classmethod
@@ -240,6 +250,9 @@ class MPCComputeGateResponse(BaseModel):
     gate_idx: int
     d_value: str  # Hex-encoded
     e_value: str  # Hex-encoded
+    # SPDZ MAC shares (present only in authenticated mode)
+    d_mac: str | None = None  # Hex-encoded
+    e_mac: str | None = None  # Hex-encoded
 
 
 class MPCSessionStatusResponse(BaseModel):

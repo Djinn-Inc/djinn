@@ -459,9 +459,11 @@ def create_app(
     )
 
     # Per-session participant state for the distributed MPC protocol.
-    # Keyed by session_id. Cleaned up when sessions expire.
+    # Keyed by session_id. Stores either DistributedParticipantState (semi-honest)
+    # or AuthenticatedParticipantState (SPDZ malicious security).
     import threading as _threading
-    _participant_states: dict[str, DistributedParticipantState] = {}
+    from djinn_validator.core.spdz import AuthenticatedParticipantState, AuthenticatedShare, MACKeyShare
+    _participant_states: dict[str, DistributedParticipantState | AuthenticatedParticipantState] = {}
     _participant_lock = _threading.Lock()
 
     # Collect validator hotkeys from metagraph for auth
@@ -516,22 +518,69 @@ def create_app(
                 )
 
             try:
-                r_share = int(req.r_share_y, 16)
-                triple_a = [int(ts.get("a", "0"), 16) for ts in req.triple_shares]
-                triple_b = [int(ts.get("b", "0"), 16) for ts in req.triple_shares]
-                triple_c = [int(ts.get("c", "0"), 16) for ts in req.triple_shares]
+                if req.authenticated and req.auth_triple_shares and req.alpha_share and req.auth_r_share:
+                    # SPDZ authenticated mode
+                    alpha_val = int(req.alpha_share, 16)
+                    r_y = int(req.auth_r_share["y"], 16)
+                    r_mac = int(req.auth_r_share["mac"], 16)
+
+                    # Use auth_secret_share if provided, otherwise create from local share
+                    if req.auth_secret_share:
+                        s_y = int(req.auth_secret_share["y"], 16)
+                        s_mac = int(req.auth_secret_share["mac"], 16)
+                    else:
+                        s_y = record.share.y
+                        s_mac = 0  # Will fail MAC check if actually used
+
+                    auth_ta = []
+                    auth_tb = []
+                    auth_tc = []
+                    for ts in req.auth_triple_shares:
+                        auth_ta.append(AuthenticatedShare(
+                            x=record.share.x,
+                            y=int(ts["a"]["y"], 16),
+                            mac=int(ts["a"]["mac"], 16),
+                        ))
+                        auth_tb.append(AuthenticatedShare(
+                            x=record.share.x,
+                            y=int(ts["b"]["y"], 16),
+                            mac=int(ts["b"]["mac"], 16),
+                        ))
+                        auth_tc.append(AuthenticatedShare(
+                            x=record.share.x,
+                            y=int(ts["c"]["y"], 16),
+                            mac=int(ts["c"]["mac"], 16),
+                        ))
+
+                    state: DistributedParticipantState | AuthenticatedParticipantState = AuthenticatedParticipantState(
+                        validator_x=record.share.x,
+                        secret_share=AuthenticatedShare(x=record.share.x, y=s_y, mac=s_mac),
+                        r_share=AuthenticatedShare(x=record.share.x, y=r_y, mac=r_mac),
+                        alpha_share=MACKeyShare(x=record.share.x, alpha_share=alpha_val),
+                        available_indices=req.available_indices,
+                        triple_a=auth_ta,
+                        triple_b=auth_tb,
+                        triple_c=auth_tc,
+                    )
+                else:
+                    # Semi-honest mode
+                    r_share = int(req.r_share_y, 16)
+                    triple_a = [int(ts.get("a", "0"), 16) for ts in req.triple_shares]
+                    triple_b = [int(ts.get("b", "0"), 16) for ts in req.triple_shares]
+                    triple_c = [int(ts.get("c", "0"), 16) for ts in req.triple_shares]
+
+                    state = DistributedParticipantState(
+                        validator_x=record.share.x,
+                        secret_share_y=record.share.y,
+                        r_share_y=r_share,
+                        available_indices=req.available_indices,
+                        triple_a=triple_a,
+                        triple_b=triple_b,
+                        triple_c=triple_c,
+                    )
             except (ValueError, TypeError) as e:
                 raise HTTPException(status_code=400, detail=f"Invalid hex in MPC init data: {e}")
 
-            state = DistributedParticipantState(
-                validator_x=record.share.x,
-                secret_share_y=record.share.y,
-                r_share_y=r_share,
-                available_indices=req.available_indices,
-                triple_a=triple_a,
-                triple_b=triple_b,
-                triple_c=triple_c,
-            )
             with _participant_lock:
                 _participant_states[req.session_id] = state
 
@@ -575,16 +624,29 @@ def create_app(
         prev_e = int(req.prev_opened_e, 16) if req.prev_opened_e else None
 
         try:
-            d_i, e_i = state.compute_gate(req.gate_idx, prev_d, prev_e)
+            if isinstance(state, AuthenticatedParticipantState):
+                # Finalize previous gate if we have opened values
+                if prev_d is not None and prev_e is not None and req.gate_idx > 0:
+                    state.finalize_gate(prev_d, prev_e)
+                d_i, e_i, d_mac, e_mac = state.compute_gate(req.gate_idx, prev_d, prev_e)
+                return MPCComputeGateResponse(
+                    session_id=req.session_id,
+                    gate_idx=req.gate_idx,
+                    d_value=hex(d_i),
+                    e_value=hex(e_i),
+                    d_mac=hex(d_mac),
+                    e_mac=hex(e_mac),
+                )
+            else:
+                d_i, e_i = state.compute_gate(req.gate_idx, prev_d, prev_e)
+                return MPCComputeGateResponse(
+                    session_id=req.session_id,
+                    gate_idx=req.gate_idx,
+                    d_value=hex(d_i),
+                    e_value=hex(e_i),
+                )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-
-        return MPCComputeGateResponse(
-            session_id=req.session_id,
-            gate_idx=req.gate_idx,
-            d_value=hex(d_i),
-            e_value=hex(e_i),
-        )
 
     @app.post("/v1/mpc/result", response_model=MPCResultResponse)
     async def mpc_result(req: MPCResultRequest, request: Request) -> MPCResultResponse:

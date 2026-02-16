@@ -840,3 +840,238 @@ class TestComputeGateEndpoint:
 
         finally:
             store.close()
+
+
+# ---------------------------------------------------------------------------
+# Authenticated MPC (SPDZ) integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuthenticatedDistributedMPC:
+    """Tests for the SPDZ-authenticated distributed MPC flow."""
+
+    @pytest.mark.asyncio
+    async def test_authenticated_session_creation(self) -> None:
+        """Coordinator creates an authenticated MPC session."""
+        coordinator = MPCCoordinator()
+        xs = [1, 2, 3]
+        session = coordinator.create_session(
+            signal_id="sig-auth-1",
+            available_indices=[3, 5],
+            coordinator_x=1,
+            participant_xs=xs,
+            threshold=2,
+            use_authenticated=True,
+        )
+        assert session.is_authenticated
+        assert len(session.authenticated_triples) > 0
+        assert len(session.mac_key_shares) == 3
+        assert session.mac_alpha != 0
+
+    @pytest.mark.asyncio
+    async def test_authenticated_triple_shares_extraction(self) -> None:
+        """Can extract authenticated triple shares per participant."""
+        coordinator = MPCCoordinator()
+        xs = [1, 2, 3]
+        session = coordinator.create_session(
+            signal_id="sig-auth-2",
+            available_indices=[3],
+            coordinator_x=1,
+            participant_xs=xs,
+            threshold=2,
+            use_authenticated=True,
+        )
+        for x in xs:
+            shares = coordinator.get_authenticated_triple_shares(session.session_id, x)
+            assert shares is not None
+            assert len(shares) > 0
+            for ts in shares:
+                assert "a" in ts and "y" in ts["a"] and "mac" in ts["a"]
+                assert "b" in ts and "y" in ts["b"] and "mac" in ts["b"]
+                assert "c" in ts and "y" in ts["c"] and "mac" in ts["c"]
+
+    @pytest.mark.asyncio
+    async def test_authenticated_mac_key_shares(self) -> None:
+        """MAC key shares are retrievable for each participant."""
+        coordinator = MPCCoordinator()
+        xs = [1, 2, 3]
+        session = coordinator.create_session(
+            signal_id="sig-auth-3",
+            available_indices=[3],
+            coordinator_x=1,
+            participant_xs=xs,
+            threshold=2,
+            use_authenticated=True,
+        )
+        for x in xs:
+            mk = coordinator.get_mac_key_share(session.session_id, x)
+            assert mk is not None
+            assert mk.x == x
+            assert mk.alpha_share != 0
+
+    @pytest.mark.asyncio
+    async def test_authenticated_distributed_available(self) -> None:
+        """Authenticated distributed MPC: secret IS in available set."""
+        secret = 5
+        available = {3, 5, 7}
+        n_validators = 3
+        threshold = 2
+        shares = split_secret(secret, n=n_validators, k=threshold)
+
+        stores: list[ShareStore] = []
+        try:
+            for share in shares:
+                store = ShareStore()
+                store.store("sig-auth-avail", "0xG", share, b"k")
+                stores.append(store)
+
+            apps = [_create_validator_app(store) for store in stores]
+            from httpx import ASGITransport
+
+            clients = [
+                httpx.AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url=f"http://v{i}:8421",
+                )
+                for i, app in enumerate(apps)
+            ]
+
+            try:
+                coordinator = MPCCoordinator()
+                orchestrator = MPCOrchestrator(
+                    coordinator=coordinator, neuron=None, threshold=threshold,
+                )
+                peers = [
+                    {"uid": i, "url": f"http://v{i}:8421"}
+                    for i in range(1, n_validators)
+                ]
+
+                real_post = httpx.AsyncClient.post
+                real_get = httpx.AsyncClient.get
+
+                async def routed_post(self_client, url, **kwargs):
+                    for i, client in enumerate(clients):
+                        base = f"http://v{i}:8421"
+                        if url.startswith(base):
+                            path = url[len(base):]
+                            return await client.post(path, **kwargs)
+                    return await real_post(self_client, url, **kwargs)
+
+                async def routed_get(self_client, url, **kwargs):
+                    for i, client in enumerate(clients):
+                        base = f"http://v{i}:8421"
+                        if url.startswith(base):
+                            path = url[len(base):]
+                            return await client.get(path, **kwargs)
+                    return await real_get(self_client, url, **kwargs)
+
+                # Force authenticated mode via env
+                import os
+                old_val = os.environ.get("USE_AUTHENTICATED_MPC")
+                os.environ["USE_AUTHENTICATED_MPC"] = "true"
+                try:
+                    with patch.object(httpx.AsyncClient, "post", routed_post), \
+                         patch.object(httpx.AsyncClient, "get", routed_get):
+                        result = await orchestrator._distributed_mpc(
+                            signal_id="sig-auth-avail",
+                            local_share=shares[0],
+                            available_indices=available,
+                            peers=peers,
+                        )
+                finally:
+                    if old_val is None:
+                        os.environ.pop("USE_AUTHENTICATED_MPC", None)
+                    else:
+                        os.environ["USE_AUTHENTICATED_MPC"] = old_val
+
+                assert result is not None
+                assert result.available is True
+            finally:
+                for c in clients:
+                    await c.aclose()
+        finally:
+            for store in stores:
+                store.close()
+
+    @pytest.mark.asyncio
+    async def test_authenticated_distributed_unavailable(self) -> None:
+        """Authenticated distributed MPC: secret NOT in available set."""
+        secret = 5
+        available = {1, 2, 3}
+        n_validators = 3
+        threshold = 2
+        shares = split_secret(secret, n=n_validators, k=threshold)
+
+        stores: list[ShareStore] = []
+        try:
+            for share in shares:
+                store = ShareStore()
+                store.store("sig-auth-unavail", "0xG", share, b"k")
+                stores.append(store)
+
+            apps = [_create_validator_app(store) for store in stores]
+            from httpx import ASGITransport
+
+            clients = [
+                httpx.AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url=f"http://v{i}:8421",
+                )
+                for i, app in enumerate(apps)
+            ]
+
+            try:
+                coordinator = MPCCoordinator()
+                orchestrator = MPCOrchestrator(
+                    coordinator=coordinator, neuron=None, threshold=threshold,
+                )
+                peers = [
+                    {"uid": i, "url": f"http://v{i}:8421"}
+                    for i in range(1, n_validators)
+                ]
+
+                real_post = httpx.AsyncClient.post
+                real_get = httpx.AsyncClient.get
+
+                async def routed_post(self_client, url, **kwargs):
+                    for i, client in enumerate(clients):
+                        base = f"http://v{i}:8421"
+                        if url.startswith(base):
+                            path = url[len(base):]
+                            return await client.post(path, **kwargs)
+                    return await real_post(self_client, url, **kwargs)
+
+                async def routed_get(self_client, url, **kwargs):
+                    for i, client in enumerate(clients):
+                        base = f"http://v{i}:8421"
+                        if url.startswith(base):
+                            path = url[len(base):]
+                            return await client.get(path, **kwargs)
+                    return await real_get(self_client, url, **kwargs)
+
+                import os
+                old_val = os.environ.get("USE_AUTHENTICATED_MPC")
+                os.environ["USE_AUTHENTICATED_MPC"] = "true"
+                try:
+                    with patch.object(httpx.AsyncClient, "post", routed_post), \
+                         patch.object(httpx.AsyncClient, "get", routed_get):
+                        result = await orchestrator._distributed_mpc(
+                            signal_id="sig-auth-unavail",
+                            local_share=shares[0],
+                            available_indices=available,
+                            peers=peers,
+                        )
+                finally:
+                    if old_val is None:
+                        os.environ.pop("USE_AUTHENTICATED_MPC", None)
+                    else:
+                        os.environ["USE_AUTHENTICATED_MPC"] = old_val
+
+                assert result is not None
+                assert result.available is False
+            finally:
+                for c in clients:
+                    await c.aclose()
+        finally:
+            for store in stores:
+                store.close()

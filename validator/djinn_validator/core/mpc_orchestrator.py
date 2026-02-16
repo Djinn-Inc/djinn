@@ -35,6 +35,14 @@ from djinn_validator.core.mpc import (
     secure_check_availability,
 )
 from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
+from djinn_validator.core.spdz import (
+    AuthenticatedParticipantState,
+    AuthenticatedShare,
+    MACKeyShare,
+    MACVerificationError,
+    authenticate_value,
+    verify_mac_opening,
+)
 from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 if TYPE_CHECKING:
@@ -195,13 +203,18 @@ class MPCOrchestrator:
     ) -> MPCResult | None:
         """Run the distributed MPC protocol via HTTP.
 
+        Supports both semi-honest (basic Beaver) and malicious (SPDZ authenticated)
+        modes. The mode is determined by USE_AUTHENTICATED_MPC env var or the
+        coordinator's create_session() call.
+
         Full protocol:
         1. Generate random mask r and split into shares
-        2. Create session with Beaver triples
+        2. Create session with Beaver triples (optionally with MAC authentication)
         3. Send /v1/mpc/init to all peers with their triple shares + r shares
         4. For each multiplication gate, collect (d_i, e_i) from all peers
-        5. Reconstruct opened d, e and feed into next gate
-        6. Open final result and broadcast to peers
+        5. In authenticated mode: verify MACs on opened d, e values
+        6. Reconstruct opened d, e and feed into next gate
+        7. Open final result and broadcast to peers
         """
         p = BN254_PRIME
         my_x = local_share.x
@@ -236,22 +249,69 @@ class MPCOrchestrator:
             threshold=self._threshold,
         )
 
-        # Build our own participant state
-        my_triples = self._coordinator.get_triple_shares_for_participant(
-            session.session_id, my_x,
-        )
-        if my_triples is None:
-            return None
+        is_auth = session.is_authenticated
 
-        my_state = DistributedParticipantState(
-            validator_x=my_x,
-            secret_share_y=local_share.y,
-            r_share_y=r_share_map[my_x],
-            available_indices=sorted_avail,
-            triple_a=[ts["a"] for ts in my_triples],
-            triple_b=[ts["b"] for ts in my_triples],
-            triple_c=[ts["c"] for ts in my_triples],
-        )
+        # For authenticated mode: create authenticated r shares and secret shares
+        auth_r_map: dict[int, AuthenticatedShare] = {}
+        auth_secret_map: dict[int, AuthenticatedShare] = {}
+        if is_auth:
+            alpha = session.mac_alpha
+            r_auth = authenticate_value(r, alpha, participant_xs, self._threshold, p)
+            auth_r_map = {s.x: s for s in r_auth}
+            # Collect peer shares and reconstruct the actual secret so we can
+            # create authenticated shares.  In production the genius would
+            # create authenticated shares during signal submission; here we
+            # use the trusted-dealer model where the coordinator reconstructs.
+            peer_shares = await self._collect_peer_shares(peers, signal_id)
+            all_secret_shares = [local_share] + peer_shares
+            if len(all_secret_shares) < self._threshold:
+                log.warning(
+                    "insufficient_shares_for_auth",
+                    available=len(all_secret_shares),
+                    threshold=self._threshold,
+                )
+                return None
+            actual_secret = reconstruct_at_zero(
+                {s.x: s.y for s in all_secret_shares}, p,
+            )
+            secret_auth = authenticate_value(
+                actual_secret, alpha, participant_xs, self._threshold, p
+            )
+            auth_secret_map = {s.x: s for s in secret_auth}
+
+        # Build our own participant state
+        if is_auth:
+            my_auth_triples = self._coordinator.get_authenticated_triple_shares(
+                session.session_id, my_x,
+            )
+            my_mac_key = self._coordinator.get_mac_key_share(session.session_id, my_x)
+            if my_auth_triples is None or my_mac_key is None:
+                return None
+            my_state_auth = AuthenticatedParticipantState(
+                validator_x=my_x,
+                secret_share=auth_secret_map[my_x],
+                r_share=auth_r_map[my_x],
+                alpha_share=my_mac_key,
+                available_indices=sorted_avail,
+                triple_a=[AuthenticatedShare(x=my_x, y=ts["a"]["y"], mac=ts["a"]["mac"]) for ts in my_auth_triples],
+                triple_b=[AuthenticatedShare(x=my_x, y=ts["b"]["y"], mac=ts["b"]["mac"]) for ts in my_auth_triples],
+                triple_c=[AuthenticatedShare(x=my_x, y=ts["c"]["y"], mac=ts["c"]["mac"]) for ts in my_auth_triples],
+            )
+        else:
+            my_triples = self._coordinator.get_triple_shares_for_participant(
+                session.session_id, my_x,
+            )
+            if my_triples is None:
+                return None
+            my_state_basic = DistributedParticipantState(
+                validator_x=my_x,
+                secret_share_y=local_share.y,
+                r_share_y=r_share_map[my_x],
+                available_indices=sorted_avail,
+                triple_a=[ts["a"] for ts in my_triples],
+                triple_b=[ts["b"] for ts in my_triples],
+                triple_c=[ts["c"] for ts in my_triples],
+            )
 
         # Distribute session invitations with triple shares + r shares
         accepted_peers: list[dict[str, Any]] = []
@@ -260,28 +320,49 @@ class MPCOrchestrator:
             client: httpx.AsyncClient, peer: dict[str, Any],
         ) -> dict[str, Any] | None:
             peer_x = peer["uid"] + 1
-            triple_shares = self._coordinator.get_triple_shares_for_participant(
-                session.session_id, peer_x,
-            )
-            peer_r = r_share_map.get(peer_x)
-            if triple_shares is None or peer_r is None:
-                return None
+            init_payload: dict[str, Any] = {
+                "session_id": session.session_id,
+                "signal_id": signal_id,
+                "available_indices": sorted_avail,
+                "coordinator_x": my_x,
+                "participant_xs": participant_xs,
+                "threshold": self._threshold,
+                "authenticated": is_auth,
+            }
+
+            if is_auth:
+                auth_ts = self._coordinator.get_authenticated_triple_shares(
+                    session.session_id, peer_x,
+                )
+                mac_key = self._coordinator.get_mac_key_share(session.session_id, peer_x)
+                peer_r_auth = auth_r_map.get(peer_x)
+                peer_secret_auth = auth_secret_map.get(peer_x)
+                if auth_ts is None or mac_key is None or peer_r_auth is None or peer_secret_auth is None:
+                    return None
+                init_payload["auth_triple_shares"] = [
+                    {comp: {k: hex(v) for k, v in share.items()} for comp, share in ts.items()}
+                    for ts in auth_ts
+                ]
+                init_payload["alpha_share"] = hex(mac_key.alpha_share)
+                init_payload["auth_r_share"] = {"y": hex(peer_r_auth.y), "mac": hex(peer_r_auth.mac)}
+                init_payload["auth_secret_share"] = {"y": hex(peer_secret_auth.y), "mac": hex(peer_secret_auth.mac)}
+                init_payload["r_share_y"] = hex(peer_r_auth.y)
+                init_payload["triple_shares"] = []  # Empty for auth mode
+            else:
+                triple_shares = self._coordinator.get_triple_shares_for_participant(
+                    session.session_id, peer_x,
+                )
+                peer_r = r_share_map.get(peer_x)
+                if triple_shares is None or peer_r is None:
+                    return None
+                init_payload["triple_shares"] = [
+                    {k: hex(v) for k, v in ts.items()} for ts in triple_shares
+                ]
+                init_payload["r_share_y"] = hex(peer_r)
+
             try:
                 resp = await client.post(
-                    f"{peer['url']}/v1/mpc/init",
-                    json={
-                        "session_id": session.session_id,
-                        "signal_id": signal_id,
-                        "available_indices": sorted_avail,
-                        "coordinator_x": my_x,
-                        "participant_xs": participant_xs,
-                        "threshold": self._threshold,
-                        "triple_shares": [
-                            {k: hex(v) for k, v in ts.items()}
-                            for ts in triple_shares
-                        ],
-                        "r_share_y": hex(peer_r),
-                    },
+                    f"{peer['url']}/v1/mpc/init", json=init_payload,
                 )
                 if resp.status_code == 200 and resp.json().get("accepted"):
                     return peer
@@ -316,6 +397,7 @@ class MPCOrchestrator:
             "mpc_distributed_session",
             session_id=session.session_id,
             accepted_peers=len(accepted_peers),
+            authenticated=is_auth,
         )
 
         # Run per-gate protocol
@@ -325,9 +407,23 @@ class MPCOrchestrator:
 
         for gate_idx in range(n_gates):
             # Compute our own (d_i, e_i)
-            my_d, my_e = my_state.compute_gate(gate_idx, prev_d, prev_e)
+            if is_auth:
+                # Finalize previous gate BEFORE computing the next one,
+                # because compute_gate reads _prev_z which finalize_gate sets.
+                if gate_idx > 0 and prev_d is not None and prev_e is not None:
+                    my_state_auth.finalize_gate(prev_d, prev_e)
+                my_d, my_e, my_d_mac, my_e_mac = my_state_auth.compute_gate(gate_idx, prev_d, prev_e)
+            else:
+                my_d, my_e = my_state_basic.compute_gate(gate_idx, prev_d, prev_e)
+
             d_vals: dict[int, int] = {my_x: my_d}
             e_vals: dict[int, int] = {my_x: my_e}
+            # MAC share maps (authenticated mode only)
+            d_mac_vals: dict[int, int] = {}
+            e_mac_vals: dict[int, int] = {}
+            if is_auth:
+                d_mac_vals[my_x] = my_d_mac
+                e_mac_vals[my_x] = my_e_mac
 
             # Collect from peers in parallel
             async def _collect_gate(
@@ -336,7 +432,7 @@ class MPCOrchestrator:
                 g_idx: int,
                 p_d: int | None,
                 p_e: int | None,
-            ) -> tuple[int, int, int] | None:
+            ) -> tuple[int, int, int, int | None, int | None] | None:
                 try:
                     resp = await client.post(
                         f"{peer['url']}/v1/mpc/compute_gate",
@@ -350,7 +446,9 @@ class MPCOrchestrator:
                     if resp.status_code == 200:
                         data = resp.json()
                         peer_x = peer["uid"] + 1
-                        return peer_x, int(data["d_value"], 16), int(data["e_value"], 16)
+                        d_mac = int(data["d_mac"], 16) if data.get("d_mac") else None
+                        e_mac = int(data["e_mac"], 16) if data.get("e_mac") else None
+                        return peer_x, int(data["d_value"], 16), int(data["e_value"], 16), d_mac, e_mac
                 except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
                     log.warning(
                         "mpc_gate_failed",
@@ -373,9 +471,13 @@ class MPCOrchestrator:
                     if result is None or isinstance(result, BaseException):
                         failed.append(active_peers[i])
                     else:
-                        peer_x, d_val, e_val = result
+                        peer_x, d_val, e_val, d_mac, e_mac = result
                         d_vals[peer_x] = d_val
                         e_vals[peer_x] = e_val
+                        if d_mac is not None:
+                            d_mac_vals[peer_x] = d_mac
+                        if e_mac is not None:
+                            e_mac_vals[peer_x] = e_mac
 
                 for fp in failed:
                     active_peers.remove(fp)
@@ -393,22 +495,74 @@ class MPCOrchestrator:
             prev_d = reconstruct_at_zero(d_vals, p)
             prev_e = reconstruct_at_zero(e_vals, p)
 
+            # SPDZ MAC verification on opened d and e
+            if is_auth and d_mac_vals and e_mac_vals:
+                mac_key_shares = [
+                    self._coordinator.get_mac_key_share(session.session_id, vx)
+                    for vx in sorted(d_mac_vals.keys())
+                ]
+                # Verify d
+                d_auth_shares = [
+                    AuthenticatedShare(x=vx, y=d_vals[vx], mac=d_mac_vals[vx])
+                    for vx in sorted(d_mac_vals.keys())
+                ]
+                if not verify_mac_opening(prev_d, d_auth_shares, [m for m in mac_key_shares if m], p):
+                    log.error("mac_verification_failed", gate_idx=gate_idx, value="d")
+                    return None
+                # Verify e
+                e_auth_shares = [
+                    AuthenticatedShare(x=vx, y=e_vals[vx], mac=e_mac_vals[vx])
+                    for vx in sorted(e_mac_vals.keys())
+                ]
+                if not verify_mac_opening(prev_e, e_auth_shares, [m for m in mac_key_shares if m], p):
+                    log.error("mac_verification_failed", gate_idx=gate_idx, value="e")
+                    return None
+                log.debug("mac_verified", gate_idx=gate_idx)
+
+        # Finalize last gate for authenticated mode
+        if is_auth and prev_d is not None and prev_e is not None:
+            my_state_auth.finalize_gate(prev_d, prev_e)
+
         # Compute final output shares z_i for each participant
         z_vals: dict[int, int] = {}
         last = n_gates - 1
-        for vx in d_vals:
-            ts = self._coordinator.get_triple_shares_for_participant(
-                session.session_id, vx,
-            )
-            if ts is None:
-                continue
-            z_i = (
-                prev_d * prev_e
-                + prev_d * ts[last]["b"]
-                + prev_e * ts[last]["a"]
-                + ts[last]["c"]
-            ) % p
-            z_vals[vx] = z_i
+
+        if is_auth:
+            # In authenticated mode, get z from our own state
+            out = my_state_auth.get_output_share()
+            if out:
+                z_vals[my_x] = out.y
+            # For peers, we don't have their authenticated z shares directly.
+            # The coordinator computes z from the last opened (d, e) and triple shares.
+            for vx in d_vals:
+                if vx == my_x:
+                    continue
+                auth_ts = self._coordinator.get_authenticated_triple_shares(
+                    session.session_id, vx,
+                )
+                if auth_ts is None:
+                    continue
+                z_i = (
+                    prev_d * prev_e
+                    + prev_d * auth_ts[last]["b"]["y"]
+                    + prev_e * auth_ts[last]["a"]["y"]
+                    + auth_ts[last]["c"]["y"]
+                ) % p
+                z_vals[vx] = z_i
+        else:
+            for vx in d_vals:
+                ts = self._coordinator.get_triple_shares_for_participant(
+                    session.session_id, vx,
+                )
+                if ts is None:
+                    continue
+                z_i = (
+                    prev_d * prev_e
+                    + prev_d * ts[last]["b"]
+                    + prev_e * ts[last]["a"]
+                    + ts[last]["c"]
+                ) % p
+                z_vals[vx] = z_i
 
         # Reconstruct the final result: r * P(s) — zero iff s ∈ available set
         result_value = reconstruct_at_zero(z_vals, p)
@@ -430,6 +584,7 @@ class MPCOrchestrator:
             available=available,
             participants=len(z_vals),
             gates=n_gates,
+            authenticated=is_auth,
         )
 
         # Broadcast result to peers
