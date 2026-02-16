@@ -76,12 +76,15 @@ class Config:
     odds_precision: int = 1_000_000
     bps_denom: int = 10_000
 
-    def validate(self, *, strict: bool = False) -> list[str]:
+    def validate(self, *, strict: bool | None = None) -> list[str]:
         """Validate config at startup. Returns list of warnings (empty = all good).
 
         Args:
-            strict: If True, raise ValueError on any warning (use for production safety).
+            strict: If True, raise ValueError on any warning. Defaults to True
+                    when bt_network is a production network (finney/mainnet).
         """
+        if strict is None:
+            strict = self.bt_network in ("finney", "mainnet")
         import re
         warnings = []
         if not (1 <= self.bt_netuid <= 65535):

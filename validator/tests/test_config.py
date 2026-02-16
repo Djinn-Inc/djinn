@@ -98,6 +98,48 @@ class TestConfigNetworkWarning:
         assert any("BT_NETWORK" in w for w in warnings)
 
 
+class TestConfigStrictAutoDetect:
+    """Strict mode auto-detects production network."""
+
+    def test_strict_auto_enabled_on_finney(self) -> None:
+        """Warnings become errors on finney when strict is unset."""
+        config = _config(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="0x1234567890abcdef1234567890abcdef12345678",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_chain_id=99999,  # Non-standard → generates a warning
+        )
+        with pytest.raises(ValueError, match="strict mode"):
+            config.validate()  # strict=None → auto-detects finney → strict
+
+    def test_strict_auto_disabled_on_local(self) -> None:
+        """Warnings are returned (not raised) on local network."""
+        config = _config(
+            bt_network="local",
+            sports_api_key="key",
+            base_chain_id=99999,
+        )
+        warnings = config.validate()  # strict=None → auto-detects local → lenient
+        assert any("BASE_CHAIN_ID" in w for w in warnings)
+
+    def test_explicit_strict_false_overrides_auto(self) -> None:
+        """Explicit strict=False overrides auto-detect even on finney."""
+        config = _config(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="0x1234567890abcdef1234567890abcdef12345678",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_chain_id=99999,
+        )
+        warnings = config.validate(strict=False)
+        assert any("BASE_CHAIN_ID" in w for w in warnings)
+
+
 class TestConfigTimeouts:
     def test_default_http_timeout(self) -> None:
         config = Config()
