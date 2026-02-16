@@ -31,10 +31,22 @@ export default function Leaderboard() {
     return sortDesc ? " \u2193" : " \u2191";
   };
 
+  const ariaSort = (field: SortField): "ascending" | "descending" | "none" => {
+    if (sortBy !== field) return "none";
+    return sortDesc ? "descending" : "ascending";
+  };
+
+  const sortKeyHandler = (field: SortField) => (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleSort(field);
+    }
+  };
+
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Leaderboard</h1>
+        <h1 className="text-3xl font-bold text-slate-900">Genius Leaderboard</h1>
         <p className="text-slate-500 mt-1">
           Geniuses ranked by cryptographically verified track records
         </p>
@@ -62,24 +74,40 @@ export default function Leaderboard() {
               <th
                 className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("qualityScore")}
+                onKeyDown={sortKeyHandler("qualityScore")}
+                aria-sort={ariaSort("qualityScore")}
+                tabIndex={0}
+                role="columnheader"
               >
                 Quality Score{sortIndicator("qualityScore")}
               </th>
               <th
                 className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("totalSignals")}
+                onKeyDown={sortKeyHandler("totalSignals")}
+                aria-sort={ariaSort("totalSignals")}
+                tabIndex={0}
+                role="columnheader"
               >
-                Total Signals{sortIndicator("totalSignals")}
+                Signals{sortIndicator("totalSignals")}
               </th>
               <th
                 className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("auditCount")}
+                onKeyDown={sortKeyHandler("auditCount")}
+                aria-sort={ariaSort("auditCount")}
+                tabIndex={0}
+                role="columnheader"
               >
                 Audits{sortIndicator("auditCount")}
               </th>
               <th
                 className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
                 onClick={() => handleSort("roi")}
+                onKeyDown={sortKeyHandler("roi")}
+                aria-sort={ariaSort("roi")}
+                tabIndex={0}
+                role="columnheader"
               >
                 ROI{sortIndicator("roi")}
               </th>
