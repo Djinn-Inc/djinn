@@ -591,4 +591,62 @@ contract SignalCommitmentTest is Test {
 
         assertEq(uint8(sc.getSignal(4006).status), uint8(SignalStatus.Voided));
     }
+
+    // ─── Tests: Blob size limit
+    // ──────────────────────────────────
+
+    function test_commit_revertOnBlobTooLarge() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(5000);
+        p.encryptedBlob = new bytes(sc.MAX_BLOB_SIZE() + 1);
+        p.encryptedBlob[0] = 0x01;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(SignalCommitment.BlobTooLarge.selector, sc.MAX_BLOB_SIZE() + 1, sc.MAX_BLOB_SIZE())
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_blobAtMaxSize() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(5001);
+        p.encryptedBlob = new bytes(sc.MAX_BLOB_SIZE());
+        p.encryptedBlob[0] = 0x01;
+
+        vm.prank(genius);
+        sc.commit(p);
+        assertTrue(sc.signalExists(5001));
+    }
+
+    // ─── Tests: Sportsbooks limit
+    // ──────────────────────────────────
+
+    function test_commit_revertOnTooManySportsbooks() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(5100);
+        string[] memory books = new string[](sc.MAX_SPORTSBOOKS() + 1);
+        for (uint256 i = 0; i < books.length; i++) {
+            books[i] = "book";
+        }
+        p.availableSportsbooks = books;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.TooManySportsbooks.selector, sc.MAX_SPORTSBOOKS() + 1, sc.MAX_SPORTSBOOKS()
+            )
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_sportsbooksAtMax() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(5101);
+        string[] memory books = new string[](sc.MAX_SPORTSBOOKS());
+        for (uint256 i = 0; i < books.length; i++) {
+            books[i] = "book";
+        }
+        p.availableSportsbooks = books;
+
+        vm.prank(genius);
+        sc.commit(p);
+        assertTrue(sc.signalExists(5101));
+    }
 }

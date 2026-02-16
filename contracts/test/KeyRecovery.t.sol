@@ -107,4 +107,25 @@ contract KeyRecoveryTest is Test {
         assertEq(retrieved.length, 1024);
         assertEq(keccak256(retrieved), keccak256(largeBlob));
     }
+
+    // ─── Tests: Blob size limits
+    // ───────────────────────────────────────
+
+    function test_storeBlobAtMaxSize() public {
+        bytes memory blob = new bytes(kr.MAX_BLOB_SIZE());
+        blob[0] = 0x01;
+        vm.prank(user1);
+        kr.storeRecoveryBlob(blob);
+        assertEq(kr.getRecoveryBlob(user1).length, kr.MAX_BLOB_SIZE());
+    }
+
+    function test_storeBlobExceedsMaxSize() public {
+        bytes memory blob = new bytes(kr.MAX_BLOB_SIZE() + 1);
+        blob[0] = 0x01;
+        vm.expectRevert(
+            abi.encodeWithSelector(KeyRecovery.BlobTooLarge.selector, kr.MAX_BLOB_SIZE() + 1, kr.MAX_BLOB_SIZE())
+        );
+        vm.prank(user1);
+        kr.storeRecoveryBlob(blob);
+    }
 }
