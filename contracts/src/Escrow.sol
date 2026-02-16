@@ -118,8 +118,12 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     error ContractNotSet(string name);
     error Unauthorized();
     error ZeroAddress();
+    error NotionalTooSmall(uint256 provided, uint256 min);
     error NotionalTooLarge(uint256 provided, uint256 max);
     error OddsOutOfRange(uint256 odds);
+
+    /// @notice Minimum notional per purchase (1 USDC in 6 decimals — prevents dust griefing)
+    uint256 public constant MIN_NOTIONAL = 1e6;
 
     /// @notice Maximum notional per purchase (1 billion USDC in 6 decimals)
     uint256 public constant MAX_NOTIONAL = 1e15;
@@ -267,6 +271,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     {
         // --- Validate inputs ---
         if (notional == 0) revert ZeroAmount();
+        if (notional < MIN_NOTIONAL) revert NotionalTooSmall(notional, MIN_NOTIONAL);
         if (notional > MAX_NOTIONAL) revert NotionalTooLarge(notional, MAX_NOTIONAL);
         if (odds < MIN_ODDS || odds > MAX_ODDS) revert OddsOutOfRange(odds);
 

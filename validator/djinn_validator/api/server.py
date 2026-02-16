@@ -151,14 +151,18 @@ def create_app(
     mpc_availability_timeout: float = 15.0,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
-    # Warn if chain client is missing in production
     bt_network = os.environ.get("BT_NETWORK", "")
-    if chain_client is None and bt_network in ("finney", "mainnet"):
+    _is_production = bt_network in ("finney", "mainnet")
+
+    # Warn loudly if chain client is missing in production (hard guard is on
+    # the purchase endpoint — shares will never be released without payment
+    # verification in production mode).
+    if chain_client is None and _is_production:
         log.error(
-            "chain_client_not_configured",
+            "chain_client_missing_production",
             bt_network=bt_network,
-            msg="Chain client not configured — payment verification will be skipped. "
-            "This is UNSAFE for production. Set BASE_RPC_URL to enable on-chain verification.",
+            msg="No chain client configured. Share release will be BLOCKED "
+            "until BASE_RPC_URL is set and chain_client is provided.",
         )
 
     # Resources that need cleanup on shutdown
@@ -268,9 +272,18 @@ def create_app(
     # Request ID tracing (outermost — must be added last)
     app.add_middleware(RequestIdMiddleware)
 
+    _ETH_ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:
         """Accept and store an encrypted key share from a Genius."""
+        # Validate Ethereum address format at the API boundary
+        if not _ETH_ADDR_RE.match(req.genius_address):
+            raise HTTPException(
+                status_code=400,
+                detail="genius_address must be a valid Ethereum address (0x + 40 hex chars)",
+            )
+
         try:
             share_y = int(req.share_y, 16)
             encrypted = bytes.fromhex(req.encrypted_key_share)
@@ -284,12 +297,18 @@ def create_app(
 
         share = Share(x=req.share_x, y=share_y)
 
-        share_store.store(
-            signal_id=req.signal_id,
-            genius_address=req.genius_address,
-            share=share,
-            encrypted_key_share=encrypted,
-        )
+        try:
+            share_store.store(
+                signal_id=req.signal_id,
+                genius_address=req.genius_address,
+                share=share,
+                encrypted_key_share=encrypted,
+            )
+        except ValueError as e:
+            detail = str(e)
+            if "already stored" in detail:
+                raise HTTPException(status_code=409, detail=detail)
+            raise HTTPException(status_code=400, detail=detail)
 
         SHARES_STORED.inc()
         ACTIVE_SHARES.set(share_store.count)
@@ -386,6 +405,17 @@ def create_app(
                     detail="Payment verification failed",
                 )
         else:
+            # In production, refuse to release shares without payment verification
+            if _is_production:
+                log.error(
+                    "share_release_blocked",
+                    signal_id=signal_id,
+                    reason="No chain client in production — cannot verify payment",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Payment verification unavailable. Validator misconfigured.",
+                )
             # Dev mode: no chain client configured — skip payment check
             log.warning(
                 "payment_check_skipped",

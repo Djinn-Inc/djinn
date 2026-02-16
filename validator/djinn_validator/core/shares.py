@@ -152,6 +152,7 @@ class ShareStore:
                 log.info("share_stored", signal_id=signal_id, genius=genius_address)
             except sqlite3.IntegrityError:
                 log.warning("share_already_stored", signal_id=signal_id)
+                raise ValueError(f"Share already stored for signal {signal_id}")
 
     def get(self, signal_id: str) -> SignalShareRecord | None:
         """Retrieve a share record by signal ID."""

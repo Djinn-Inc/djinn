@@ -642,4 +642,13 @@ contract EscrowIntegrationTest is Test {
         Purchase memory p = escrow.getPurchase(purchaseId);
         assertEq(p.odds, minOdds, "Min odds should be stored");
     }
+
+    function test_purchase_dustNotional_reverts() public {
+        _createSignal(SIGNAL_ID);
+
+        uint256 dustNotional = 100; // 0.0001 USDC — way below MIN_NOTIONAL
+        vm.prank(idiot);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalTooSmall.selector, dustNotional, 1e6));
+        escrow.purchase(SIGNAL_ID, dustNotional, ODDS);
+    }
 }

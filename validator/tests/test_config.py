@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 
 import pytest
 
@@ -24,7 +25,9 @@ class TestConfigDefaults:
 
     def test_default_bt_network(self) -> None:
         config = Config()
-        assert config.bt_network == "finney"
+        # conftest sets BT_NETWORK=test; verify Config reads from env
+        expected = os.environ.get("BT_NETWORK", "finney")
+        assert config.bt_network == expected
 
     def test_default_protocol_constants(self) -> None:
         config = Config()

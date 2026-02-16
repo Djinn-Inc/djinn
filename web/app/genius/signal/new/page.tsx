@@ -146,7 +146,7 @@ export default function CreateSignal() {
     setEditOdds(decimalToAmerican(bet.avgPrice));
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
-    const pos = Math.floor(Math.random() * 10);
+    const pos = cryptoRandomInt(10);
     setRealIndex(pos);
     setStep("review");
   };
@@ -155,7 +155,7 @@ export default function CreateSignal() {
     if (!realPick) return;
     const decoys = generateDecoys(realPick, events, 9);
     setDecoyLines(decoys);
-    setRealIndex(Math.floor(Math.random() * 10));
+    setRealIndex(cryptoRandomInt(10));
   };
 
   const getAllLines = (): StructuredLine[] => {
@@ -590,33 +590,47 @@ export default function CreateSignal() {
             )}
 
             {/* Editable odds — available for ALL markets, required for ML */}
-            <div className="flex items-center gap-3">
-              <label htmlFor="editOdds" className="text-xs text-genius-700 font-medium whitespace-nowrap">
-                Min Odds:
-              </label>
-              <input
-                id="editOdds"
-                type="text"
-                value={editOdds}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  // Allow typing: optional minus/plus, digits, nothing else
-                  if (/^[+-]?\d*$/.test(raw)) {
-                    setEditOdds(raw);
-                  }
-                }}
-                placeholder="-110"
-                className="w-28 rounded-lg border border-genius-300 bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 focus:border-genius-400"
-                aria-label="Edit minimum acceptable odds (American format)"
-              />
-              <span className="text-xs text-genius-500">
-                American format (e.g. -110, +150)
-              </span>
-            </div>
-            <p className="text-[11px] text-genius-500 mt-2">
-              Minimum odds you&apos;ll accept. Buyers must place at these odds or better.
-              {realPick.market === "h2h" && " For moneyline bets, this is the key parameter."}
-            </p>
+            {(() => {
+              const oddsNum = editOdds ? parseInt(editOdds, 10) : null;
+              const isValid = oddsNum === null || oddsNum >= 100 || oddsNum <= -100;
+              return (
+                <>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="editOdds" className="text-xs text-genius-700 font-medium whitespace-nowrap">
+                      Min Odds:
+                    </label>
+                    <input
+                      id="editOdds"
+                      type="text"
+                      value={editOdds}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (/^[+-]?\d*$/.test(raw)) {
+                          setEditOdds(raw);
+                        }
+                      }}
+                      placeholder="-110"
+                      className={`w-28 rounded-lg border bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 ${
+                        !isValid ? "border-red-400" : "border-genius-300"
+                      }`}
+                      aria-label="Edit minimum acceptable odds (American format)"
+                    />
+                    <span className="text-xs text-genius-500">
+                      American format (e.g. -110, +150)
+                    </span>
+                  </div>
+                  {!isValid && (
+                    <p className="text-[11px] text-red-500 mt-1">
+                      American odds must be +100 or higher, or -100 or lower.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-genius-500 mt-2">
+                    Minimum odds you&apos;ll accept. Buyers must place at these odds or better.
+                    {realPick.market === "h2h" && " For moneyline bets, this is the key parameter."}
+                  </p>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1031,6 +1045,16 @@ function decimalToAmerican(decimal: number): string {
 function americanToDecimal(american: string): number | null {
   const n = parseInt(american, 10);
   if (isNaN(n) || n === 0) return null;
+  // Reject invalid American odds in the range (-100, 0) and (0, 100)
+  if (n > 0 && n < 100) return null;
+  if (n < 0 && n > -100) return null;
   if (n > 0) return 1 + n / 100;      // +150 → 2.50
   return 1 + 100 / Math.abs(n);        // -150 → 1.667
+}
+
+/** Cryptographically secure random integer in [0, max). */
+function cryptoRandomInt(max: number): number {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return arr[0] % max;
 }

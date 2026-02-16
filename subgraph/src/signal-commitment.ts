@@ -92,13 +92,20 @@ export function handleSignalVoided(event: SignalVoided): void {
   let signal = Signal.load(signalId);
   if (signal == null) return;
 
+  let wasActive = signal.status == "Active";
   signal.status = "Voided";
   signal.save();
 
-  let genius = Genius.load(signal.genius);
-  if (genius != null) {
-    genius.activeSignals = genius.activeSignals.minus(BigInt.fromI32(1));
-    genius.save();
+  // Only decrement if transitioning from Active (prevents double-decrement
+  // when both SignalVoided and SignalStatusUpdated fire for the same signal)
+  if (wasActive) {
+    let genius = Genius.load(signal.genius);
+    if (genius != null) {
+      genius.activeSignals = genius.activeSignals.gt(BigInt.zero())
+        ? genius.activeSignals.minus(BigInt.fromI32(1))
+        : BigInt.zero();
+      genius.save();
+    }
   }
 }
 
@@ -116,7 +123,9 @@ export function handleSignalStatusUpdated(event: SignalStatusUpdated): void {
   if (oldStatus == "Active" && newStatus != "Active") {
     let genius = Genius.load(signal.genius);
     if (genius != null) {
-      genius.activeSignals = genius.activeSignals.minus(BigInt.fromI32(1));
+      genius.activeSignals = genius.activeSignals.gt(BigInt.zero())
+        ? genius.activeSignals.minus(BigInt.fromI32(1))
+        : BigInt.zero();
       genius.save();
     }
   }

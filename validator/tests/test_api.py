@@ -69,7 +69,7 @@ class TestStoreShare:
     def test_store_share(self, client: TestClient, share_store: ShareStore) -> None:
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-1",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": hex(12345),
             "encrypted_key_share": "deadbeef",
@@ -83,7 +83,7 @@ class TestStoreShare:
         from djinn_validator.utils.crypto import BN254_PRIME
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-bad",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": hex(BN254_PRIME + 1),
             "encrypted_key_share": "deadbeef",
@@ -95,7 +95,7 @@ class TestStoreShare:
         """Pydantic rejects share_x outside [1, 10] with 422."""
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-bad",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 0,
             "share_y": hex(42),
             "encrypted_key_share": "deadbeef",
@@ -106,7 +106,7 @@ class TestStoreShare:
         """Pydantic hex validator rejects non-hex share_y with 422."""
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-bad",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "not-hex",
             "encrypted_key_share": "deadbeef",
@@ -117,7 +117,7 @@ class TestStoreShare:
         """share_y = 0 is a valid field element."""
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-zero-y",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "0",
             "encrypted_key_share": "deadbeef",
@@ -301,7 +301,7 @@ class TestMetricsEndpoint:
         # Store a share to increment counters
         client.post("/v1/signal", json={
             "signal_id": "met-1",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "abcdef",
             "encrypted_key_share": "deadbeef",
@@ -340,7 +340,7 @@ class TestInputValidation:
     def test_store_share_invalid_hex(self, client: TestClient) -> None:
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-1",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "not-hex!",
             "encrypted_key_share": "deadbeef",
@@ -381,11 +381,23 @@ class TestInputValidation:
         })
         assert resp.status_code == 422
 
+    def test_rejects_invalid_genius_address(self, client: TestClient) -> None:
+        """genius_address must be a valid Ethereum address (0x + 40 hex chars)."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "sig-addr",
+            "genius_address": "0xGenius",
+            "share_x": 1,
+            "share_y": "abcdef",
+            "encrypted_key_share": "deadbeef",
+        })
+        assert resp.status_code == 400
+        assert "Ethereum address" in resp.json()["detail"]
+
     def test_signal_id_rejects_special_chars(self, client: TestClient) -> None:
         """Signal IDs with special characters should be rejected by Pydantic."""
         resp = client.post("/v1/signal", json={
             "signal_id": "sig/../../../etc/passwd",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "abcdef",
             "encrypted_key_share": "deadbeef",
@@ -710,7 +722,7 @@ class TestExceptionHandler:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/v1/signal", json={
             "signal_id": "sig-001",
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": 1,
             "share_y": "ff",
             "encrypted_key_share": "abcd",
@@ -1037,7 +1049,7 @@ class TestFieldElementBoundsValidation:
         oversized = hex(BN254_PRIME + 1)
         resp = client.post("/v1/signal", json={
             "signal_id": "test-oversize",
-            "genius_address": "0xabc",
+            "genius_address": "0x" + "ab" * 20,
             "share_x": 1,
             "share_y": oversized,
             "encrypted_key_share": "aabb",
@@ -1048,7 +1060,7 @@ class TestFieldElementBoundsValidation:
         """share_y within BN254 range should be accepted."""
         resp = client.post("/v1/signal", json={
             "signal_id": "test-valid-y",
-            "genius_address": "0xabc",
+            "genius_address": "0x" + "ab" * 20,
             "share_x": 1,
             "share_y": "ff",
             "encrypted_key_share": "aabb",

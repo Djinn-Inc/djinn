@@ -53,7 +53,7 @@ class TestSignalLifecycle:
         """Signal is available at sportsbook → purchase succeeds and key is returned."""
         real_index = 3  # The genius's real pick is line #3
         signal_id = "lifecycle-available-001"
-        genius_address = "0xGeniusLifecycle"
+        genius_address = "0x" + "cc" * 20
         encrypted_aes_key = b"this-is-the-encrypted-aes-key!!"
 
         # In single-validator dev mode, the MPC prototype reconstructs from
@@ -99,7 +99,7 @@ class TestSignalLifecycle:
         # Store share
         client.post("/v1/signal", json={
             "signal_id": signal_id,
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": share.x,
             "share_y": hex(share.y)[2:],
             "encrypted_key_share": encrypted_aes_key.hex(),
@@ -127,7 +127,7 @@ class TestSignalLifecycle:
 
         client.post("/v1/signal", json={
             "signal_id": signal_id,
-            "genius_address": "0xGenius",
+            "genius_address": "0x" + "aa" * 20,
             "share_x": share.x,
             "share_y": hex(share.y)[2:],
             "encrypted_key_share": encrypted_aes_key.hex(),

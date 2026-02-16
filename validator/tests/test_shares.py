@@ -61,10 +61,11 @@ class TestShareStore:
         signals = self.store.active_signals()
         assert set(signals) == {"sig-1", "sig-2"}
 
-    def test_duplicate_store_ignored(self) -> None:
+    def test_duplicate_store_raises(self) -> None:
         self.store.store("sig-1", "0xG", Share(x=1, y=1), b"first")
-        self.store.store("sig-1", "0xG", Share(x=1, y=999), b"second")
-        # Should keep first
+        with pytest.raises(ValueError, match="already stored"):
+            self.store.store("sig-1", "0xG", Share(x=1, y=999), b"second")
+        # Original should be preserved
         record = self.store.get("sig-1")
         assert record is not None
         assert record.encrypted_key_share == b"first"

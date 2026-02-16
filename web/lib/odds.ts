@@ -108,28 +108,37 @@ export interface StructuredLine {
   market: string; // "spreads" | "totals" | "h2h"
   line: number | null; // point value (null for h2h)
   side: string; // team name or "Over"/"Under"
+  price?: number; // decimal odds (e.g. 1.91); display-only, not part of signal secrecy
 }
 
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
+/** Convert decimal odds to American format for display. */
+function toAmerican(decimal: number): string {
+  if (decimal >= 2.0) return `+${Math.round((decimal - 1) * 100)}`;
+  if (decimal > 1.0) return `${Math.round(-100 / (decimal - 1))}`;
+  return "EVEN";
+}
+
 /** Convert a StructuredLine into a human-readable display string. */
 export function formatLine(line: StructuredLine): string {
   const teams = abbreviateTeam(line.home_team) + " vs " + abbreviateTeam(line.away_team);
+  const oddsStr = line.price ? ` (${toAmerican(line.price)})` : "";
   switch (line.market) {
     case "spreads": {
       const spread = line.line != null ? (line.line > 0 ? `+${line.line}` : `${line.line}`) : "";
-      return `${line.side} ${spread} — ${teams}`;
+      return `${line.side} ${spread}${oddsStr} — ${teams}`;
     }
     case "totals": {
       const total = line.line != null ? `${line.line}` : "";
-      return `${line.side} ${total} — ${teams}`;
+      return `${line.side} ${total}${oddsStr} — ${teams}`;
     }
     case "h2h":
-      return `${line.side} ML — ${teams}`;
+      return `${line.side}${oddsStr} ML — ${teams}`;
     default:
-      return `${line.side} — ${teams}`;
+      return `${line.side}${oddsStr} — ${teams}`;
   }
 }
 
@@ -273,6 +282,7 @@ export function betToLine(bet: AvailableBet): StructuredLine {
     market: bet.market,
     line: bet.line,
     side: bet.side,
+    price: bet.avgPrice,
   };
 }
 
@@ -285,11 +295,28 @@ function lineKey(l: StructuredLine): string {
   return `${l.event_id}|${l.market}|${l.side}|${l.line}`;
 }
 
-/** Fisher-Yates shuffle (does not mutate input). */
+/** Generate plausible odds for synthetic decoy lines based on the real pick's market. */
+function syntheticOdds(realPick: StructuredLine): number {
+  // Standard vig odds: spreads/totals hover around -110 (1.909), ML varies widely
+  const rng = new Uint32Array(1);
+  crypto.getRandomValues(rng);
+  const jitter = ((rng[0] % 20) - 10) / 100; // ±0.10
+  if (realPick.market === "h2h") {
+    // ML odds vary widely: -300 to +300 (1.33 to 4.0 decimal)
+    const base = realPick.price ?? 1.91;
+    return Math.max(1.1, base + jitter * 3);
+  }
+  // Spreads and totals: -115 to -105 range (1.87 to 1.95 decimal)
+  return 1.91 + jitter;
+}
+
+/** Fisher-Yates shuffle using crypto.getRandomValues (does not mutate input). */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
+  const rng = new Uint32Array(a.length);
+  crypto.getRandomValues(rng);
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = rng[i] % (i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -396,6 +423,7 @@ export function generateDecoys(
           side: realPick.market === "totals"
             ? (offset > 0 ? "Over" : "Under")
             : (offset > 0 ? ev.away_team : ev.home_team),
+          price: syntheticOdds(realPick),
         };
         const key = lineKey(synthLine);
         if (used.has(key)) continue;
@@ -419,6 +447,7 @@ export function generateDecoys(
           ...realPick,
           line: (realPick.line ?? 0) + offset,
           side,
+          price: syntheticOdds(realPick),
         };
         const key = lineKey(synthLine);
         if (used.has(key)) continue;

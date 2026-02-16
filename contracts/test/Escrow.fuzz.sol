@@ -68,7 +68,7 @@ contract EscrowFuzzTest is Test {
     ///      collateral locked = notional * slaMultiplierBps / 10_000
     function testFuzz_purchase_feeMath(uint256 notional, uint16 maxPriceBps) public {
         // Bound to realistic ranges to avoid overflow
-        notional = bound(notional, 1, 1e12); // 1 wei to 1M USDC
+        notional = bound(notional, 1e6, 1e12); // 1 USDC to 1M USDC (MIN_NOTIONAL = 1e6)
         maxPriceBps = uint16(bound(uint256(maxPriceBps), 1, 5000)); // 0.01% to 50%
 
         uint256 slaMultiplierBps = 15_000; // 150%
