@@ -97,7 +97,7 @@ from djinn_validator.core.outcomes import (
 )
 from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
-from djinn_validator.utils.crypto import Share
+from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 import hashlib
 import re
@@ -109,6 +109,20 @@ def _validate_signal_id_path(signal_id: str) -> None:
     """Validate signal_id path parameter format."""
     if not _SIGNAL_ID_PATH_RE.match(signal_id):
         raise HTTPException(status_code=400, detail="Invalid signal_id format")
+
+
+def _parse_field_hex(value: str, name: str) -> int:
+    """Parse a hex string to int, validating it's a valid BN254 field element."""
+    try:
+        v = int(value, 16)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid hex encoding for {name}")
+    if v < 0 or v >= BN254_PRIME:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name} must be a valid field element (0 <= v < BN254_PRIME)",
+        )
+    return v
 
 
 def _signal_id_to_uint256(signal_id: str) -> int:
@@ -141,10 +155,34 @@ def create_app(
     """Create the FastAPI application with injected dependencies."""
     # Resources that need cleanup on shutdown
     _cleanup_resources: list = []
+    _shutdown_event = asyncio.Event()
+
+    async def _periodic_state_cleanup() -> None:
+        """Background task to evict stale participant/OT states every 60s."""
+        while not _shutdown_event.is_set():
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                return
+            try:
+                with _participant_lock:
+                    _cleanup_stale_participants_locked()
+                with _ot_lock:
+                    _cleanup_stale_ot_states_locked()
+                _mpc.cleanup_expired()
+            except Exception:
+                log.warning("periodic_cleanup_error", exc_info=True)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        cleanup_task = asyncio.create_task(_periodic_state_cleanup())
         yield
+        _shutdown_event.set()
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
         for resource in _cleanup_resources:
             try:
                 await resource.close()
@@ -213,8 +251,6 @@ def create_app(
     @app.post("/v1/signal", response_model=StoreShareResponse)
     async def store_share(req: StoreShareRequest) -> StoreShareResponse:
         """Accept and store an encrypted key share from a Genius."""
-        from djinn_validator.utils.crypto import BN254_PRIME
-
         try:
             share_y = int(req.share_y, 16)
             encrypted = bytes.fromhex(req.encrypted_key_share)
@@ -605,15 +641,15 @@ def create_app(
 
             try:
                 if req.authenticated and req.auth_triple_shares and req.alpha_share and req.auth_r_share:
-                    # SPDZ authenticated mode
-                    alpha_val = int(req.alpha_share, 16)
-                    r_y = int(req.auth_r_share["y"], 16)
-                    r_mac = int(req.auth_r_share["mac"], 16)
+                    # SPDZ authenticated mode — validate all field elements
+                    alpha_val = _parse_field_hex(req.alpha_share, "alpha_share")
+                    r_y = _parse_field_hex(req.auth_r_share["y"], "auth_r_share.y")
+                    r_mac = _parse_field_hex(req.auth_r_share["mac"], "auth_r_share.mac")
 
                     # Use auth_secret_share if provided, otherwise create from local share
                     if req.auth_secret_share:
-                        s_y = int(req.auth_secret_share["y"], 16)
-                        s_mac = int(req.auth_secret_share["mac"], 16)
+                        s_y = _parse_field_hex(req.auth_secret_share["y"], "auth_secret_share.y")
+                        s_mac = _parse_field_hex(req.auth_secret_share["mac"], "auth_secret_share.mac")
                     else:
                         s_y = record.share.y
                         s_mac = 0  # Will fail MAC check if actually used
@@ -621,21 +657,21 @@ def create_app(
                     auth_ta = []
                     auth_tb = []
                     auth_tc = []
-                    for ts in req.auth_triple_shares:
+                    for i, ts in enumerate(req.auth_triple_shares):
                         auth_ta.append(AuthenticatedShare(
                             x=record.share.x,
-                            y=int(ts["a"]["y"], 16),
-                            mac=int(ts["a"]["mac"], 16),
+                            y=_parse_field_hex(ts["a"]["y"], f"triple[{i}].a.y"),
+                            mac=_parse_field_hex(ts["a"]["mac"], f"triple[{i}].a.mac"),
                         ))
                         auth_tb.append(AuthenticatedShare(
                             x=record.share.x,
-                            y=int(ts["b"]["y"], 16),
-                            mac=int(ts["b"]["mac"], 16),
+                            y=_parse_field_hex(ts["b"]["y"], f"triple[{i}].b.y"),
+                            mac=_parse_field_hex(ts["b"]["mac"], f"triple[{i}].b.mac"),
                         ))
                         auth_tc.append(AuthenticatedShare(
                             x=record.share.x,
-                            y=int(ts["c"]["y"], 16),
-                            mac=int(ts["c"]["mac"], 16),
+                            y=_parse_field_hex(ts["c"]["y"], f"triple[{i}].c.y"),
+                            mac=_parse_field_hex(ts["c"]["mac"], f"triple[{i}].c.mac"),
                         ))
 
                     state: DistributedParticipantState | AuthenticatedParticipantState = AuthenticatedParticipantState(
@@ -649,11 +685,11 @@ def create_app(
                         triple_c=auth_tc,
                     )
                 else:
-                    # Semi-honest mode
-                    r_share = int(req.r_share_y, 16)
-                    triple_a = [int(ts.get("a", "0"), 16) for ts in req.triple_shares]
-                    triple_b = [int(ts.get("b", "0"), 16) for ts in req.triple_shares]
-                    triple_c = [int(ts.get("c", "0"), 16) for ts in req.triple_shares]
+                    # Semi-honest mode — validate all field elements
+                    r_share = _parse_field_hex(req.r_share_y, "r_share_y")
+                    triple_a = [_parse_field_hex(ts.get("a", "0"), f"triple[{i}].a") for i, ts in enumerate(req.triple_shares)]
+                    triple_b = [_parse_field_hex(ts.get("b", "0"), f"triple[{i}].b") for i, ts in enumerate(req.triple_shares)]
+                    triple_c = [_parse_field_hex(ts.get("c", "0"), f"triple[{i}].c") for i, ts in enumerate(req.triple_shares)]
 
                     state = DistributedParticipantState(
                         validator_x=record.share.x,
@@ -664,8 +700,8 @@ def create_app(
                         triple_b=triple_b,
                         triple_c=triple_c,
                     )
-            except (ValueError, TypeError) as e:
-                raise HTTPException(status_code=400, detail=f"Invalid hex in MPC init data: {e}")
+            except (ValueError, TypeError, KeyError):
+                raise HTTPException(status_code=400, detail="Invalid MPC init data format")
 
             with _participant_lock:
                 # Evict oldest if at capacity
@@ -683,11 +719,8 @@ def create_app(
     async def mpc_round1(req: MPCRound1Request, request: Request) -> MPCRound1Response:
         """Accept a Round 1 message for a multiplication gate."""
         await validate_signed_request(request, _get_validator_hotkeys())
-        try:
-            d_val = int(req.d_value, 16)
-            e_val = int(req.e_value, 16)
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid hex value in MPC round1 data")
+        d_val = _parse_field_hex(req.d_value, "d_value")
+        e_val = _parse_field_hex(req.e_value, "e_value")
         msg = Round1Message(
             validator_x=req.validator_x,
             d_value=d_val,
@@ -715,8 +748,8 @@ def create_app(
         if state is None:
             raise HTTPException(status_code=404, detail="No participant state for this session")
 
-        prev_d = int(req.prev_opened_d, 16) if req.prev_opened_d else None
-        prev_e = int(req.prev_opened_e, 16) if req.prev_opened_e else None
+        prev_d = _parse_field_hex(req.prev_opened_d, "prev_opened_d") if req.prev_opened_d else None
+        prev_e = _parse_field_hex(req.prev_opened_e, "prev_opened_e") if req.prev_opened_e else None
 
         try:
             if isinstance(state, AuthenticatedParticipantState):
@@ -883,15 +916,30 @@ def create_app(
             log.info("ot_state_cleanup", evicted=len(stale))
         return len(stale)
 
+    # Maximum allowed bit length for DH group primes (4096 bits)
+    _MAX_DH_PRIME_BITS = 4096
+
     def _resolve_ot_params(
         field_prime_hex: str | None, dh_prime_hex: str | None,
     ) -> tuple[int, DHGroup]:
         """Resolve OT parameters from request, falling back to defaults."""
-        from djinn_validator.utils.crypto import BN254_PRIME
+        if field_prime_hex:
+            try:
+                fp = int(field_prime_hex, 16)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid hex for field_prime")
+            if fp < 2 or fp >= 2**256:
+                raise HTTPException(status_code=400, detail="field_prime out of range")
+        else:
+            fp = BN254_PRIME
 
-        fp = int(field_prime_hex, 16) if field_prime_hex else BN254_PRIME
         if dh_prime_hex:
-            dhp = int(dh_prime_hex, 16)
+            try:
+                dhp = int(dh_prime_hex, 16)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid hex for dh_prime")
+            if dhp < 2 or dhp.bit_length() > _MAX_DH_PRIME_BITS:
+                raise HTTPException(status_code=400, detail="dh_prime out of range")
             bl = (dhp.bit_length() + 7) // 8
             dh_group = DHGroup(prime=dhp, generator=2, byte_length=bl)
         else:

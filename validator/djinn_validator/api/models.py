@@ -30,7 +30,7 @@ class StoreShareRequest(BaseModel):
     signal_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     genius_address: str = Field(max_length=256)
     share_x: int = Field(ge=1, le=10)
-    share_y: str = Field(max_length=512)  # Hex-encoded field element
+    share_y: str = Field(max_length=66)  # Hex-encoded BN254 field element (64 hex + 0x)
     encrypted_key_share: str = Field(max_length=4096)  # Hex-encoded encrypted AES key share
 
     @field_validator("share_y")
@@ -207,8 +207,8 @@ class MPCRound1Request(BaseModel):
     session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
     gate_idx: int = Field(ge=0, le=20)
     validator_x: int = Field(ge=1, le=255)
-    d_value: str = Field(max_length=260)  # Hex-encoded
-    e_value: str = Field(max_length=260)  # Hex-encoded
+    d_value: str = Field(max_length=66)  # Hex-encoded BN254 field element
+    e_value: str = Field(max_length=66)  # Hex-encoded BN254 field element
 
     @field_validator("d_value", "e_value")
     @classmethod
@@ -305,7 +305,7 @@ class OTSetupRequest(BaseModel):
     x_coords: list[int] = Field(max_length=20)
     threshold: int = Field(default=7, ge=1, le=20)
     # Optional field prime for test configurations (default: BN254 prime)
-    field_prime: str | None = Field(default=None, max_length=128)
+    field_prime: str | None = Field(default=None, max_length=66)
     # Optional DH group prime for test configurations (default: RFC 3526 Group 14)
     dh_prime: str | None = Field(default=None, max_length=1024)
 

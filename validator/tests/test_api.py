@@ -1026,3 +1026,83 @@ class TestResolveTimeout:
         })
         assert resp.status_code == 504
         assert "timed out" in resp.json()["detail"]
+
+
+class TestFieldElementBoundsValidation:
+    """Verify hex-to-int conversions reject values outside BN254 field."""
+
+    def test_oversized_share_y_rejected(self, client: TestClient) -> None:
+        """share_y exceeding BN254 prime must be rejected."""
+        from djinn_validator.utils.crypto import BN254_PRIME
+        oversized = hex(BN254_PRIME + 1)
+        resp = client.post("/v1/signal", json={
+            "signal_id": "test-oversize",
+            "genius_address": "0xabc",
+            "share_x": 1,
+            "share_y": oversized,
+            "encrypted_key_share": "aabb",
+        })
+        assert resp.status_code == 400
+
+    def test_valid_share_y_accepted(self, client: TestClient) -> None:
+        """share_y within BN254 range should be accepted."""
+        resp = client.post("/v1/signal", json={
+            "signal_id": "test-valid-y",
+            "genius_address": "0xabc",
+            "share_x": 1,
+            "share_y": "ff",
+            "encrypted_key_share": "aabb",
+        })
+        assert resp.status_code == 200
+
+    def test_mpc_round1_oversized_d_value_rejected(self, client: TestClient) -> None:
+        """d_value exceeding BN254 prime must be rejected via Pydantic max_length or server validation."""
+        from djinn_validator.utils.crypto import BN254_PRIME
+        oversized = hex(BN254_PRIME + 1)
+        resp = client.post("/v1/mpc/round1", json={
+            "session_id": "test-round1",
+            "gate_idx": 0,
+            "validator_x": 1,
+            "d_value": oversized,
+            "e_value": "ff",
+        })
+        # Pydantic rejects max_length=66 before server, or server rejects >= BN254_PRIME
+        assert resp.status_code in (400, 422)
+
+    def test_compute_gate_oversized_prev_d_rejected(self, client: TestClient, share_store: ShareStore) -> None:
+        """prev_opened_d exceeding BN254 prime must be rejected."""
+        from djinn_validator.utils.crypto import BN254_PRIME
+        oversized = hex(BN254_PRIME + 1)
+        xs = list(range(1, 8))
+        share_store.store("sig-gate-bounds", "0xG", Share(x=1, y=42), b"key")
+        client.post("/v1/mpc/init", json={
+            "session_id": "sess-gate-bounds",
+            "signal_id": "sig-gate-bounds",
+            "available_indices": [1, 2],
+            "coordinator_x": 1,
+            "participant_xs": xs,
+            "threshold": 2,
+            "r_share_y": "ff",
+            "triple_shares": [{"a": "1", "b": "2", "c": "2"}],
+        })
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "sess-gate-bounds",
+            "gate_idx": 1,
+            "prev_opened_d": oversized,
+            "prev_opened_e": "ff",
+        })
+        assert resp.status_code in (400, 422)
+
+
+class TestOTParamBounds:
+    """Verify OT setup rejects invalid field_prime / dh_prime values."""
+
+    def test_ot_setup_invalid_hex_field_prime(self, client: TestClient) -> None:
+        """Non-hex field_prime must be rejected."""
+        resp = client.post("/v1/mpc/ot/setup", json={
+            "session_id": "ot-hex-test",
+            "n_triples": 1,
+            "x_coords": [1, 2],
+            "field_prime": "zzzz",
+        })
+        assert resp.status_code in (400, 422)
