@@ -28,6 +28,7 @@ Security model:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 from dataclasses import dataclass, field
 
@@ -230,7 +231,7 @@ def verify_mac_commitment(commitment: MACCheckCommitment, reveal: MACCheckReveal
         return False
     payload = reveal.sigma.to_bytes(32, "big") + reveal.nonce
     expected = hashlib.sha256(payload).digest()
-    return commitment.commitment == expected
+    return hmac.compare_digest(commitment.commitment, expected)
 
 
 def verify_mac_opening(

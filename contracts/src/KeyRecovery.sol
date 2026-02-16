@@ -30,6 +30,12 @@ contract KeyRecovery {
     /// @notice Recovery blob must not be empty
     error EmptyBlob();
 
+    /// @notice Recovery blob exceeds maximum allowed size
+    error BlobTooLarge(uint256 size, uint256 maxSize);
+
+    /// @notice Maximum blob size (4 KB — plenty for encrypted AES keys)
+    uint256 public constant MAX_BLOB_SIZE = 4096;
+
     // -------------------------------------------------------------------------
     // External Functions
     // -------------------------------------------------------------------------
@@ -40,6 +46,7 @@ contract KeyRecovery {
     /// @param blob The encrypted recovery blob
     function storeRecoveryBlob(bytes calldata blob) external {
         if (blob.length == 0) revert EmptyBlob();
+        if (blob.length > MAX_BLOB_SIZE) revert BlobTooLarge(blob.length, MAX_BLOB_SIZE);
 
         _recoveryBlobs[msg.sender] = blob;
 

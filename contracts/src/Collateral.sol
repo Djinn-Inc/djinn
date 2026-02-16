@@ -5,12 +5,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title Collateral
 /// @notice Holds Genius USDC collateral to cover worst-case damages on active signals.
 /// Required collateral = sum of (notional * slaMultiplierBps / 10000) for all active signal purchases.
 /// If a Genius's collateral drops below the locked minimum, open signals can be auto-cancelled.
-contract Collateral is Ownable, Pausable {
+contract Collateral is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice USDC token (6 decimals)
@@ -85,7 +86,7 @@ contract Collateral is Ownable, Pausable {
 
     /// @notice Withdraw excess collateral not currently locked
     /// @param amount Amount of USDC to withdraw (6 decimals)
-    function withdraw(uint256 amount) external whenNotPaused {
+    function withdraw(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 available = deposits[msg.sender] - locked[msg.sender];
         if (amount > available) {
@@ -138,7 +139,7 @@ contract Collateral is Ownable, Pausable {
     /// @param genius The Genius being slashed
     /// @param amount Amount of USDC to slash (6 decimals)
     /// @param recipient Address to receive the slashed USDC (the Idiot, via Escrow/Audit)
-    function slash(address genius, uint256 amount, address recipient) external onlyAuthorized {
+    function slash(address genius, uint256 amount, address recipient) external onlyAuthorized nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 available = deposits[genius];
         uint256 slashAmount = amount > available ? available : amount;

@@ -166,7 +166,7 @@ class PurchaseOrchestrator:
         now = time.monotonic()
         transient = (PurchaseStatus.CHECKING_AVAILABILITY, PurchaseStatus.MPC_IN_PROGRESS, PurchaseStatus.PENDING)
         failed = 0
-        for req in self._active.values():
+        for req in list(self._active.values()):
             if req.status in transient and now - req.created_at > stale_timeout:
                 log.warning(
                     "purchase_stale_timeout",

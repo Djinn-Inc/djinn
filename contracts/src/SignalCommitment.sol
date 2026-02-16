@@ -99,8 +99,20 @@ contract SignalCommitment is Ownable {
     /// @notice Encrypted blob must not be empty
     error EmptyEncryptedBlob();
 
+    /// @notice Encrypted blob exceeds maximum allowed size
+    error BlobTooLarge(uint256 size, uint256 maxSize);
+
+    /// @notice Too many sportsbooks provided
+    error TooManySportsbooks(uint256 provided, uint256 max);
+
     /// @notice Commit hash must not be zero
     error ZeroCommitHash();
+
+    /// @notice Maximum encrypted blob size (64 KB)
+    uint256 public constant MAX_BLOB_SIZE = 65536;
+
+    /// @notice Maximum number of sportsbooks per signal
+    uint256 public constant MAX_SPORTSBOOKS = 50;
 
     // ─── Modifiers
     // ──────────────────────────────────────────────────────
@@ -138,6 +150,8 @@ contract SignalCommitment is Ownable {
     function commit(CommitParams calldata p) external {
         if (_exists[p.signalId]) revert SignalAlreadyExists(p.signalId);
         if (p.encryptedBlob.length == 0) revert EmptyEncryptedBlob();
+        if (p.encryptedBlob.length > MAX_BLOB_SIZE) revert BlobTooLarge(p.encryptedBlob.length, MAX_BLOB_SIZE);
+        if (p.availableSportsbooks.length > MAX_SPORTSBOOKS) revert TooManySportsbooks(p.availableSportsbooks.length, MAX_SPORTSBOOKS);
         if (p.commitHash == bytes32(0)) revert ZeroCommitHash();
         if (p.decoyLines.length != 10) revert InvalidDecoyLinesLength(p.decoyLines.length);
         if (p.slaMultiplierBps < 10_000) revert SlaMultiplierTooLow(p.slaMultiplierBps);
