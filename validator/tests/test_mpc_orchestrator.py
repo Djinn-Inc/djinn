@@ -351,3 +351,54 @@ class TestFallbackBehavior:
         )
         assert result.available is True
         assert result.participating_validators == 1
+
+
+class TestPeerRetryBehavior:
+    """Test that _peer_request retries correctly."""
+
+    @pytest.mark.asyncio
+    async def test_succeeds_after_transient_500(self, httpx_mock) -> None:
+        """Request succeeds on third attempt after two 500s."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+
+        # Two failures, then success
+        httpx_mock.add_response(url="http://peer:8421/test", status_code=500)
+        httpx_mock.add_response(url="http://peer:8421/test", status_code=500)
+        httpx_mock.add_response(url="http://peer:8421/test", json={"ok": True})
+
+        resp = await orch._peer_request("get", "http://peer:8421/test")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_4xx(self, httpx_mock) -> None:
+        """4xx responses are returned immediately without retry."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+
+        httpx_mock.add_response(url="http://peer:8421/test", status_code=404)
+
+        resp = await orch._peer_request("get", "http://peer:8421/test")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_raises_after_all_retries_exhausted(self, httpx_mock) -> None:
+        """Raises after all retry attempts fail."""
+        import httpx as httpx_lib
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+
+        for _ in range(orch._PEER_RETRIES + 1):
+            httpx_mock.add_response(url="http://peer:8421/test", status_code=502)
+
+        with pytest.raises(httpx_lib.HTTPStatusError):
+            await orch._peer_request("get", "http://peer:8421/test")
+
+    @pytest.mark.asyncio
+    async def test_close_releases_client(self) -> None:
+        """close() shuts down the shared HTTP client."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None)
+        await orch.close()
+        assert orch._http.is_closed
