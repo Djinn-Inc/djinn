@@ -8,7 +8,17 @@
  * Circuit artifacts (.wasm, .zkey, vkey.json) are served from /circuits/.
  */
 
-import * as snarkjs from "snarkjs";
+import type * as SnarkjsTypes from "snarkjs";
+
+let _snarkjs: typeof SnarkjsTypes | null = null;
+
+async function ensureSnarkjs(): Promise<typeof SnarkjsTypes> {
+  if (!_snarkjs) {
+    _snarkjs = await import("snarkjs");
+  }
+  return _snarkjs;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let poseidonBuilder: any = null;
 
@@ -43,7 +53,7 @@ export interface SignalData {
 }
 
 export interface Groth16Proof {
-  proof: snarkjs.Groth16Proof;
+  proof: SnarkjsTypes.Groth16Proof;
   publicSignals: string[];
 }
 
@@ -258,6 +268,7 @@ export async function generateAuditProof(
 ): Promise<AuditProofResult> {
   const input = await buildAuditInput(signals);
 
+  const snarkjs = await ensureSnarkjs();
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     input,
     AUDIT_WASM,
@@ -278,6 +289,7 @@ export async function generateTrackRecordProof(
 ): Promise<TrackRecordProofResult> {
   const input = await buildTrackRecordInput(signals);
 
+  const snarkjs = await ensureSnarkjs();
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     input,
     TRACK_RECORD_WASM,
@@ -302,7 +314,7 @@ export async function generateTrackRecordProof(
 // Verification
 // ---------------------------------------------------------------------------
 
-async function fetchVkey(path: string): Promise<snarkjs.VKey> {
+async function fetchVkey(path: string): Promise<SnarkjsTypes.VKey> {
   const resp = await fetch(path);
   if (!resp.ok) throw new Error(`Failed to fetch verification key: ${path}`);
   return resp.json();
@@ -312,9 +324,10 @@ async function fetchVkey(path: string): Promise<snarkjs.VKey> {
  * Verify an audit proof. Returns true if valid.
  */
 export async function verifyAuditProof(
-  proof: snarkjs.Groth16Proof,
+  proof: SnarkjsTypes.Groth16Proof,
   publicSignals: string[],
 ): Promise<boolean> {
+  const snarkjs = await ensureSnarkjs();
   const vkey = await fetchVkey(AUDIT_VKEY);
   return snarkjs.groth16.verify(vkey, publicSignals, proof);
 }
@@ -323,9 +336,10 @@ export async function verifyAuditProof(
  * Verify a track record proof. Returns true if valid.
  */
 export async function verifyTrackRecordProof(
-  proof: snarkjs.Groth16Proof,
+  proof: SnarkjsTypes.Groth16Proof,
   publicSignals: string[],
 ): Promise<boolean> {
+  const snarkjs = await ensureSnarkjs();
   const vkey = await fetchVkey(TRACK_RECORD_VKEY);
   return snarkjs.groth16.verify(vkey, publicSignals, proof);
 }
@@ -339,8 +353,9 @@ export async function verifyTrackRecordProof(
  * Returns the encoded bytes for the Solidity verifyProof() call.
  */
 export async function proofToSolidityCalldata(
-  proof: snarkjs.Groth16Proof,
+  proof: SnarkjsTypes.Groth16Proof,
   publicSignals: string[],
 ): Promise<string> {
+  const snarkjs = await ensureSnarkjs();
   return snarkjs.groth16.exportSolidityCallData(proof, publicSignals);
 }

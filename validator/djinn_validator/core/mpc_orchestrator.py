@@ -100,7 +100,20 @@ class MPCOrchestrator:
         """HTTP request with retry and exponential backoff.
 
         Retries on transport errors and 5xx server errors.
+        Propagates request_id for distributed tracing.
         """
+        # Propagate request ID for distributed tracing
+        headers = kwargs.pop("headers", {})
+        try:
+            import structlog
+
+            ctx = structlog.contextvars.get_contextvars()
+            if "request_id" in ctx:
+                headers["X-Request-ID"] = ctx["request_id"]
+        except Exception:
+            pass
+        kwargs["headers"] = headers
+
         last_exc: Exception | None = None
         for attempt in range(self._PEER_RETRIES + 1):
             try:
