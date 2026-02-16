@@ -88,50 +88,106 @@ export interface MinerHealthResponse {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 2;
+const RETRY_BACKOFF_MS = 500;
 
-async function post<T>(url: string, body: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => res.statusText);
-      throw new Error(`${res.status}: ${detail}`);
-    }
-    return res.json() as Promise<T>;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
+/** Error subclass for API errors with status code. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail: string,
+    public readonly url: string,
+  ) {
+    super(`${status}: ${detail}`);
+    this.name = "ApiError";
+  }
+
+  /** True if the error is retryable (5xx or network failure). */
+  get retryable(): boolean {
+    return this.status >= 500;
+  }
+
+  /** True if rate-limited. */
+  get rateLimited(): boolean {
+    return this.status === 429;
   }
 }
 
-async function get<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => res.statusText);
-      throw new Error(`${res.status}: ${detail}`);
+/** Check if an error is retryable (5xx, network, or timeout). */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof ApiError) return err.retryable;
+  if (err instanceof DOMException && err.name === "AbortError") return false;
+  if (err instanceof TypeError) return true; // network errors
+  return false;
+}
+
+/** Sleep for ms with optional jitter. */
+function sleep(ms: number): Promise<void> {
+  const jitter = ms * 0.2 * Math.random();
+  return new Promise((resolve) => setTimeout(resolve, ms + jitter));
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  retries = MAX_RETRIES,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      if (res.ok || res.status < 500) return res;
+      // 5xx — retryable
+      lastErr = new ApiError(
+        res.status,
+        await res.text().catch(() => res.statusText),
+        url,
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        lastErr = new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+        // Timeouts are not retried
+        throw lastErr;
+      }
+      lastErr = err;
+      if (!isRetryable(err)) throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    return res.json() as Promise<T>;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+    if (attempt < retries) {
+      await sleep(RETRY_BACKOFF_MS * 2 ** attempt);
     }
-    throw err;
-  } finally {
-    clearTimeout(timer);
   }
+  throw lastErr;
+}
+
+async function post<T>(url: string, body: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
+  const res = await fetchWithRetry(
+    url,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new ApiError(res.status, detail, url);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function get<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
+  const res = await fetchWithRetry(url, {}, timeoutMs);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new ApiError(res.status, detail, url);
+  }
+  return res.json() as Promise<T>;
 }
 
 // ---------------------------------------------------------------------------

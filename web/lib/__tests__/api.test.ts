@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ValidatorClient, MinerClient } from "../api";
+import { ValidatorClient, MinerClient, ApiError } from "../api";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -59,10 +59,12 @@ describe("ValidatorClient", () => {
       expect(result.stored).toBe(true);
     });
 
-    it("throws on HTTP error", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ detail: "Internal error" }, 500),
-      );
+    it("throws on HTTP error after retries for 5xx", async () => {
+      // 5xx errors are retried (MAX_RETRIES=2 → 3 total attempts)
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ detail: "Internal error" }, 500))
+        .mockResolvedValueOnce(jsonResponse({ detail: "Internal error" }, 500))
+        .mockResolvedValueOnce(jsonResponse({ detail: "Internal error" }, 500));
 
       await expect(
         client.storeShare({
@@ -205,7 +207,7 @@ describe("MinerClient", () => {
       expect(result.results[0].bookmakers[0].bookmaker).toBe("DraftKings");
     });
 
-    it("throws on server error", async () => {
+    it("throws on client error (no retry for 4xx)", async () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({ detail: "bad request" }, 400),
       );
@@ -253,16 +255,56 @@ describe("Error handling", () => {
     await expect(client.health()).rejects.toThrow("404");
   });
 
-  it("propagates network errors", async () => {
+  it("propagates network errors after retries", async () => {
     const client = new MinerClient("http://localhost:8422");
-    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    // Network errors (TypeError) are retried
+    mockFetch
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await expect(client.health()).rejects.toThrow("Failed to fetch");
   });
 
-  it("wraps abort errors as timeout", async () => {
+  it("wraps abort errors as timeout (no retry)", async () => {
     const client = new MinerClient("http://localhost:8422");
     const abortError = new DOMException("The operation was aborted", "AbortError");
     mockFetch.mockRejectedValueOnce(abortError);
     await expect(client.health()).rejects.toThrow("timed out");
+    // Timeout should NOT be retried — only 1 fetch call
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry 4xx errors", async () => {
+    const client = new ValidatorClient("http://localhost:8421");
+    mockFetch.mockResolvedValueOnce(jsonResponse({ detail: "not found" }, 404));
+    await expect(client.health()).rejects.toThrow("404");
+    // 4xx should NOT be retried — only 1 fetch call
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries then succeeds on transient 500", async () => {
+    const client = new ValidatorClient("http://localhost:8421");
+    // First call 500, second call succeeds
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ detail: "error" }, 500))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: "ok", version: "0.1.0", uid: null, shares_held: 0, chain_connected: false, bt_connected: false }),
+      );
+
+    const result = await client.health();
+    expect(result.status).toBe("ok");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("ApiError has correct properties", () => {
+    const err = new ApiError(503, "Service unavailable", "http://test");
+    expect(err.status).toBe(503);
+    expect(err.retryable).toBe(true);
+    expect(err.rateLimited).toBe(false);
+    expect(err.name).toBe("ApiError");
+
+    const rateLimited = new ApiError(429, "Too many requests", "http://test");
+    expect(rateLimited.rateLimited).toBe(true);
+    expect(rateLimited.retryable).toBe(false);
   });
 });

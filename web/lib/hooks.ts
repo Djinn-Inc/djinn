@@ -13,6 +13,52 @@ import {
 import type { Signal, CommitParams } from "./types";
 
 // ---------------------------------------------------------------------------
+// Error humanization — turn raw contract errors into readable messages
+// ---------------------------------------------------------------------------
+
+const REVERT_PATTERNS: [RegExp, string][] = [
+  [/Insufficient collateral/i, "You don't have enough collateral deposited"],
+  [/Insufficient balance/i, "Insufficient USDC balance"],
+  [/Insufficient escrow/i, "Not enough funds in your escrow account"],
+  [/Signal expired/i, "This signal has expired"],
+  [/Signal does not exist/i, "Signal not found on-chain"],
+  [/Already purchased/i, "You've already purchased this signal"],
+  [/Already committed/i, "This signal was already committed"],
+  [/Not genius/i, "Only the signal creator can perform this action"],
+  [/Transfer amount exceeds allowance/i, "USDC approval needed — please approve the transfer first"],
+  [/Transfer amount exceeds balance/i, "Insufficient USDC balance in your wallet"],
+  [/user rejected/i, "Transaction cancelled by user"],
+  [/user denied/i, "Transaction cancelled by user"],
+  [/ACTION_REJECTED/i, "Transaction cancelled by user"],
+  [/nonce.*already.*used/i, "Transaction nonce conflict — please wait and try again"],
+  [/replacement.*underpriced/i, "Gas price too low — try increasing gas"],
+  [/insufficient funds for gas/i, "Not enough ETH to cover gas fees"],
+];
+
+/** Convert a raw transaction error to a user-friendly message. */
+export function humanizeError(err: unknown, fallback = "Transaction failed"): string {
+  if (!(err instanceof Error)) return fallback;
+  const msg = err.message;
+
+  for (const [pattern, readable] of REVERT_PATTERNS) {
+    if (pattern.test(msg)) return readable;
+  }
+
+  // Extract revert reason if present
+  const revertMatch = msg.match(/reason="([^"]+)"/);
+  if (revertMatch) return revertMatch[1];
+
+  // Extract error string from reverted call
+  const execMatch = msg.match(/execution reverted:\s*"?([^"]+)"?/);
+  if (execMatch) return execMatch[1];
+
+  // For generic contract errors, clean up the message
+  if (msg.length > 200) return fallback;
+
+  return msg;
+}
+
+// ---------------------------------------------------------------------------
 // Provider hook — returns an ethers BrowserProvider from the user's wallet
 // ---------------------------------------------------------------------------
 
@@ -241,8 +287,7 @@ export function useCommitSignal() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Transaction failed";
-        setError(msg);
+        setError(humanizeError(err));
         throw err;
       } finally {
         setLoading(false);
@@ -270,8 +315,7 @@ export function usePurchaseSignal() {
         const receipt = await tx.wait();
         return receipt;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Transaction failed";
-        setError(msg);
+        setError(humanizeError(err));
         throw err;
       } finally {
         setLoading(false);
@@ -303,8 +347,7 @@ export function useDepositEscrow() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Deposit failed";
-        setError(msg);
+        setError(humanizeError(err, "Deposit failed"));
         throw err;
       } finally {
         setLoading(false);
@@ -336,8 +379,7 @@ export function useDepositCollateral() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Deposit failed";
-        setError(msg);
+        setError(humanizeError(err, "Deposit failed"));
         throw err;
       } finally {
         setLoading(false);
@@ -369,8 +411,7 @@ export function useWithdrawEscrow() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Withdraw failed";
-        setError(msg);
+        setError(humanizeError(err, "Withdraw failed"));
         throw err;
       } finally {
         setLoading(false);
@@ -398,8 +439,7 @@ export function useWithdrawCollateral() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Withdraw failed";
-        setError(msg);
+        setError(humanizeError(err, "Withdraw failed"));
         throw err;
       } finally {
         setLoading(false);
@@ -431,8 +471,7 @@ export function useApproveUsdc() {
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Approval failed";
-        setError(msg);
+        setError(humanizeError(err, "Approval failed"));
         throw err;
       } finally {
         setLoading(false);
