@@ -300,4 +300,84 @@ contract TrackRecordTest is Test {
         VerifiedRecord memory rec = trackRecord.getRecord(0);
         assertEq(rec.submittedAt, 1700000000);
     }
+
+    // ─── Fuzz Tests ────────────────────────────────────────────────────────
+
+    function testFuzz_submit_storesAnyStats(
+        uint256 signalCount,
+        uint256 totalGain,
+        uint256 totalLoss,
+        uint256 favCount,
+        uint256 unfavCount,
+        uint256 voidCount
+    ) public {
+        // Bound to reasonable ranges to avoid gas issues
+        signalCount = bound(signalCount, 0, 20);
+        totalGain = bound(totalGain, 0, type(uint128).max);
+        totalLoss = bound(totalLoss, 0, type(uint128).max);
+        favCount = bound(favCount, 0, 20);
+        unfavCount = bound(unfavCount, 0, 20);
+        voidCount = bound(voidCount, 0, 20);
+
+        uint256[106] memory pubSignals = _buildPubSignals(
+            signalCount, totalGain, totalLoss, favCount, unfavCount, voidCount
+        );
+        // Vary proof elements to avoid duplicate proof hash
+        uint256[2] memory pA = [signalCount, totalGain];
+        uint256[2][2] memory pB = [[totalLoss, favCount], [unfavCount, voidCount]];
+        uint256[2] memory pC = [uint256(7), 8];
+
+        vm.prank(genius1);
+        uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
+
+        VerifiedRecord memory rec = trackRecord.getRecord(recordId);
+        assertEq(rec.genius, genius1);
+        assertEq(rec.signalCount, signalCount);
+        assertEq(rec.totalGain, totalGain);
+        assertEq(rec.totalLoss, totalLoss);
+        assertEq(rec.favCount, favCount);
+        assertEq(rec.unfavCount, unfavCount);
+        assertEq(rec.voidCount, voidCount);
+    }
+
+    function testFuzz_submit_proofHashUnique(
+        uint256 seed1,
+        uint256 seed2
+    ) public {
+        vm.assume(seed1 != seed2);
+
+        uint256[106] memory pubSignals1;
+        pubSignals1[0] = seed1;
+        pubSignals1[100] = 5;
+
+        uint256[106] memory pubSignals2;
+        pubSignals2[0] = seed2;
+        pubSignals2[100] = 5;
+
+        (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
+
+        vm.prank(genius1);
+        trackRecord.submit(pA, pB, pC, pubSignals1);
+
+        vm.prank(genius1);
+        trackRecord.submit(pA, pB, pC, pubSignals2);
+
+        assertEq(trackRecord.recordCount(), 2);
+    }
+
+    function testFuzz_submit_anySender(address sender) public {
+        vm.assume(sender != address(0));
+
+        (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
+        uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
+        // Vary pubSignals to avoid duplicate proof hash across fuzz runs
+        pubSignals[0] = uint256(uint160(sender));
+
+        vm.prank(sender);
+        uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
+
+        VerifiedRecord memory rec = trackRecord.getRecord(recordId);
+        assertEq(rec.genius, sender);
+        assertEq(trackRecord.getRecordCount(sender), 1);
+    }
 }
