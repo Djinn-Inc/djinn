@@ -139,17 +139,19 @@ class TestCollectPeerShares:
 
     @pytest.mark.asyncio
     async def test_partial_peer_failure(self, httpx_mock) -> None:
-        """One peer returns 500, the other succeeds."""
+        """One peer returns 500 (retried), the other succeeds."""
         coord = MPCCoordinator()
         orch = MPCOrchestrator(coordinator=coord, neuron=None)
         peers = [
             {"uid": 1, "url": "http://peer1:8421"},
             {"uid": 2, "url": "http://peer2:8421"},
         ]
-        httpx_mock.add_response(
-            url="http://peer1:8421/v1/signal/sig-1/share_info",
-            status_code=500,
-        )
+        # Register enough 500 responses for retries (initial + 2 retries = 3)
+        for _ in range(orch._PEER_RETRIES + 1):
+            httpx_mock.add_response(
+                url="http://peer1:8421/v1/signal/sig-1/share_info",
+                status_code=500,
+            )
         httpx_mock.add_response(
             url="http://peer2:8421/v1/signal/sig-1/share_info",
             json={"share_x": 2, "share_y": "ab"},
@@ -186,22 +188,22 @@ class TestCollectPeerShares:
 
     @pytest.mark.asyncio
     async def test_all_peers_fail(self, httpx_mock) -> None:
-        """All peers fail — returns empty list."""
-        import httpx as httpx_lib
+        """All peers fail (with retries) — returns empty list."""
         coord = MPCCoordinator()
         orch = MPCOrchestrator(coordinator=coord, neuron=None)
         peers = [
             {"uid": 1, "url": "http://peer1:8421"},
             {"uid": 2, "url": "http://peer2:8421"},
         ]
-        httpx_mock.add_response(
-            url="http://peer1:8421/v1/signal/sig-1/share_info",
-            status_code=503,
-        )
-        httpx_mock.add_response(
-            url="http://peer2:8421/v1/signal/sig-1/share_info",
-            status_code=503,
-        )
+        for _ in range(orch._PEER_RETRIES + 1):
+            httpx_mock.add_response(
+                url="http://peer1:8421/v1/signal/sig-1/share_info",
+                status_code=503,
+            )
+            httpx_mock.add_response(
+                url="http://peer2:8421/v1/signal/sig-1/share_info",
+                status_code=503,
+            )
         shares = await orch._collect_peer_shares(peers, "sig-1")
         assert len(shares) == 0
 
@@ -271,19 +273,20 @@ class TestDistributedMPC:
 
     @pytest.mark.asyncio
     async def test_peer_init_http_error_handled(self, httpx_mock) -> None:
-        """HTTP errors during init are caught gracefully."""
+        """HTTP errors during init are caught gracefully (with retries)."""
         coord = MPCCoordinator()
         orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
 
         peers = self._make_peers(5)
         share = Share(x=1, y=42)
 
-        # All peers return 500
-        for i in range(5):
-            httpx_mock.add_response(
-                url=f"http://peer{i + 1}:8421/v1/mpc/init",
-                status_code=500,
-            )
+        # All peers return 500, register enough for retries
+        for _ in range(orch._PEER_RETRIES + 1):
+            for i in range(5):
+                httpx_mock.add_response(
+                    url=f"http://peer{i + 1}:8421/v1/mpc/init",
+                    status_code=500,
+                )
 
         result = await orch._distributed_mpc("sig-1", share, {1}, peers)
         assert result is None

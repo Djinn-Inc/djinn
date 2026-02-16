@@ -314,7 +314,8 @@ class OutcomeAttestor:
 
     def __init__(self, sports_api_key: str = "") -> None:
         self._api_key = sports_api_key
-        self._client = httpx.AsyncClient(timeout=30.0)
+        limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        self._client = httpx.AsyncClient(timeout=30.0, limits=limits)
         self._attestations: dict[str, list[OutcomeAttestation]] = {}
         self._pending_signals: dict[str, SignalMetadata] = {}
         self._lock = asyncio.Lock()

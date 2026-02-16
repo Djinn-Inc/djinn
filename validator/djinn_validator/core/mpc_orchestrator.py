@@ -72,6 +72,9 @@ class MPCOrchestrator:
     prototype mode when necessary.
     """
 
+    _PEER_RETRIES = 2
+    _RETRY_BACKOFF = 0.3  # seconds, doubles each attempt
+
     def __init__(
         self,
         coordinator: MPCCoordinator,
@@ -85,6 +88,39 @@ class MPCOrchestrator:
         self._threshold = threshold
         self._ot_dh_group = ot_dh_group
         self._ot_field_prime = ot_field_prime
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+        self._http = httpx.AsyncClient(timeout=PEER_TIMEOUT, limits=limits)
+
+    async def close(self) -> None:
+        """Release the shared HTTP client."""
+        await self._http.aclose()
+
+    async def _peer_request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """HTTP request with retry and exponential backoff.
+
+        Retries on transport errors and 5xx server errors.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(self._PEER_RETRIES + 1):
+            try:
+                resp = await getattr(self._http, method)(url, **kwargs)
+                if resp.status_code < 500:
+                    return resp
+                last_exc = httpx.HTTPStatusError(
+                    f"Server error {resp.status_code}",
+                    request=resp.request,
+                    response=resp,
+                )
+            except httpx.HTTPError as e:
+                last_exc = e
+            if attempt < self._PEER_RETRIES:
+                await asyncio.sleep(self._RETRY_BACKOFF * (2 ** attempt))
+        raise last_exc  # type: ignore[misc]
 
     def _get_peer_validators(self) -> list[dict[str, Any]]:
         """Discover peer validator addresses from the metagraph.
@@ -127,24 +163,24 @@ class MPCOrchestrator:
         We need at least `threshold` shares to run the MPC.
         """
         shares = []
-        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-            for peer in peers:
-                try:
-                    resp = await client.get(
-                        f"{peer['url']}/v1/signal/{signal_id}/share_info",
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        shares.append(Share(
-                            x=data["share_x"],
-                            y=int(data["share_y"], 16),
-                        ))
-                except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
-                    log.warning(
-                        "peer_share_request_failed",
-                        peer_uid=peer["uid"],
-                        error=str(e),
-                    )
+        for peer in peers:
+            try:
+                resp = await self._peer_request(
+                    "get",
+                    f"{peer['url']}/v1/signal/{signal_id}/share_info",
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    shares.append(Share(
+                        x=data["share_x"],
+                        y=int(data["share_y"], 16),
+                    ))
+            except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
+                log.warning(
+                    "peer_share_request_failed",
+                    peer_uid=peer["uid"],
+                    error=str(e),
+                )
         return shares
 
     async def check_availability(
@@ -353,7 +389,7 @@ class MPCOrchestrator:
         accepted_peers: list[dict[str, Any]] = []
 
         async def _init_peer(
-            client: httpx.AsyncClient, peer: dict[str, Any],
+            peer: dict[str, Any],
         ) -> dict[str, Any] | None:
             peer_x = peer["uid"] + 1
             init_payload: dict[str, Any] = {
@@ -397,7 +433,8 @@ class MPCOrchestrator:
                 init_payload["r_share_y"] = hex(peer_r)
 
             try:
-                resp = await client.post(
+                resp = await self._peer_request(
+                    "post",
                     f"{peer['url']}/v1/mpc/init", json=init_payload,
                 )
                 if resp.status_code == 200 and resp.json().get("accepted"):
@@ -411,15 +448,14 @@ class MPCOrchestrator:
                 )
             return None
 
-        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-            results = await asyncio.gather(
-                *(_init_peer(client, peer) for peer in peers),
-                return_exceptions=True,
-            )
-            accepted_peers = [
-                r for r in results
-                if r is not None and not isinstance(r, BaseException)
-            ]
+        results = await asyncio.gather(
+            *(_init_peer(peer) for peer in peers),
+            return_exceptions=True,
+        )
+        accepted_peers = [
+            r for r in results
+            if r is not None and not isinstance(r, BaseException)
+        ]
 
         if len(accepted_peers) + 1 < self._threshold:
             log.warning(
@@ -463,14 +499,14 @@ class MPCOrchestrator:
 
             # Collect from peers in parallel
             async def _collect_gate(
-                client: httpx.AsyncClient,
                 peer: dict[str, Any],
                 g_idx: int,
                 p_d: int | None,
                 p_e: int | None,
             ) -> tuple[int, int, int, int | None, int | None] | None:
                 try:
-                    resp = await client.post(
+                    resp = await self._peer_request(
+                        "post",
                         f"{peer['url']}/v1/mpc/compute_gate",
                         json={
                             "session_id": session.session_id,
@@ -495,28 +531,27 @@ class MPCOrchestrator:
                     )
                 return None
 
-            async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-                results = await asyncio.gather(
-                    *(_collect_gate(client, peer, gate_idx, prev_d, prev_e)
-                      for peer in active_peers),
-                    return_exceptions=True,
-                )
+            results = await asyncio.gather(
+                *(_collect_gate(peer, gate_idx, prev_d, prev_e)
+                  for peer in active_peers),
+                return_exceptions=True,
+            )
 
-                failed = []
-                for i, result in enumerate(results):
-                    if result is None or isinstance(result, BaseException):
-                        failed.append(active_peers[i])
-                    else:
-                        peer_x, d_val, e_val, d_mac, e_mac = result
-                        d_vals[peer_x] = d_val
-                        e_vals[peer_x] = e_val
-                        if d_mac is not None:
-                            d_mac_vals[peer_x] = d_mac
-                        if e_mac is not None:
-                            e_mac_vals[peer_x] = e_mac
+            failed = []
+            for i, result in enumerate(results):
+                if result is None or isinstance(result, BaseException):
+                    failed.append(active_peers[i])
+                else:
+                    peer_x, d_val, e_val, d_mac, e_mac = result
+                    d_vals[peer_x] = d_val
+                    e_vals[peer_x] = e_val
+                    if d_mac is not None:
+                        d_mac_vals[peer_x] = d_mac
+                    if e_mac is not None:
+                        e_mac_vals[peer_x] = e_mac
 
-                for fp in failed:
-                    active_peers.remove(fp)
+            for fp in failed:
+                active_peers.remove(fp)
 
             if len(d_vals) < self._threshold:
                 log.warning(
@@ -630,25 +665,25 @@ class MPCOrchestrator:
         )
 
         # Broadcast result to peers
-        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-            for peer in active_peers:
-                try:
-                    await client.post(
-                        f"{peer['url']}/v1/mpc/result",
-                        json={
-                            "session_id": session.session_id,
-                            "signal_id": signal_id,
-                            "available": available,
-                            "participating_validators": len(z_vals),
-                        },
-                    )
-                except httpx.HTTPError as e:
-                    log.warning(
-                        "mpc_result_broadcast_failed",
-                        peer_uid=peer["uid"],
-                        error_type=type(e).__name__,
-                        error=str(e),
-                    )
+        for peer in active_peers:
+            try:
+                await self._peer_request(
+                    "post",
+                    f"{peer['url']}/v1/mpc/result",
+                    json={
+                        "session_id": session.session_id,
+                        "signal_id": signal_id,
+                        "available": available,
+                        "participating_validators": len(z_vals),
+                    },
+                )
+            except httpx.HTTPError as e:
+                log.warning(
+                    "mpc_result_broadcast_failed",
+                    peer_uid=peer["uid"],
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
 
         return mpc_result
 
@@ -687,18 +722,15 @@ class MPCOrchestrator:
             "offending_validator_x": offending_x,
         }
 
-        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-            for peer in peers:
-                try:
-                    await client.post(
-                        f"{peer['url']}/v1/mpc/abort", json=payload,
-                    )
-                except (httpx.HTTPError, Exception) as e:
-                    log.warning(
-                        "mpc_abort_send_failed",
-                        peer_uid=peer.get("uid"),
-                        error=str(e),
-                    )
+        for peer in peers:
+            try:
+                await self._peer_request("post", f"{peer['url']}/v1/mpc/abort", json=payload)
+            except (httpx.HTTPError, Exception) as e:
+                log.warning(
+                    "mpc_abort_send_failed",
+                    peer_uid=peer.get("uid"),
+                    error=str(e),
+                )
 
     async def _generate_ot_triples_via_network(
         self,
@@ -745,126 +777,115 @@ class MPCOrchestrator:
         coord_state.initialize()
 
         try:
-            async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-                # Phase 1: Setup — initialize peer's OT state
-                setup_payload: dict[str, Any] = {
+            # Phase 1: Setup — initialize peer's OT state
+            setup_payload: dict[str, Any] = {
+                "session_id": session_id,
+                "n_triples": n_triples,
+                "x_coords": participant_xs,
+                "threshold": self._threshold,
+            }
+            # Pass custom field prime / DH group if non-default
+            if p != BN254_PRIME:
+                setup_payload["field_prime"] = hex(p)
+            if dh_group is not DEFAULT_DH_GROUP:
+                setup_payload["dh_prime"] = hex(dh_group.prime)
+
+            setup_resp = await self._peer_request(
+                "post", f"{peer['url']}/v1/mpc/ot/setup", json=setup_payload,
+            )
+            if setup_resp.status_code != 200 or not setup_resp.json().get("accepted"):
+                log.warning("ot_setup_failed", peer_uid=peer.get("uid"), status=setup_resp.status_code)
+                return None
+
+            peer_sender_pks = {
+                int(t): deserialize_dh_public_key(pk_hex)
+                for t, pk_hex in setup_resp.json()["sender_public_keys"].items()
+            }
+
+            # Phase 2: Exchange choices (bidirectional)
+            # Direction A: coordinator is sender → get peer's receiver choices
+            coord_sender_pks_ser = {
+                str(t): serialize_dh_public_key(pk, dh_group)
+                for t, pk in coord_state.get_sender_public_keys().items()
+            }
+            choices_resp = await self._peer_request(
+                "post", f"{peer['url']}/v1/mpc/ot/choices",
+                json={"session_id": session_id, "peer_sender_pks": coord_sender_pks_ser},
+            )
+            if choices_resp.status_code != 200:
+                log.warning("ot_choices_failed", peer_uid=peer.get("uid"), status=choices_resp.status_code)
+                return None
+
+            peer_choices = {
+                int(t): deserialize_choices(c)
+                for t, c in choices_resp.json()["choices"].items()
+            }
+
+            # Direction B: peer is sender → coordinator generates receiver choices
+            coord_choices = coord_state.generate_receiver_choices(peer_sender_pks)
+
+            # Phase 3: Exchange transfers (bidirectional)
+            # Direction A: coordinator processes peer's choices using coordinator's sender
+            coord_transfers, coord_sender_shares = coord_state.process_sender_choices(peer_choices)
+
+            # Direction B: send coordinator's choices to peer's sender
+            coord_choices_ser = {
+                str(t): serialize_choices(c, dh_group)
+                for t, c in coord_choices.items()
+            }
+            transfers_resp = await self._peer_request(
+                "post", f"{peer['url']}/v1/mpc/ot/transfers",
+                json={"session_id": session_id, "peer_choices": coord_choices_ser},
+            )
+            if transfers_resp.status_code != 200:
+                log.warning("ot_transfers_failed", peer_uid=peer.get("uid"), status=transfers_resp.status_code)
+                return None
+
+            transfer_data = transfers_resp.json()
+            peer_transfers = {
+                int(t): deserialize_transfers(pairs)
+                for t, pairs in transfer_data["transfers"].items()
+            }
+            peer_sender_shares_hex = transfer_data["sender_shares"]
+
+            # Phase 4: Decrypt & accumulate (both directions)
+            # Coordinator decrypts peer's transfers (direction B: peer is sender)
+            coord_receiver_shares = coord_state.decrypt_receiver_transfers(peer_transfers)
+            coord_state.accumulate_ot_shares(coord_sender_shares, coord_receiver_shares)
+            coord_state.compute_shamir_evaluations()
+
+            # Send coordinator's transfers to peer for decryption (direction A)
+            coord_transfers_ser = {
+                str(t): serialize_transfers(pairs)
+                for t, pairs in coord_transfers.items()
+            }
+            complete_resp = await self._peer_request(
+                "post", f"{peer['url']}/v1/mpc/ot/complete",
+                json={
                     "session_id": session_id,
-                    "n_triples": n_triples,
-                    "x_coords": participant_xs,
-                    "threshold": self._threshold,
-                }
-                # Pass custom field prime / DH group if non-default
-                if p != BN254_PRIME:
-                    setup_payload["field_prime"] = hex(p)
-                if dh_group is not DEFAULT_DH_GROUP:
-                    setup_payload["dh_prime"] = hex(dh_group.prime)
+                    "peer_transfers": coord_transfers_ser,
+                    "own_sender_shares": peer_sender_shares_hex,
+                },
+            )
+            if complete_resp.status_code != 200 or not complete_resp.json().get("completed"):
+                log.warning("ot_complete_failed", peer_uid=peer.get("uid"), status=complete_resp.status_code)
+                return None
 
-                setup_resp = await client.post(
-                    f"{peer['url']}/v1/mpc/ot/setup",
-                    json=setup_payload,
+            # Phase 5: Collect Shamir evaluations and combine
+            # Get peer's evaluations at each x_coord
+            peer_evals: dict[int, list[dict[str, int]]] = {}
+            for x in participant_xs:
+                shares_resp = await self._peer_request(
+                    "post", f"{peer['url']}/v1/mpc/ot/shares",
+                    json={"session_id": session_id, "party_x": x},
                 )
-                if setup_resp.status_code != 200 or not setup_resp.json().get("accepted"):
-                    log.warning("ot_setup_failed", peer_uid=peer.get("uid"), status=setup_resp.status_code)
+                if shares_resp.status_code != 200:
+                    log.warning("ot_shares_failed", peer_uid=peer.get("uid"), party_x=x)
                     return None
-
-                peer_sender_pks = {
-                    int(t): deserialize_dh_public_key(pk_hex)
-                    for t, pk_hex in setup_resp.json()["sender_public_keys"].items()
-                }
-
-                # Phase 2: Exchange choices (bidirectional)
-                # Direction A: coordinator is sender → get peer's receiver choices
-                coord_sender_pks_ser = {
-                    str(t): serialize_dh_public_key(pk, dh_group)
-                    for t, pk in coord_state.get_sender_public_keys().items()
-                }
-                choices_resp = await client.post(
-                    f"{peer['url']}/v1/mpc/ot/choices",
-                    json={
-                        "session_id": session_id,
-                        "peer_sender_pks": coord_sender_pks_ser,
-                    },
-                )
-                if choices_resp.status_code != 200:
-                    log.warning("ot_choices_failed", peer_uid=peer.get("uid"), status=choices_resp.status_code)
-                    return None
-
-                peer_choices = {
-                    int(t): deserialize_choices(c)
-                    for t, c in choices_resp.json()["choices"].items()
-                }
-
-                # Direction B: peer is sender → coordinator generates receiver choices
-                coord_choices = coord_state.generate_receiver_choices(peer_sender_pks)
-
-                # Phase 3: Exchange transfers (bidirectional)
-                # Direction A: coordinator processes peer's choices using coordinator's sender
-                coord_transfers, coord_sender_shares = coord_state.process_sender_choices(peer_choices)
-
-                # Direction B: send coordinator's choices to peer's sender
-                coord_choices_ser = {
-                    str(t): serialize_choices(c, dh_group)
-                    for t, c in coord_choices.items()
-                }
-                transfers_resp = await client.post(
-                    f"{peer['url']}/v1/mpc/ot/transfers",
-                    json={
-                        "session_id": session_id,
-                        "peer_choices": coord_choices_ser,
-                    },
-                )
-                if transfers_resp.status_code != 200:
-                    log.warning("ot_transfers_failed", peer_uid=peer.get("uid"), status=transfers_resp.status_code)
-                    return None
-
-                transfer_data = transfers_resp.json()
-                peer_transfers = {
-                    int(t): deserialize_transfers(pairs)
-                    for t, pairs in transfer_data["transfers"].items()
-                }
-                peer_sender_shares_hex = transfer_data["sender_shares"]
-
-                # Phase 4: Decrypt & accumulate (both directions)
-                # Coordinator decrypts peer's transfers (direction B: peer is sender)
-                coord_receiver_shares = coord_state.decrypt_receiver_transfers(peer_transfers)
-                coord_state.accumulate_ot_shares(coord_sender_shares, coord_receiver_shares)
-                coord_state.compute_shamir_evaluations()
-
-                # Send coordinator's transfers to peer for decryption (direction A)
-                coord_transfers_ser = {
-                    str(t): serialize_transfers(pairs)
-                    for t, pairs in coord_transfers.items()
-                }
-                complete_resp = await client.post(
-                    f"{peer['url']}/v1/mpc/ot/complete",
-                    json={
-                        "session_id": session_id,
-                        "peer_transfers": coord_transfers_ser,
-                        "own_sender_shares": peer_sender_shares_hex,
-                    },
-                )
-                if complete_resp.status_code != 200 or not complete_resp.json().get("completed"):
-                    log.warning("ot_complete_failed", peer_uid=peer.get("uid"), status=complete_resp.status_code)
-                    return None
-
-                # Phase 5: Collect Shamir evaluations and combine
-                # Get peer's evaluations at each x_coord
-                peer_evals: dict[int, list[dict[str, int]]] = {}
-                for x in participant_xs:
-                    shares_resp = await client.post(
-                        f"{peer['url']}/v1/mpc/ot/shares",
-                        json={
-                            "session_id": session_id,
-                            "party_x": x,
-                        },
-                    )
-                    if shares_resp.status_code != 200:
-                        log.warning("ot_shares_failed", peer_uid=peer.get("uid"), party_x=x)
-                        return None
-                    peer_evals[x] = [
-                        {"a": int(s["a"], 16), "b": int(s["b"], 16), "c": int(s["c"], 16)}
-                        for s in shares_resp.json()["triple_shares"]
-                    ]
+                peer_evals[x] = [
+                    {"a": int(s["a"], 16), "b": int(s["b"], 16), "c": int(s["c"], 16)}
+                    for s in shares_resp.json()["triple_shares"]
+                ]
 
         except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
             log.warning(

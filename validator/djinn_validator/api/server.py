@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 import structlog
@@ -137,10 +139,23 @@ def create_app(
     rate_limit_rate: int = 10,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
+    # Resources that need cleanup on shutdown
+    _cleanup_resources: list = []
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        for resource in _cleanup_resources:
+            try:
+                await resource.close()
+            except Exception:
+                pass
+
     app = FastAPI(
         title="Djinn Validator",
         version="0.1.0",
         description="Djinn Protocol Bittensor Validator API",
+        lifespan=_lifespan,
     )
 
     # Catch unhandled exceptions — never leak stack traces to clients
@@ -504,6 +519,7 @@ def create_app(
         neuron=neuron,
         threshold=7,
     )
+    _cleanup_resources.append(_orchestrator)
 
     # Per-session participant state for the distributed MPC protocol.
     # Keyed by session_id. Stores either DistributedParticipantState (semi-honest)
