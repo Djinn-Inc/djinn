@@ -24,15 +24,31 @@ log = structlog.get_logger()
 # Minimal ABIs — only the functions the validator needs
 ESCROW_ABI = [
     {
-        "inputs": [
-            {"name": "signalId", "type": "uint256"},
-            {"name": "buyer", "type": "address"},
-        ],
-        "name": "purchases",
+        "inputs": [{"name": "signalId", "type": "uint256"}],
+        "name": "getPurchasesBySignal",
+        "outputs": [{"name": "", "type": "uint256[]"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "purchaseId", "type": "uint256"}],
+        "name": "getPurchase",
         "outputs": [
-            {"name": "notional", "type": "uint256"},
-            {"name": "pricePaid", "type": "uint256"},
-            {"name": "sportsbook", "type": "string"},
+            {
+                "components": [
+                    {"name": "idiot", "type": "address"},
+                    {"name": "signalId", "type": "uint256"},
+                    {"name": "notional", "type": "uint256"},
+                    {"name": "feePaid", "type": "uint256"},
+                    {"name": "creditUsed", "type": "uint256"},
+                    {"name": "usdcPaid", "type": "uint256"},
+                    {"name": "odds", "type": "uint256"},
+                    {"name": "outcome", "type": "uint8"},
+                    {"name": "purchasedAt", "type": "uint256"},
+                ],
+                "name": "",
+                "type": "tuple",
+            },
         ],
         "stateMutability": "view",
         "type": "function",
@@ -243,30 +259,43 @@ class ChainClient:
             return {}
 
     async def verify_purchase(self, signal_id: int, buyer: str) -> dict[str, Any]:
-        """Verify a purchase exists on-chain."""
+        """Verify a purchase exists on-chain for the given signal and buyer.
+
+        Queries getPurchasesBySignal to find purchase IDs, then checks each
+        via getPurchase to find one where idiot == buyer.
+        """
+        empty = {"notional": 0, "pricePaid": 0, "sportsbook": ""}
         if self._escrow is None:
             log.warning("escrow_contract_not_configured")
-            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
+            return empty
         try:
             buyer_addr = self._w3.to_checksum_address(buyer)
         except ValueError:
             log.error("invalid_buyer_address", buyer=buyer)
-            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
+            return empty
         try:
-            result = await self._with_failover(
-                lambda: self._escrow.functions.purchases(  # type: ignore[union-attr]
+            purchase_ids: list[int] = await self._with_failover(
+                lambda: self._escrow.functions.getPurchasesBySignal(  # type: ignore[union-attr]
                     signal_id,
-                    buyer_addr,
                 ).call()
             )
-            return {
-                "notional": result[0],
-                "pricePaid": result[1],
-                "sportsbook": result[2],
-            }
+            for pid in purchase_ids:
+                p = await self._with_failover(
+                    lambda pid=pid: self._escrow.functions.getPurchase(  # type: ignore[union-attr]
+                        pid,
+                    ).call()
+                )
+                # Purchase tuple: (idiot, signalId, notional, feePaid, creditUsed, usdcPaid, odds, outcome, purchasedAt)
+                if p[0].lower() == buyer_addr.lower():
+                    return {
+                        "notional": p[2],
+                        "pricePaid": p[4] + p[5],  # creditUsed + usdcPaid
+                        "sportsbook": "",
+                    }
+            return empty
         except Exception as e:
             log.error("verify_purchase_failed", signal_id=signal_id, buyer=buyer, err=str(e))
-            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
+            return empty
 
     async def is_audit_ready(self, genius: str, idiot: str) -> bool:
         """Check if a Genius-Idiot pair has completed a cycle."""

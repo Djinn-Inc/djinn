@@ -23,9 +23,9 @@ describe("useLeaderboard", () => {
       totalSignals: "10",
       activeSignals: "3",
       totalPurchases: "50",
-      totalVolume: "5000000000",
+      totalVolume: "5000000000",       // 5000 USDC (6 decimals)
       totalFeesEarned: "250000000",
-      aggregateQualityScore: "8500",
+      aggregateQualityScore: "8500000000", // 8500 USDC (6 decimals)
       totalAudits: "20",
       collateralDeposited: "1000000000",
       totalSlashed: "0",
@@ -36,9 +36,9 @@ describe("useLeaderboard", () => {
       totalSignals: "5",
       activeSignals: "1",
       totalPurchases: "20",
-      totalVolume: "2000000000",
+      totalVolume: "2000000000",       // 2000 USDC (6 decimals)
       totalFeesEarned: "100000000",
-      aggregateQualityScore: "6000",
+      aggregateQualityScore: "6000000000", // 6000 USDC (6 decimals)
       totalAudits: "10",
       collateralDeposited: "500000000",
       totalSlashed: "50000000",
@@ -100,8 +100,8 @@ describe("useLeaderboard", () => {
       expect(result.current.loading).toBe(false);
     });
 
-    // totalVolume = 5000000000, in USDC = 5000
-    // aggregateQualityScore = 8500
+    // totalVolume = 5000000000 → 5000 USDC
+    // aggregateQualityScore = 8500000000 → 8500 USDC
     // ROI = (8500 / 5000) * 100 = 170
     expect(result.current.data[0].roi).toBe(170);
   });

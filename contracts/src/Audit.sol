@@ -420,7 +420,10 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         // If score >= 0 and not early exit: Genius keeps all fees, no damages
 
         // Protocol fee -- slash from genius collateral to treasury
-        if (protocolFee > 0) {
+        // Early exits use credits only, no USDC movement
+        if (isEarlyExit) {
+            protocolFee = 0;
+        } else if (protocolFee > 0) {
             collateral.slash(genius, protocolFee, protocolTreasury);
         }
 

@@ -117,13 +117,41 @@ class TestVerifyPurchase:
 
     @pytest.mark.asyncio
     async def test_returns_purchase_data(self, client: ChainClient) -> None:
-        mock_call = AsyncMock(return_value=[1000000, 50000, "draftkings"])
-        client._escrow.functions.purchases.return_value.call = mock_call
+        # getPurchasesBySignal returns list of purchase IDs
+        client._escrow.functions.getPurchasesBySignal.return_value.call = AsyncMock(
+            return_value=[42]
+        )
+        # getPurchase returns tuple: (idiot, signalId, notional, feePaid, creditUsed, usdcPaid, odds, outcome, purchasedAt)
+        client._escrow.functions.getPurchase.return_value.call = AsyncMock(
+            return_value=["0xBuyer", 1, 1000000, 10000, 20000, 30000, 150, 0, 1700000000]
+        )
 
         result = await client.verify_purchase(1, "0xBuyer")
         assert result["notional"] == 1000000
-        assert result["pricePaid"] == 50000
-        assert result["sportsbook"] == "draftkings"
+        assert result["pricePaid"] == 50000  # creditUsed + usdcPaid
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_buyer_not_found(self, client: ChainClient) -> None:
+        client._escrow.functions.getPurchasesBySignal.return_value.call = AsyncMock(
+            return_value=[42]
+        )
+        client._escrow.functions.getPurchase.return_value.call = AsyncMock(
+            return_value=["0xOtherBuyer", 1, 1000000, 10000, 20000, 30000, 150, 0, 1700000000]
+        )
+
+        result = await client.verify_purchase(1, "0xBuyer")
+        assert result["notional"] == 0
+        assert result["pricePaid"] == 0
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_purchases(self, client: ChainClient) -> None:
+        client._escrow.functions.getPurchasesBySignal.return_value.call = AsyncMock(
+            return_value=[]
+        )
+
+        result = await client.verify_purchase(1, "0xBuyer")
+        assert result["notional"] == 0
+        assert result["pricePaid"] == 0
 
 
 class TestIsAuditReady:
@@ -205,7 +233,7 @@ class TestContractCallErrors:
     async def test_verify_purchase_rpc_error(self, client: ChainClient) -> None:
         """RPC failure returns zero values."""
         mock_call = AsyncMock(side_effect=ConnectionError("RPC down"))
-        client._escrow.functions.purchases.return_value.call = mock_call
+        client._escrow.functions.getPurchasesBySignal.return_value.call = mock_call
         result = await client.verify_purchase(1, "0xBuyer")
         assert result["notional"] == 0
         assert result["pricePaid"] == 0

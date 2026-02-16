@@ -9,7 +9,7 @@ import {
 import type { GeniusLeaderboardEntry } from "../types";
 
 function toLeaderboardEntry(g: SubgraphGeniusEntry): GeniusLeaderboardEntry {
-  const totalGain = Number(g.aggregateQualityScore);
+  const totalGain = Number(g.aggregateQualityScore) / 1e6; // USDC decimals
   const totalVolume = Number(g.totalVolume) / 1e6; // USDC decimals
   const roi = totalVolume > 0 ? (totalGain / totalVolume) * 100 : 0;
 
