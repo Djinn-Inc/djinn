@@ -23,8 +23,10 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge fmt --check
-      - run: forge build
+      - run: forge build --sizes
       - run: forge test -vvv
+      - name: Check gas snapshot
+        run: forge snapshot --check --tolerance 10
 
   validator:
     name: Validator Tests
