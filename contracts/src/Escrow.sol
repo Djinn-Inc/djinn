@@ -316,9 +316,8 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         collateral.lock(signalId, sig.genius, lockAmount);
 
         // --- Record purchase ---
-        unchecked {
-            purchaseId = nextPurchaseId++;
-        }
+        purchaseId = nextPurchaseId;
+        nextPurchaseId += 1;
         _purchases[purchaseId] = Purchase({
             idiot: msg.sender,
             signalId: signalId,

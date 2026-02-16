@@ -1052,9 +1052,14 @@ function americanToDecimal(american: string): number | null {
   return 1 + 100 / Math.abs(n);        // -150 → 1.667
 }
 
-/** Cryptographically secure random integer in [0, max). */
+/** Cryptographically secure random integer in [0, max). Uses rejection sampling. */
 function cryptoRandomInt(max: number): number {
+  if (max <= 0) throw new Error("max must be positive");
+  const limit = Math.floor(0x100000000 / max) * max;
   const arr = new Uint32Array(1);
-  crypto.getRandomValues(arr);
-  return arr[0] % max;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    crypto.getRandomValues(arr);
+    if (arr[0] < limit) return arr[0] % max;
+  }
 }

@@ -70,24 +70,32 @@ def create_app(
         )
 
     cors_origins = get_cors_origins(os.getenv("CORS_ORIGINS", ""), os.getenv("BT_NETWORK", ""))
+    allow_creds = "*" not in cors_origins
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
-        allow_credentials=True,
+        allow_credentials=allow_creds,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # Request body size limit (1MB)
+    _BODY_LIMIT = 1_048_576  # 1 MB
+
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Enforce 1 MB body limit on both Content-Length header and actual body."""
         content_length = request.headers.get("content-length")
         if content_length:
             try:
-                if int(content_length) > 1_048_576:
+                if int(content_length) > _BODY_LIMIT:
                     return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
             except (ValueError, OverflowError):
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+        elif request.method in ("POST", "PUT", "PATCH"):
+            # No Content-Length (e.g. chunked encoding) — read and check actual body
+            body = await request.body()
+            if len(body) > _BODY_LIMIT:
+                return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
         return await call_next(request)
 
     app.add_middleware(RateLimitMiddleware, limiter=RateLimiter(capacity=rate_limit_capacity, rate=rate_limit_rate))

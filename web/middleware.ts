@@ -1,11 +1,26 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const cspDirectives = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://auth.privy.io https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "connect-src 'self' https://auth.privy.io https://*.base.org wss://*.base.org https://api.the-odds-api.com",
+  "frame-src https://auth.privy.io https://challenges.cloudflare.com",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "child-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join("; ");
+
 const securityHeaders: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "X-Frame-Options": "DENY",
+  "Content-Security-Policy": cspDirectives,
 };
 
 export function middleware(request: NextRequest) {

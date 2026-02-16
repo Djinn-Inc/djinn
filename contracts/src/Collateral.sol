@@ -88,7 +88,9 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     /// @param amount Amount of USDC to withdraw (6 decimals)
     function withdraw(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        uint256 available = deposits[msg.sender] - locked[msg.sender];
+        uint256 dep = deposits[msg.sender];
+        uint256 lock = locked[msg.sender];
+        uint256 available = dep > lock ? dep - lock : 0;
         if (amount > available) {
             revert WithdrawalExceedsAvailable(available, amount);
         }

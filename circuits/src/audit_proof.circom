@@ -18,11 +18,17 @@ template IntDiv(bits) {
     // Constraint: a == b * q + r
     a === b * q + r;
 
-    // Range check: r < b (r is non-negative by default in the field for small values)
-    component lt = LessThan(bits);
-    lt.in[0] <== r;
-    lt.in[1] <== b;
-    lt.out === 1;
+    // Range check: r < b (prevents multiple solutions in the prime field)
+    component ltR = LessThan(bits);
+    ltR.in[0] <== r;
+    ltR.in[1] <== b;
+    ltR.out === 1;
+
+    // Range check: q fits in `bits` bits (prevents field wraparound solutions)
+    component ltQ = LessThan(bits);
+    ltQ.in[0] <== q;
+    ltQ.in[1] <== (1 << (bits - 1));
+    ltQ.out === 1;
 }
 
 /// @title AuditProof

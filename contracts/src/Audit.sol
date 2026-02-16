@@ -189,6 +189,8 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     // -------------------------------------------------------------------------
 
     /// @notice Trigger an audit for a Genius-Idiot pair. Alias for settle().
+    ///         Permissionless by design: any address can trigger settlement once the pair is audit-ready.
+    ///         This prevents either party from blocking settlement and matches standard DeFi settlement patterns.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
     function trigger(address genius, address idiot) external whenNotPaused nonReentrant {
@@ -237,6 +239,7 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     /// @notice Execute settlement for a Genius-Idiot pair.
     ///         Handles Tranche A (USDC), Tranche B (Credits),
     ///         protocol fee, collateral release, and cycle advancement.
+    ///         Permissionless by design: any address can call once the pair is audit-ready.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
     function settle(address genius, address idiot) external whenNotPaused nonReentrant {

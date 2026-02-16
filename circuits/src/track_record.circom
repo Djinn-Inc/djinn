@@ -15,10 +15,17 @@ template IntDivTR(bits) {
 
     a === b * q + r;
 
-    component lt = LessThan(bits);
-    lt.in[0] <== r;
-    lt.in[1] <== b;
-    lt.out === 1;
+    // Range check: r < b
+    component ltR = LessThan(bits);
+    ltR.in[0] <== r;
+    ltR.in[1] <== b;
+    ltR.out === 1;
+
+    // Range check: q fits in `bits` bits (prevents field wraparound solutions)
+    component ltQ = LessThan(bits);
+    ltQ.in[0] <== q;
+    ltQ.in[1] <== (1 << (bits - 1));
+    ltQ.out === 1;
 }
 
 /// @title TrackRecord
