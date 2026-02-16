@@ -15,6 +15,7 @@ Falls back to single-validator prototype mode when:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import secrets
@@ -60,6 +61,15 @@ log = structlog.get_logger()
 
 # Timeout for inter-validator HTTP calls (configurable via env)
 PEER_TIMEOUT = float(os.getenv("MPC_PEER_TIMEOUT", "10.0"))
+
+
+def _is_public_ip(ip_str: str) -> bool:
+    """Reject private, loopback, reserved, and link-local addresses (SSRF protection)."""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return addr.is_global
+    except ValueError:
+        return False
 # Timeout for gather operations (covers retries + backoff for concurrent peers)
 GATHER_TIMEOUT = PEER_TIMEOUT * 3
 
@@ -174,6 +184,9 @@ class MPCOrchestrator:
 
             axon = metagraph.axons[uid]
             if not axon.ip or axon.ip == "0.0.0.0":
+                continue
+            if not _is_public_ip(axon.ip):
+                log.warning("peer_private_ip_skipped", uid=uid, ip=axon.ip)
                 continue
 
             peers.append(
@@ -331,6 +344,8 @@ class MPCOrchestrator:
             return MPCResult(available=False, participating_validators=1)
 
         raw_xs = [my_x] + [peer["uid"] + 1 for peer in peers]
+        if len(raw_xs) != len(set(raw_xs)):
+            log.warning("duplicate_participant_x", raw=raw_xs, unique=list(set(raw_xs)))
         participant_xs = sorted(set(x for x in raw_xs if 1 <= x <= 255))
 
         if len(participant_xs) < self._threshold:

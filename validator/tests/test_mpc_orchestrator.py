@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, AsyncMock
 import pytest
 
 from djinn_validator.core.mpc_coordinator import MPCCoordinator
-from djinn_validator.core.mpc_orchestrator import MPCOrchestrator
+from djinn_validator.core.mpc_orchestrator import MPCOrchestrator, _is_public_ip
 from djinn_validator.utils.crypto import Share, generate_signal_index_shares, split_secret
 
 
@@ -111,6 +111,53 @@ class TestPeerDiscovery:
         ]
         orch = MPCOrchestrator(coordinator=coord, neuron=neuron)
         assert len(orch._get_peer_validators()) == 0
+
+
+class TestSSRFProtection:
+    """Test SSRF protection in peer IP validation."""
+
+    def test_public_ip_allowed(self) -> None:
+        assert _is_public_ip("8.8.8.8") is True
+        assert _is_public_ip("1.2.3.4") is True
+
+    def test_private_ip_rejected(self) -> None:
+        assert _is_public_ip("10.0.0.1") is False
+        assert _is_public_ip("172.16.0.1") is False
+        assert _is_public_ip("192.168.1.1") is False
+
+    def test_loopback_rejected(self) -> None:
+        assert _is_public_ip("127.0.0.1") is False
+
+    def test_link_local_rejected(self) -> None:
+        assert _is_public_ip("169.254.1.1") is False
+
+    def test_invalid_ip_rejected(self) -> None:
+        assert _is_public_ip("not-an-ip") is False
+        assert _is_public_ip("") is False
+
+    def test_private_ip_peer_skipped(self) -> None:
+        coord = MPCCoordinator()
+        neuron = MagicMock()
+        neuron.uid = 0
+        neuron.metagraph.n.item.return_value = 3
+        neuron.metagraph.validator_permit = [
+            MagicMock(item=MagicMock(return_value=True)),
+            MagicMock(item=MagicMock(return_value=True)),
+            MagicMock(item=MagicMock(return_value=True)),
+        ]
+        neuron.metagraph.hotkeys = ["key0", "key1", "key2"]
+        neuron.metagraph.axons = [
+            MagicMock(ip="8.8.8.8", port=8421),   # us
+            MagicMock(ip="192.168.1.1", port=8421),  # private — should be skipped
+            MagicMock(ip="1.2.3.4", port=8421),    # public peer
+        ]
+
+        orch = MPCOrchestrator(coordinator=coord, neuron=neuron)
+        peers = orch._get_peer_validators()
+
+        assert len(peers) == 1
+        assert peers[0]["uid"] == 2
+        assert peers[0]["ip"] == "1.2.3.4"
 
 
 class TestCollectPeerShares:
