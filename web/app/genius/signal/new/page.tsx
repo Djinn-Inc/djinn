@@ -69,6 +69,9 @@ export default function CreateSignal() {
   const [decoyLines, setDecoyLines] = useState<StructuredLine[]>([]);
   const [realIndex, setRealIndex] = useState(0);
 
+  // Market odds from the selected bet (display-only reference)
+  const [marketOdds, setMarketOdds] = useState<number | null>(null);
+
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
   const [slaMultiplier, setSlaMultiplier] = useState("100");
@@ -126,6 +129,7 @@ export default function CreateSignal() {
     setSelectedBet(bet);
     const pick = betToLine(bet);
     setRealPick(pick);
+    setMarketOdds(bet.avgPrice);
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
     const pos = Math.floor(Math.random() * 10);
@@ -509,11 +513,56 @@ export default function CreateSignal() {
         </button>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Review Lines</h1>
-        <p className="text-slate-500 mb-2">
-          Your real pick is highlighted. 9 decoy lines have been auto-generated
-          from real odds data. Buyers won&apos;t know which line is real.
+        <p className="text-slate-500 mb-6">
+          Adjust your pick below, then review the full line list. 9 decoy lines
+          are auto-generated from real odds data. Buyers won&apos;t know which line is yours.
         </p>
-        <p className="text-xs text-slate-400 mb-6">
+
+        {/* ─── Editable pick ─── */}
+        {realPick && (
+          <div className="rounded-lg bg-genius-50 border-2 border-genius-300 p-4 mb-6">
+            <p className="text-xs text-genius-600 uppercase tracking-wide font-medium mb-3">
+              Your Pick
+            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-sm font-bold text-genius-800 flex-1">
+                {realPick.side} — {realPick.away_team} @ {realPick.home_team}
+              </span>
+              {marketOdds && (
+                <span className="text-xs text-genius-600 bg-genius-100 rounded px-2 py-1">
+                  Market: {decimalToAmerican(marketOdds)}
+                </span>
+              )}
+            </div>
+
+            {realPick.market !== "h2h" && (
+              <div className="flex items-center gap-3">
+                <label htmlFor="editLine" className="text-xs text-genius-700 font-medium whitespace-nowrap">
+                  {realPick.market === "spreads" ? "Spread" : "Total"}:
+                </label>
+                <input
+                  id="editLine"
+                  type="number"
+                  step="0.5"
+                  value={realPick.line ?? ""}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val) && Number.isFinite(val)) {
+                      setRealPick({ ...realPick, line: val });
+                    }
+                  }}
+                  className="w-28 rounded-lg border border-genius-300 bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 focus:border-genius-400"
+                  aria-label={`Edit ${realPick.market === "spreads" ? "spread" : "total"} value`}
+                />
+                <span className="text-xs text-genius-500">
+                  (adjust by 0.5 increments)
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-xs text-slate-400 mb-3">
           {sameMarketCount}/10 lines are {realPick?.market === "h2h" ? "moneyline" : realPick?.market} bets — higher same-market ratio = harder to identify your pick
         </p>
 

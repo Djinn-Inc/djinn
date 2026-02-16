@@ -628,6 +628,74 @@ contract AuditIntegrationTest is Test {
         assertEq(result.protocolFee, expectedFee, "Protocol fee should exclude void notional");
     }
 
+    // ─── Damages Priority Over Protocol Fee
+    // ─────────────────────────────────────────────────
+
+    function test_damagesPrioritizedOverProtocolFee() public {
+        // Verify that when genius collateral is limited, damages (tranche A)
+        // are paid first, and protocol fee only gets what remains.
+        // 10 unfavorable signals with tight collateral.
+        for (uint256 i; i < 10; i++) {
+            uint256 sigId = 700 + i;
+            _createSignal(sigId, SLA_MULTIPLIER_BPS);
+
+            uint256 lockAmount = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+            uint256 fee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+            // Only deposit lock + fee (no extra for protocol fee)
+            _depositGeniusCollateral(lockAmount + fee);
+            _depositIdiotEscrow(fee);
+
+            vm.prank(idiot);
+            uint256 pid = escrow.purchase(sigId, NOTIONAL, ODDS);
+            _recordOutcome(pid, Outcome.Unfavorable);
+        }
+
+        uint256 idiotUsdcBefore = usdc.balanceOf(idiot);
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+
+        audit.trigger(genius, idiot);
+
+        AuditResult memory result = audit.getAuditResult(genius, idiot, 0);
+
+        // Damages should be fully paid
+        assertTrue(result.trancheA > 0, "Tranche A should be nonzero");
+        assertEq(usdc.balanceOf(idiot), idiotUsdcBefore + result.trancheA, "Idiot should get damages");
+
+        // Protocol fee may be partially paid (capped at available collateral)
+        // The key invariant: damages + protocolFee(actual) <= total collateral deposited
+        uint256 treasuryReceived = usdc.balanceOf(treasury) - treasuryBefore;
+        assertTrue(treasuryReceived <= result.protocolFee, "Treasury should not receive more than recorded fee");
+    }
+
+    // ─── Zero Score Settlement
+    // ─────────────────────────────────────────────────
+
+    function test_zeroScore_noRefundNoCredit() public {
+        // Mix favorable and unfavorable outcomes to get score near zero
+        // 5 favorable + 5 void → positive score, no damages
+        for (uint256 i; i < 10; i++) {
+            uint256 sigId = 800 + i;
+            _createSignal(sigId, SLA_MULTIPLIER_BPS);
+
+            uint256 lockAmount = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+            uint256 fee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+            uint256 protocolFeeShare = (NOTIONAL * 50) / 10_000;
+            _depositGeniusCollateral(lockAmount + fee + protocolFeeShare);
+            _depositIdiotEscrow(fee);
+
+            vm.prank(idiot);
+            uint256 pid = escrow.purchase(sigId, NOTIONAL, ODDS);
+            _recordOutcome(pid, Outcome.Void);
+        }
+
+        audit.trigger(genius, idiot);
+
+        AuditResult memory result = audit.getAuditResult(genius, idiot, 0);
+        assertEq(result.qualityScore, 0, "Score should be zero with all voids");
+        assertEq(result.trancheA, 0, "No damages when score >= 0");
+        assertEq(result.trancheB, 0, "No credits when score >= 0");
+    }
+
     // ─── Two Full Cycles
     // ─────────────────────────────────────────────────
 

@@ -576,4 +576,70 @@ contract EscrowIntegrationTest is Test {
         vm.expectRevert(abi.encodeWithSelector(Escrow.InvalidOutcome.selector, Outcome.Pending));
         escrow.setOutcome(0, Outcome.Pending);
     }
+
+    function test_setOutcome_doubleSet_reverts() public {
+        _createSignal(SIGNAL_ID);
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+
+        escrow.setAuthorizedCaller(owner, true);
+        escrow.setOutcome(purchaseId, Outcome.Favorable);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.OutcomeAlreadySet.selector, purchaseId, Outcome.Favorable));
+        escrow.setOutcome(purchaseId, Outcome.Unfavorable);
+    }
+
+    function test_setOutcome_nonexistent_reverts() public {
+        escrow.setAuthorizedCaller(owner, true);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.PurchaseNotFound.selector, 999));
+        escrow.setOutcome(999, Outcome.Favorable);
+    }
+
+    // ─── Purchase with credits exactly matching fee
+    // ──────────────────────────────────────────────
+
+    function test_purchase_credits_exactly_cover_fee() public {
+        _createSignal(SIGNAL_ID);
+
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+
+        creditLedger.setAuthorizedCaller(owner, true);
+        creditLedger.mint(idiot, expectedFee); // exactly the fee, no excess
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(p.creditUsed, expectedFee, "Credits should exactly cover fee");
+        assertEq(p.usdcPaid, 0, "No USDC needed");
+        assertEq(creditLedger.balanceOf(idiot), 0, "All credits consumed");
+    }
+
+    // ─── Boundary odds values
+    // ──────────────────────────────────────────────
+
+    function test_purchase_minOdds() public {
+        _createSignal(SIGNAL_ID);
+
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        uint256 minOdds = 1_010_000; // 1.01x
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(SIGNAL_ID, NOTIONAL, minOdds);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(p.odds, minOdds, "Min odds should be stored");
+    }
 }
