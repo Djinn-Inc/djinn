@@ -163,7 +163,7 @@ export default function GeniusDashboard() {
                     {s.sport} &middot; Signal #{truncateAddress(s.signalId)}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Max Price: {formatBps(s.maxPriceBps)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
+                    Fee: {formatBps(s.maxPriceBps)} &middot; SLA: {formatBps(s.slaMultiplierBps)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
                   </p>
                 </div>
                 <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200">
