@@ -210,6 +210,58 @@ class TestAnalyticsRequest:
         with pytest.raises(ValidationError):
             AnalyticsRequest(event_type="x" * 200)
 
+    def test_data_dict_too_many_keys(self) -> None:
+        big_data = {f"key_{i}": i for i in range(51)}
+        with pytest.raises(ValidationError, match="at most 50"):
+            AnalyticsRequest(event_type="test", data=big_data)
+
+    def test_data_dict_at_limit(self) -> None:
+        data = {f"key_{i}": i for i in range(50)}
+        req = AnalyticsRequest(event_type="test", data=data)
+        assert len(req.data) == 50
+
+
+class TestRegisterSignalSportValidation:
+    def test_valid_sport_key(self) -> None:
+        req = RegisterSignalRequest(
+            sport="basketball_nba",
+            event_id="ev-1",
+            home_team="A",
+            away_team="B",
+            pick="Lakers -3.5",
+        )
+        assert req.sport == "basketball_nba"
+
+    def test_sport_rejects_uppercase(self) -> None:
+        with pytest.raises(ValidationError):
+            RegisterSignalRequest(
+                sport="Basketball_NBA",
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                pick="Lakers -3.5",
+            )
+
+    def test_sport_rejects_special_chars(self) -> None:
+        with pytest.raises(ValidationError):
+            RegisterSignalRequest(
+                sport="nba; DROP TABLE",
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                pick="Lakers -3.5",
+            )
+
+    def test_sport_rejects_empty(self) -> None:
+        with pytest.raises(ValidationError):
+            RegisterSignalRequest(
+                sport="",
+                event_id="ev-1",
+                home_team="A",
+                away_team="B",
+                pick="Lakers -3.5",
+            )
+
 
 class TestStringLengthLimits:
     """Verify max_length constraints on all string fields."""

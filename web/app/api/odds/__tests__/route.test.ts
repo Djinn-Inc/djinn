@@ -150,7 +150,7 @@ describe("GET /api/odds", () => {
     );
     expect(resp.status).toBe(502);
     const body = await resp.json();
-    expect(body.error).toContain("Odds API returned 500");
+    expect(body.error).toContain("Odds provider returned an error");
   });
 
   it("returns 502 when fetch throws (network error)", async () => {
@@ -162,7 +162,7 @@ describe("GET /api/odds", () => {
     );
     expect(resp.status).toBe(502);
     const body = await resp.json();
-    expect(body.error).toContain("Network timeout");
+    expect(body.error).toContain("Failed to fetch odds from provider");
   });
 
   // --- Caching ---

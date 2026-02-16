@@ -482,7 +482,8 @@ def create_app(
     @app.post("/v1/analytics/attempt")
     async def analytics(req: AnalyticsRequest) -> dict:
         """Fire-and-forget analytics endpoint."""
-        log.info("analytics", event_type=req.event_type, data=req.data)
+        truncated = {k: v for k, v in list(req.data.items())[:20]}
+        log.info("analytics", event_type=req.event_type, data=truncated)
         return {"received": True}
 
     @app.get("/health", response_model=HealthResponse)

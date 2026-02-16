@@ -101,7 +101,7 @@ class OutcomeResponse(BaseModel):
 class RegisterSignalRequest(BaseModel):
     """POST /v1/signal/{id}/register — Register a purchased signal for outcome tracking."""
 
-    sport: str = Field(max_length=128)  # The Odds API sport key, e.g., "basketball_nba"
+    sport: str = Field(max_length=128, pattern=r"^[a-z][a-z0-9_]*$")  # The Odds API sport key, e.g., "basketball_nba"
     event_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-:.]+$")  # The Odds API event ID
     home_team: str = Field(max_length=256)
     away_team: str = Field(max_length=256)
@@ -144,7 +144,14 @@ class AnalyticsRequest(BaseModel):
     """POST /v1/analytics/attempt — Fire-and-forget analytics."""
 
     event_type: str = Field(max_length=128)
-    data: dict = Field(default_factory=dict, max_length=50)
+    data: dict = Field(default_factory=dict)
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_size(cls, v: dict) -> dict:
+        if len(v) > 50:
+            raise ValueError(f"data dict must have at most 50 keys, got {len(v)}")
+        return v
 
 
 # ---------------------------------------------------------------------------

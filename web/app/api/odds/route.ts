@@ -137,9 +137,8 @@ export async function GET(request: NextRequest) {
     });
 
     if (!resp.ok) {
-      const detail = await resp.text().catch(() => resp.statusText);
       return NextResponse.json(
-        { error: `Odds API returned ${resp.status}: ${detail}` },
+        { error: `Odds provider returned an error (${resp.status})` },
         { status: 502 },
       );
     }
@@ -151,10 +150,9 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(data);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+  } catch {
     return NextResponse.json(
-      { error: `Failed to fetch odds: ${message}` },
+      { error: "Failed to fetch odds from provider" },
       { status: 502 },
     );
   }
