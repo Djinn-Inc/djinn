@@ -60,6 +60,8 @@ log = structlog.get_logger()
 
 # Timeout for inter-validator HTTP calls (configurable via env)
 PEER_TIMEOUT = float(os.getenv("MPC_PEER_TIMEOUT", "10.0"))
+# Timeout for gather operations (covers retries + backoff for concurrent peers)
+GATHER_TIMEOUT = PEER_TIMEOUT * 3
 
 
 class MPCOrchestrator:
@@ -510,10 +512,32 @@ class MPCOrchestrator:
                 )
             return None
 
-        results = await asyncio.gather(
-            *(_init_peer(peer) for peer in peers),
-            return_exceptions=True,
-        )
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    *(_init_peer(peer) for peer in peers),
+                    return_exceptions=True,
+                ),
+                timeout=GATHER_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            from djinn_validator.api.metrics import MPC_ERRORS
+
+            MPC_ERRORS.labels(reason="peer_init_timeout").inc()
+            log.warning(
+                "mpc_peer_init_timeout",
+                timeout=GATHER_TIMEOUT,
+                n_peers=len(peers),
+            )
+            return None
+
+        init_failures = sum(1 for r in results if r is None or isinstance(r, BaseException))
+        if init_failures > 0:
+            from djinn_validator.api.metrics import MPC_ERRORS
+
+            MPC_ERRORS.labels(reason="peer_init_failure").inc()
+            log.info("mpc_peer_init_failures", count=init_failures, total=len(peers))
+
         accepted_peers = [r for r in results if r is not None and not isinstance(r, BaseException)]
 
         if len(accepted_peers) + 1 < self._threshold:
@@ -591,10 +615,25 @@ class MPCOrchestrator:
                     )
                 return None
 
-            results = await asyncio.gather(
-                *(_collect_gate(peer, gate_idx, prev_d, prev_e) for peer in active_peers),
-                return_exceptions=True,
-            )
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(
+                        *(_collect_gate(peer, gate_idx, prev_d, prev_e) for peer in active_peers),
+                        return_exceptions=True,
+                    ),
+                    timeout=GATHER_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                from djinn_validator.api.metrics import MPC_ERRORS
+
+                MPC_ERRORS.labels(reason="gate_collect_timeout").inc()
+                log.warning(
+                    "mpc_gate_collect_timeout",
+                    gate_idx=gate_idx,
+                    timeout=GATHER_TIMEOUT,
+                    n_peers=len(active_peers),
+                )
+                return None
 
             failed = []
             for i, result in enumerate(results):
@@ -729,8 +768,8 @@ class MPCOrchestrator:
             authenticated=is_auth,
         )
 
-        # Broadcast result to peers
-        for peer in active_peers:
+        # Broadcast result to peers (parallel, best-effort with timeout)
+        async def _broadcast_result(peer: dict[str, Any]) -> None:
             try:
                 await self._peer_request(
                     "post",
@@ -750,6 +789,21 @@ class MPCOrchestrator:
                     error_type=type(e).__name__,
                     error=str(e),
                 )
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(_broadcast_result(p) for p in active_peers),
+                    return_exceptions=True,
+                ),
+                timeout=GATHER_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            log.warning(
+                "mpc_result_broadcast_timeout",
+                timeout=GATHER_TIMEOUT,
+                n_peers=len(active_peers),
+            )
 
         return mpc_result
 

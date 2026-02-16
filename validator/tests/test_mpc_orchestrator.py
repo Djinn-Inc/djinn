@@ -402,3 +402,54 @@ class TestPeerRetryBehavior:
         orch = MPCOrchestrator(coordinator=coord, neuron=None)
         await orch.close()
         assert orch._http.is_closed
+
+
+class TestGatherTimeouts:
+    """Test that gather operations have proper timeouts."""
+
+    def _make_peers(self, count: int) -> list[dict]:
+        return [
+            {"uid": i + 1, "url": f"http://peer{i + 1}:8421"}
+            for i in range(count)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_gather_timeout_constant_exists(self) -> None:
+        """GATHER_TIMEOUT should be derived from PEER_TIMEOUT."""
+        from djinn_validator.core.mpc_orchestrator import GATHER_TIMEOUT, PEER_TIMEOUT
+        assert GATHER_TIMEOUT == PEER_TIMEOUT * 3
+
+    @pytest.mark.asyncio
+    async def test_peer_init_timeout_returns_none(self, monkeypatch) -> None:
+        """When peer init gather times out, returns None gracefully."""
+        import asyncio
+        import djinn_validator.core.mpc_orchestrator as orch_module
+
+        # Set a very short gather timeout
+        monkeypatch.setattr(orch_module, "GATHER_TIMEOUT", 0.001)
+
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
+        peers = self._make_peers(5)
+        share = Share(x=1, y=42)
+
+        # Monkey-patch _peer_request to sleep forever
+        async def _slow_request(*args, **kwargs):
+            await asyncio.sleep(100)
+
+        monkeypatch.setattr(orch, "_peer_request", _slow_request)
+
+        result = await orch._distributed_mpc("sig-1", share, {1, 3}, peers)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_empty_available_indices_returns_unavailable(self) -> None:
+        """When available_indices is empty, returns unavailable immediately."""
+        coord = MPCCoordinator()
+        orch = MPCOrchestrator(coordinator=coord, neuron=None, threshold=3)
+        peers = self._make_peers(5)
+        share = Share(x=1, y=42)
+
+        result = await orch._distributed_mpc("sig-1", share, set(), peers)
+        assert result is not None
+        assert result.available is False
