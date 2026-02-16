@@ -376,6 +376,46 @@ def main() -> int:
     runner.run("Full signal lifecycle (store → check → purchase)", test_full_flow)
 
     # ------------------------------------------------------------------
+    # OT endpoints
+    # ------------------------------------------------------------------
+    print("\n--- OT Endpoints ---")
+
+    def test_ot_setup() -> None:
+        resp = runner.post(
+            f"{VALIDATOR_URL}/v1/ot/setup",
+            {"session_id": "inttest_ot", "n_triples": 3, "n_bits": 64},
+        )
+        # Accept 200 (success) or 400/422 (validation) — just ensure endpoint exists
+        assert resp.status_code in (200, 400, 422), f"Unexpected {resp.status_code}"
+
+    def test_ot_status() -> None:
+        resp = runner.get(f"{VALIDATOR_URL}/v1/ot/inttest_ot/status")
+        assert resp.status_code in (200, 404)
+
+    runner.run("OT setup endpoint reachable", test_ot_setup)
+    runner.run("OT status endpoint reachable", test_ot_status)
+
+    # ------------------------------------------------------------------
+    # Concurrent requests
+    # ------------------------------------------------------------------
+    print("\n--- Concurrent Requests ---")
+
+    def test_concurrent_health_checks() -> None:
+        import concurrent.futures
+
+        def check_health(url: str) -> int:
+            with httpx.Client(timeout=TIMEOUT) as c:
+                return c.get(f"{url}/health").status_code
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(check_health, VALIDATOR_URL) for _ in range(10)]
+            futures += [pool.submit(check_health, MINER_URL) for _ in range(10)]
+            results = [f.result() for f in futures]
+        assert all(r == 200 for r in results), f"Some health checks failed: {results}"
+
+    runner.run("20 concurrent health checks succeed", test_concurrent_health_checks)
+
+    # ------------------------------------------------------------------
     # Error handling
     # ------------------------------------------------------------------
     print("\n--- Error Handling ---")
