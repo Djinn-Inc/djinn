@@ -429,18 +429,24 @@ export default function PurchaseSignal() {
               </div>
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wide">
-                  Max Price
+                  Signal Fee
                 </p>
                 <p className="text-sm text-slate-900 font-medium mt-1">
                   {formatBps(signal.maxPriceBps)} of notional
                 </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  ${((100 * Number(signal.maxPriceBps)) / 10_000).toFixed(2)} per $100
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wide">
-                  SLA Multiplier
+                  Genius Skin in Game
                 </p>
                 <p className="text-sm text-slate-900 font-medium mt-1">
                   {formatBps(signal.slaMultiplierBps)}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Genius risks {formatBps(signal.slaMultiplierBps)} of your notional if wrong
                 </p>
               </div>
               <div>
@@ -536,7 +542,7 @@ export default function PurchaseSignal() {
                     required
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Reference amount for fee calculation
+                    Your protection amount. You can bet any size independently &mdash; this sets the fee and how much the genius risks if wrong.
                   </p>
                 </div>
 
@@ -559,10 +565,10 @@ export default function PurchaseSignal() {
                 </div>
 
                 {notional && (
-                  <div className="rounded-lg bg-slate-50 p-3 space-y-1">
+                  <div className="rounded-lg bg-slate-50 p-3 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Fee</span>
-                      <span className="text-slate-900">
+                      <span className="text-slate-500">You pay (fee)</span>
+                      <span className="text-slate-900 font-medium">
                         $
                         {(
                           (Number(notional) * Number(signal.maxPriceBps)) /
@@ -572,9 +578,9 @@ export default function PurchaseSignal() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">
-                        Genius collateral locked
+                        Genius risks (locked collateral)
                       </span>
-                      <span className="text-slate-900">
+                      <span className="text-slate-900 font-medium">
                         $
                         {(
                           (Number(notional) *
@@ -583,6 +589,9 @@ export default function PurchaseSignal() {
                         ).toFixed(2)}
                       </span>
                     </div>
+                    <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-200">
+                      If the pick is wrong, you receive a share of the genius&apos;s locked collateral. If correct, the genius keeps their collateral and earns your fee.
+                    </p>
                   </div>
                 )}
 

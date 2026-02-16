@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -70,6 +70,14 @@ export default function TrackRecordPage() {
   );
 
   const savedCount = getSavedSignals().length;
+
+  // Auto-select all proofable signals on first load (up to 20)
+  useEffect(() => {
+    if (proofableSignals.length > 0 && selectedIds.size === 0) {
+      const ids = proofableSignals.slice(0, 20).map((s) => s.signalId);
+      setSelectedIds(new Set(ids));
+    }
+  }, [proofableSignals]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSignal = (id: string) => {
     setSelectedIds((prev) => {

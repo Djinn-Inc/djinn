@@ -206,27 +206,48 @@ export default function IdiotDashboard() {
           </div>
         ) : (
           <div className="space-y-3">
-            {signals.map((s) => (
-              <Link
-                key={s.signalId}
-                href={`/idiot/signal/${s.signalId}`}
-                className="card block hover:border-idiot-300 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">
-                      {s.sport} &middot; by {truncateAddress(s.genius)}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Max Price: {formatBps(s.maxPriceBps)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
-                    </p>
+            {signals.map((s) => {
+              const feePerHundred = ((100 * Number(s.maxPriceBps)) / 10_000).toFixed(2);
+              const slaPercent = formatBps(s.slaMultiplierBps);
+              const expires = new Date(Number(s.expiresAt) * 1000);
+              const hoursLeft = Math.max(0, Math.round((expires.getTime() - Date.now()) / 3_600_000));
+              return (
+                <Link
+                  key={s.signalId}
+                  href={`/idiot/signal/${s.signalId}`}
+                  className="card block hover:border-idiot-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-900">
+                          {s.sport}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          by {truncateAddress(s.genius)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-slate-500">
+                          ${feePerHundred} per $100
+                        </span>
+                        <span className="text-xs text-slate-400">&middot;</span>
+                        <span className="text-xs text-slate-500">
+                          {slaPercent} SLA
+                        </span>
+                        <span className="text-xs text-slate-400">&middot;</span>
+                        <span className={`text-xs ${hoursLeft < 2 ? "text-red-500" : "text-slate-500"}`}>
+                          {hoursLeft}h left
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-idiot-500 font-medium shrink-0 ml-4">
+                      View &rarr;
+                    </span>
                   </div>
-                  <span className="text-xs text-idiot-500 font-medium">
-                    View &rarr;
-                  </span>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>
