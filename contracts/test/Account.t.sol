@@ -19,14 +19,16 @@ contract AccountTest is Test {
         acct.setAuthorizedCaller(authorizedCaller, true);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _recordPurchase(uint256 purchaseId) internal {
         vm.prank(authorizedCaller);
         acct.recordPurchase(genius, idiot, purchaseId);
     }
 
-    // ─── Tests: Record purchases up to 10 ────────────────────────────────
+    // ─── Tests: Record purchases up to 10
+    // ────────────────────────────────
 
     function test_recordPurchase_singlePurchase() public {
         _recordPurchase(1);
@@ -58,20 +60,20 @@ contract AccountTest is Test {
         acct.recordPurchase(genius, idiot, 42);
     }
 
-    // ─── Tests: Revert on 11th purchase ──────────────────────────────────
+    // ─── Tests: Revert on 11th purchase
+    // ──────────────────────────────────
 
     function test_recordPurchase_revertOn11thPurchase() public {
         for (uint256 i = 1; i <= 10; i++) {
             _recordPurchase(i);
         }
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.CycleSignalLimitReached.selector, genius, idiot, 10)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CycleSignalLimitReached.selector, genius, idiot, 10));
         _recordPurchase(11);
     }
 
-    // ─── Tests: Record outcomes ──────────────────────────────────────────
+    // ─── Tests: Record outcomes
+    // ──────────────────────────────────────────
 
     function test_recordOutcome_favorable() public {
         _recordPurchase(1);
@@ -157,14 +159,13 @@ contract AccountTest is Test {
         vm.prank(authorizedCaller);
         acct.recordOutcome(genius, idiot, 1, Outcome.Favorable);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.OutcomeAlreadyRecorded.selector, genius, idiot, 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.OutcomeAlreadyRecorded.selector, genius, idiot, 1));
         vm.prank(authorizedCaller);
         acct.recordOutcome(genius, idiot, 1, Outcome.Unfavorable);
     }
 
-    // ─── Tests: isAuditReady returns true at 10 ──────────────────────────
+    // ─── Tests: isAuditReady returns true at 10
+    // ──────────────────────────
 
     function test_isAuditReady_falseBelow10() public {
         for (uint256 i = 1; i <= 9; i++) {
@@ -184,7 +185,8 @@ contract AccountTest is Test {
         assertFalse(acct.isAuditReady(genius, idiot));
     }
 
-    // ─── Tests: Start new cycle resets state ─────────────────────────────
+    // ─── Tests: Start new cycle resets state
+    // ─────────────────────────────
 
     function test_startNewCycle_resetsState() public {
         for (uint256 i = 1; i <= 10; i++) {
@@ -228,33 +230,29 @@ contract AccountTest is Test {
         assertTrue(acct.isAuditReady(genius, idiot));
     }
 
-    // ─── Tests: Revert duplicate purchase recording ──────────────────────
+    // ─── Tests: Revert duplicate purchase recording
+    // ──────────────────────
 
     function test_recordPurchase_revertDuplicate() public {
         _recordPurchase(42);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.PurchaseAlreadyRecorded.selector, genius, idiot, 42)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.PurchaseAlreadyRecorded.selector, genius, idiot, 42));
         _recordPurchase(42);
     }
 
     // ─── Tests: Revert outcome for non-existent purchase ─────────────────
 
     function test_recordOutcome_revertForNonExistentPurchase() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.PurchaseNotFound.selector, genius, idiot, 999)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.PurchaseNotFound.selector, genius, idiot, 999));
         vm.prank(authorizedCaller);
         acct.recordOutcome(genius, idiot, 999, Outcome.Favorable);
     }
 
-    // ─── Tests: Authorization ────────────────────────────────────────────
+    // ─── Tests: Authorization
+    // ────────────────────────────────────────────
 
     function test_recordPurchase_revertByUnauthorized() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
         acct.recordPurchase(genius, idiot, 1);
     }
@@ -262,22 +260,19 @@ contract AccountTest is Test {
     function test_recordOutcome_revertByUnauthorized() public {
         _recordPurchase(1);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
         acct.recordOutcome(genius, idiot, 1, Outcome.Favorable);
     }
 
     function test_startNewCycle_revertByUnauthorized() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
         acct.startNewCycle(genius, idiot);
     }
 
-    // ─── Tests: Address validation ───────────────────────────────────────
+    // ─── Tests: Address validation
+    // ───────────────────────────────────────
 
     function test_recordPurchase_revertZeroGenius() public {
         vm.expectRevert(DjinnAccount.ZeroGeniusAddress.selector);
@@ -297,7 +292,8 @@ contract AccountTest is Test {
         acct.recordPurchase(genius, genius, 1);
     }
 
-    // ─── Tests: View functions ───────────────────────────────────────────
+    // ─── Tests: View functions
+    // ───────────────────────────────────────────
 
     function test_getAccount_defaultValues() public view {
         AccountState memory state = acct.getAccount(genius, idiot);
@@ -330,7 +326,8 @@ contract AccountTest is Test {
         assertEq(acct.getCurrentCycle(genius, idiot), 2);
     }
 
-    // ─── Tests: settleAudit ──────────────────────────────────────────────
+    // ─── Tests: settleAudit
+    // ──────────────────────────────────────────────
 
     function test_settleAudit_marksSettledAndStartsNewCycle() public {
         for (uint256 i = 1; i <= 10; i++) {
@@ -346,7 +343,8 @@ contract AccountTest is Test {
         assertFalse(acct.isAuditReady(genius, idiot));
     }
 
-    // ─── Tests: setSettled ───────────────────────────────────────────────
+    // ─── Tests: setSettled
+    // ───────────────────────────────────────────────
 
     function test_setSettled_works() public {
         vm.prank(authorizedCaller);

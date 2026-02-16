@@ -11,12 +11,14 @@ import {AccountState, Outcome} from "./interfaces/IDjinn.sol";
 /// @dev The (genius, idiot) pair is the primary key. Each pair progresses through independent
 ///      audit cycles of 10 signals each.
 contract Account is Ownable {
-    // ─── Constants ──────────────────────────────────────────────────────
+    // ─── Constants
+    // ──────────────────────────────────────────────────────
 
     /// @notice Number of signals required before an audit can be triggered
     uint256 public constant SIGNALS_PER_CYCLE = 10;
 
-    // ─── Storage ────────────────────────────────────────────────────────
+    // ─── Storage
+    // ────────────────────────────────────────────────────────
 
     /// @dev keccak256(genius, idiot) => AccountState
     mapping(bytes32 => AccountState) private _accounts;
@@ -30,7 +32,8 @@ contract Account is Ownable {
     /// @dev address => whether it can call mutating functions
     mapping(address => bool) public authorizedCallers;
 
-    // ─── Events ─────────────────────────────────────────────────────────
+    // ─── Events
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Emitted when a purchase is recorded for a Genius-Idiot pair
     event PurchaseRecorded(address indexed genius, address indexed idiot, uint256 purchaseId, uint256 signalCount);
@@ -47,7 +50,8 @@ contract Account is Ownable {
     /// @notice Emitted when an authorized caller is added or removed
     event AuthorizedCallerSet(address indexed caller, bool authorized);
 
-    // ─── Errors ─────────────────────────────────────────────────────────
+    // ─── Errors
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Caller is not authorized to call this function
     error CallerNotAuthorized(address caller);
@@ -76,7 +80,8 @@ contract Account is Ownable {
     /// @notice Cannot record Pending as an outcome
     error InvalidOutcome();
 
-    // ─── Modifiers ──────────────────────────────────────────────────────
+    // ─── Modifiers
+    // ──────────────────────────────────────────────────────
 
     /// @dev Reverts if the caller is not an authorized contract
     modifier onlyAuthorized() {
@@ -86,13 +91,15 @@ contract Account is Ownable {
         _;
     }
 
-    // ─── Constructor ────────────────────────────────────────────────────
+    // ─── Constructor
+    // ────────────────────────────────────────────────────
 
     /// @notice Deploys the Account contract
     /// @param initialOwner Address that will own this contract and manage authorized callers
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    // ─── External Functions ─────────────────────────────────────────────
+    // ─── External Functions
+    // ─────────────────────────────────────────────
 
     /// @notice Record a purchase for a Genius-Idiot pair
     /// @dev Called by the Escrow contract when a purchase happens. Increments signalCount
@@ -239,7 +246,8 @@ contract Account is Ownable {
         emit AuthorizedCallerSet(caller, authorized);
     }
 
-    // ─── View Functions ─────────────────────────────────────────────────
+    // ─── View Functions
+    // ─────────────────────────────────────────────────
 
     /// @notice Returns the full account state for a Genius-Idiot pair
     /// @param genius The Genius address
@@ -294,15 +302,12 @@ contract Account is Ownable {
     /// @param idiot The Idiot (buyer) address
     /// @param purchaseId The purchase to look up
     /// @return outcome The outcome recorded for this purchase
-    function getOutcome(
-        address genius,
-        address idiot,
-        uint256 purchaseId
-    ) external view returns (Outcome outcome) {
+    function getOutcome(address genius, address idiot, uint256 purchaseId) external view returns (Outcome outcome) {
         return _outcomes[_accountKey(genius, idiot)][purchaseId];
     }
 
-    // ─── Internal Functions ─────────────────────────────────────────────
+    // ─── Internal Functions
+    // ─────────────────────────────────────────────
 
     /// @dev Computes the storage key for a Genius-Idiot pair
     /// @param genius The Genius address

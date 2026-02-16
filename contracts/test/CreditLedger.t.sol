@@ -18,13 +18,14 @@ contract CreditLedgerTest is Test {
         ledger.setAuthorizedCaller(authorizedCaller, true);
     }
 
-    // ─── Tests: Mint by authorized, check balance ────────────────────────
+    // ─── Tests: Mint by authorized, check balance
+    // ────────────────────────
 
     function test_mint_success() public {
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
-        assertEq(ledger.balanceOf(user1), 1_000e6);
+        assertEq(ledger.balanceOf(user1), 1000e6);
     }
 
     function test_mint_multipleMints() public {
@@ -38,10 +39,10 @@ contract CreditLedgerTest is Test {
 
     function test_mint_emitsEvent() public {
         vm.expectEmit(true, false, false, true);
-        emit CreditLedger.CreditsMinted(user1, 1_000e6);
+        emit CreditLedger.CreditsMinted(user1, 1000e6);
 
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
     }
 
     function test_mint_revertOnZeroAmount() public {
@@ -56,11 +57,12 @@ contract CreditLedgerTest is Test {
         ledger.mint(address(0), 100e6);
     }
 
-    // ─── Tests: Burn by authorized ───────────────────────────────────────
+    // ─── Tests: Burn by authorized
+    // ───────────────────────────────────────
 
     function test_burn_success() public {
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
         vm.prank(authorizedCaller);
         ledger.burn(user1, 400e6);
@@ -70,17 +72,17 @@ contract CreditLedgerTest is Test {
 
     function test_burn_entireBalance() public {
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
         vm.prank(authorizedCaller);
-        ledger.burn(user1, 1_000e6);
+        ledger.burn(user1, 1000e6);
 
         assertEq(ledger.balanceOf(user1), 0);
     }
 
     function test_burn_emitsEvent() public {
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
         vm.expectEmit(true, false, false, true);
         emit CreditLedger.CreditsBurned(user1, 500e6);
@@ -89,23 +91,20 @@ contract CreditLedgerTest is Test {
         ledger.burn(user1, 500e6);
     }
 
-    // ─── Tests: Revert burn exceeding balance ────────────────────────────
+    // ─── Tests: Revert burn exceeding balance
+    // ────────────────────────────
 
     function test_burn_revertExceedingBalance() public {
         vm.prank(authorizedCaller);
         ledger.mint(user1, 500e6);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CreditLedger.InsufficientCreditBalance.selector, user1, 500e6, 1_000e6)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CreditLedger.InsufficientCreditBalance.selector, user1, 500e6, 1000e6));
         vm.prank(authorizedCaller);
-        ledger.burn(user1, 1_000e6);
+        ledger.burn(user1, 1000e6);
     }
 
     function test_burn_revertOnZeroBalance() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(CreditLedger.InsufficientCreditBalance.selector, user1, 0, 100e6)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CreditLedger.InsufficientCreditBalance.selector, user1, 0, 100e6));
         vm.prank(authorizedCaller);
         ledger.burn(user1, 100e6);
     }
@@ -116,48 +115,47 @@ contract CreditLedgerTest is Test {
         ledger.burn(user1, 0);
     }
 
-    // ─── Tests: Revert mint/burn by unauthorized ─────────────────────────
+    // ─── Tests: Revert mint/burn by unauthorized
+    // ─────────────────────────
 
     function test_mint_revertByUnauthorized() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(CreditLedger.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CreditLedger.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
     }
 
     function test_burn_revertByUnauthorized() public {
         // First mint some credits
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CreditLedger.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CreditLedger.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
         ledger.burn(user1, 500e6);
     }
 
-    // ─── Tests: Non-transferable ─────────────────────────────────────────
+    // ─── Tests: Non-transferable
+    // ─────────────────────────────────────────
 
     function test_nonTransferable_noTransferFunction() public {
         // Mint credits to user1
         vm.prank(authorizedCaller);
-        ledger.mint(user1, 1_000e6);
+        ledger.mint(user1, 1000e6);
 
         // Credits are separate per user, no way to transfer
-        assertEq(ledger.balanceOf(user1), 1_000e6);
+        assertEq(ledger.balanceOf(user1), 1000e6);
         assertEq(ledger.balanceOf(user2), 0);
 
         // Mint separately to user2 -- balances remain independent
         vm.prank(authorizedCaller);
         ledger.mint(user2, 200e6);
 
-        assertEq(ledger.balanceOf(user1), 1_000e6);
+        assertEq(ledger.balanceOf(user1), 1000e6);
         assertEq(ledger.balanceOf(user2), 200e6);
     }
 
-    // ─── Tests: setAuthorizedCaller ──────────────────────────────────────
+    // ─── Tests: setAuthorizedCaller
+    // ──────────────────────────────────────
 
     function test_setAuthorizedCaller_onlyOwner() public {
         address newCaller = address(0xCAFE);
@@ -174,7 +172,8 @@ contract CreditLedgerTest is Test {
         ledger.setAuthorizedCaller(address(0xDEAD), true);
     }
 
-    // ─── Tests: balanceOf ────────────────────────────────────────────────
+    // ─── Tests: balanceOf
+    // ────────────────────────────────────────────────
 
     function test_balanceOf_zeroForNewAddress() public view {
         assertEq(ledger.balanceOf(address(0xDEAD)), 0);

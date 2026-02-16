@@ -68,7 +68,8 @@ contract AuditFuzzTest is Test {
         escrow.setAuthorizedCaller(owner, true);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _buildDecoyLines() internal pure returns (string[] memory) {
         string[] memory decoys = new string[](10);
@@ -117,15 +118,13 @@ contract AuditFuzzTest is Test {
         vm.stopPrank();
     }
 
-    // ─── Fuzz: Quality Score Calculation ─────────────────────────────────
+    // ─── Fuzz: Quality Score Calculation
+    // ─────────────────────────────────
 
     /// @notice Fuzz the quality score computation with random notional, odds, sla, and outcomes
-    function testFuzz_qualityScore(
-        uint256 notionalSeed,
-        uint256 oddsSeed,
-        uint256 slaSeed,
-        uint256 outcomeSeed
-    ) public {
+    function testFuzz_qualityScore(uint256 notionalSeed, uint256 oddsSeed, uint256 slaSeed, uint256 outcomeSeed)
+        public
+    {
         // Bound inputs to valid ranges
         // notional: 1e6 to 1e12 (1 USDC to 1M USDC)
         uint256 notional = bound(notionalSeed, 1e6, 1e12);
@@ -172,14 +171,12 @@ contract AuditFuzzTest is Test {
         assertEq(actualScore, expectedScore, "Fuzz: Quality score mismatch");
     }
 
-    // ─── Fuzz: Tranche A / B Split ──────────────────────────────────────
+    // ─── Fuzz: Tranche A / B Split
+    // ──────────────────────────────────────
 
     /// @notice Fuzz the tranche A/B split: verify trancheA <= totalFeesPaid,
     ///         trancheA + trancheB == totalDamages, and USDC extraction capped
-    function testFuzz_trancheAB_split(
-        uint256 notionalSeed,
-        uint256 slaSeed
-    ) public {
+    function testFuzz_trancheAB_split(uint256 notionalSeed, uint256 slaSeed) public {
         // Use all unfavorable signals to guarantee a negative score
         uint256 notional = bound(notionalSeed, 1e6, 1e10);
         uint256 sla = bound(slaSeed, 10_000, 30_000);
@@ -222,9 +219,7 @@ contract AuditFuzzTest is Test {
         assertLe(result.trancheA, totalUsdcFeesPaid, "Fuzz: trancheA must be <= totalFeesPaid");
 
         // Tranche A + B must equal total damages
-        assertEq(
-            result.trancheA + result.trancheB, totalDamages, "Fuzz: trancheA + trancheB must equal totalDamages"
-        );
+        assertEq(result.trancheA + result.trancheB, totalDamages, "Fuzz: trancheA + trancheB must equal totalDamages");
 
         // When damages >= fees: trancheA == fees
         if (totalDamages >= totalUsdcFeesPaid) {
@@ -245,10 +240,7 @@ contract AuditFuzzTest is Test {
     // ─── Fuzz: Credit Refund with Mixed USDC/Credit Payments ────────────
 
     /// @notice Fuzz credit refund logic: mixed USDC/credit payments
-    function testFuzz_creditRefund(
-        uint256 notionalSeed,
-        uint256 creditSeed
-    ) public {
+    function testFuzz_creditRefund(uint256 notionalSeed, uint256 creditSeed) public {
         uint256 notional = bound(notionalSeed, 1e6, 1e10);
         uint256 odds = 1_910_000;
         uint256 sla = 15_000;
@@ -304,7 +296,8 @@ contract AuditFuzzTest is Test {
         assertLe(usdcRefunded, totalUsdcPaidAccum, "Fuzz: USDC refund must not exceed USDC paid");
     }
 
-    // ─── Fuzz: Collateral Requirements ──────────────────────────────────
+    // ─── Fuzz: Collateral Requirements
+    // ──────────────────────────────────
 
     /// @notice Fuzz collateral lock: verify lockAmount == notional * sla / 10000
     function testFuzz_collateralLock(uint256 notionalSeed, uint256 slaSeed) public {
@@ -322,18 +315,18 @@ contract AuditFuzzTest is Test {
         escrow.purchase(1, notional, 1_910_000);
 
         assertEq(
-            collateral.getSignalLock(genius, 1), expectedLock, "Fuzz: collateral lock should equal notional * sla / 10000"
+            collateral.getSignalLock(genius, 1),
+            expectedLock,
+            "Fuzz: collateral lock should equal notional * sla / 10000"
         );
         assertEq(collateral.getLocked(genius), expectedLock, "Fuzz: total locked mismatch");
     }
 
-    // ─── Fuzz: Protocol Fee ──────────────────────────────────────────────
+    // ─── Fuzz: Protocol Fee
+    // ──────────────────────────────────────────────
 
     /// @notice Fuzz protocol fee: verify it equals 0.5% of total non-void notional
-    function testFuzz_protocolFee(
-        uint256 notionalSeed,
-        uint256 outcomeSeed
-    ) public {
+    function testFuzz_protocolFee(uint256 notionalSeed, uint256 outcomeSeed) public {
         uint256 notional = bound(notionalSeed, 1e6, 1e10);
         uint256 odds = 1_910_000;
         uint256 sla = 15_000;
@@ -382,7 +375,8 @@ contract AuditFuzzTest is Test {
         assertEq(result.protocolFee, expectedProtocolFee, "Fuzz: protocol fee should be 0.5% of non-void notional");
     }
 
-    // ─── Fuzz: Single favorable gain ─────────────────────────────────────
+    // ─── Fuzz: Single favorable gain
+    // ─────────────────────────────────────
 
     /// @notice Fuzz a single favorable signal's contribution to quality score
     function testFuzz_favorableGain(uint256 notionalSeed, uint256 oddsSeed) public {
@@ -399,7 +393,8 @@ contract AuditFuzzTest is Test {
         assertTrue(expected <= int256(notional) * 9, "Fuzz: gain should be at most 9x notional for 10x odds");
     }
 
-    // ─── Fuzz: Single unfavorable loss ───────────────────────────────────
+    // ─── Fuzz: Single unfavorable loss
+    // ───────────────────────────────────
 
     /// @notice Fuzz a single unfavorable signal's contribution to quality score
     function testFuzz_unfavorableLoss(uint256 notionalSeed, uint256 slaSeed) public {
@@ -415,7 +410,8 @@ contract AuditFuzzTest is Test {
         assertTrue(loss <= int256(notional) * 3, "Fuzz: loss must be <= 3x notional when sla <= 30000");
     }
 
-    // ─── Fuzz: Tranche invariant ─────────────────────────────────────────
+    // ─── Fuzz: Tranche invariant
+    // ─────────────────────────────────────────
 
     /// @notice Pure math fuzz: for any damages and feesPaid, verify tranche split invariant
     function testFuzz_trancheSplitInvariant(uint256 damagesSeed, uint256 feesSeed) public pure {

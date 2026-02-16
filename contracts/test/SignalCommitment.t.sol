@@ -18,7 +18,8 @@ contract SignalCommitmentTest is Test {
         sc.setAuthorizedCaller(authorizedCaller, true);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _makeDecoyLines() internal pure returns (string[] memory) {
         string[] memory lines = new string[](10);
@@ -54,7 +55,8 @@ contract SignalCommitmentTest is Test {
         sc.commit(_defaultParams(signalId));
     }
 
-    // ─── Tests: Successful commit ────────────────────────────────────────
+    // ─── Tests: Successful commit
+    // ────────────────────────────────────────
 
     function test_commit_success() public {
         uint256 signalId = 1;
@@ -84,15 +86,14 @@ contract SignalCommitmentTest is Test {
         SignalCommitment.CommitParams memory p = _defaultParams(signalId);
 
         vm.expectEmit(true, true, false, true);
-        emit SignalCommitment.SignalCommitted(
-            signalId, genius, "NFL", p.maxPriceBps, p.slaMultiplierBps, p.expiresAt
-        );
+        emit SignalCommitment.SignalCommitted(signalId, genius, "NFL", p.maxPriceBps, p.slaMultiplierBps, p.expiresAt);
 
         vm.prank(genius);
         sc.commit(p);
     }
 
-    // ─── Tests: Revert on duplicate signal ID ────────────────────────────
+    // ─── Tests: Revert on duplicate signal ID
+    // ────────────────────────────
 
     function test_commit_revertOnDuplicateSignalId() public {
         _commitDefault(1);
@@ -102,7 +103,8 @@ contract SignalCommitmentTest is Test {
         sc.commit(_defaultParams(1));
     }
 
-    // ─── Tests: Revert on invalid decoy lines length ─────────────────────
+    // ─── Tests: Revert on invalid decoy lines length
+    // ─────────────────────
 
     function test_commit_revertOnDecoyLinesTooFew() public {
         SignalCommitment.CommitParams memory p = _defaultParams(100);
@@ -130,13 +132,14 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
     }
 
-    // ─── Tests: Revert on SLA multiplier too low ─────────────────────────
+    // ─── Tests: Revert on SLA multiplier too low
+    // ─────────────────────────
 
     function test_commit_revertOnSlaMultiplierTooLow() public {
         SignalCommitment.CommitParams memory p = _defaultParams(200);
-        p.slaMultiplierBps = 9_999;
+        p.slaMultiplierBps = 9999;
 
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SlaMultiplierTooLow.selector, 9_999));
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SlaMultiplierTooLow.selector, 9999));
         vm.prank(genius);
         sc.commit(p);
     }
@@ -151,7 +154,8 @@ contract SignalCommitmentTest is Test {
         assertTrue(sc.signalExists(201));
     }
 
-    // ─── Tests: Revert on invalid max price ──────────────────────────────
+    // ─── Tests: Revert on invalid max price
+    // ──────────────────────────────
 
     function test_commit_revertOnMaxPriceZero() public {
         SignalCommitment.CommitParams memory p = _defaultParams(300);
@@ -164,16 +168,16 @@ contract SignalCommitmentTest is Test {
 
     function test_commit_revertOnMaxPriceTooHigh() public {
         SignalCommitment.CommitParams memory p = _defaultParams(301);
-        p.maxPriceBps = 5_001;
+        p.maxPriceBps = 5001;
 
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.InvalidMaxPriceBps.selector, 5_001));
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.InvalidMaxPriceBps.selector, 5001));
         vm.prank(genius);
         sc.commit(p);
     }
 
     function test_commit_maxPriceExactMaximum() public {
         SignalCommitment.CommitParams memory p = _defaultParams(302);
-        p.maxPriceBps = 5_000;
+        p.maxPriceBps = 5000;
 
         vm.prank(genius);
         sc.commit(p);
@@ -191,7 +195,8 @@ contract SignalCommitmentTest is Test {
         assertTrue(sc.signalExists(303));
     }
 
-    // ─── Tests: Revert on expired signal ─────────────────────────────────
+    // ─── Tests: Revert on expired signal
+    // ─────────────────────────────────
 
     function test_commit_revertOnExpiredSignal() public {
         SignalCommitment.CommitParams memory p = _defaultParams(400);
@@ -215,7 +220,8 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
     }
 
-    // ─── Tests: Revert on empty encrypted blob ──────────────────────────
+    // ─── Tests: Revert on empty encrypted blob
+    // ──────────────────────────
 
     function test_commit_revertOnEmptyBlob() public {
         SignalCommitment.CommitParams memory p = _defaultParams(500);
@@ -226,7 +232,8 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
     }
 
-    // ─── Tests: Revert on zero commit hash ───────────────────────────────
+    // ─── Tests: Revert on zero commit hash
+    // ───────────────────────────────
 
     function test_commit_revertOnZeroCommitHash() public {
         SignalCommitment.CommitParams memory p = _defaultParams(501);
@@ -237,7 +244,8 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
     }
 
-    // ─── Tests: Void signal by genius ────────────────────────────────────
+    // ─── Tests: Void signal by genius
+    // ────────────────────────────────────
 
     function test_voidSignal_success() public {
         _commitDefault(600);
@@ -259,7 +267,8 @@ contract SignalCommitmentTest is Test {
         sc.voidSignal(601);
     }
 
-    // ─── Tests: Revert void by non-genius ────────────────────────────────
+    // ─── Tests: Revert void by non-genius
+    // ────────────────────────────────
 
     function test_voidSignal_revertByNonGenius() public {
         _commitDefault(700);
@@ -290,7 +299,8 @@ contract SignalCommitmentTest is Test {
         sc.voidSignal(999);
     }
 
-    // ─── Tests: Update status by authorized caller ───────────────────────
+    // ─── Tests: Update status by authorized caller
+    // ───────────────────────
 
     function test_updateStatus_byAuthorizedCaller() public {
         _commitDefault(900);
@@ -320,9 +330,7 @@ contract SignalCommitmentTest is Test {
     function test_updateStatus_revertByUnauthorizedCaller() public {
         _commitDefault(1000);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(SignalCommitment.CallerNotAuthorized.selector, unauthorizedCaller)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.CallerNotAuthorized.selector, unauthorizedCaller));
         vm.prank(unauthorizedCaller);
         sc.updateStatus(1000, SignalStatus.Purchased);
     }
@@ -333,7 +341,8 @@ contract SignalCommitmentTest is Test {
         sc.updateStatus(1111, SignalStatus.Purchased);
     }
 
-    // ─── Tests: View functions ───────────────────────────────────────────
+    // ─── Tests: View functions
+    // ───────────────────────────────────────────
 
     function test_getSignal_revertsForNonExistent() public {
         vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotFound.selector, 2000));
@@ -382,7 +391,8 @@ contract SignalCommitmentTest is Test {
         assertFalse(sc.signalExists(2008));
     }
 
-    // ─── Tests: setAuthorizedCaller ──────────────────────────────────────
+    // ─── Tests: setAuthorizedCaller
+    // ──────────────────────────────────────
 
     function test_setAuthorizedCaller_onlyOwner() public {
         address newCaller = address(0xCAFE);
@@ -399,7 +409,8 @@ contract SignalCommitmentTest is Test {
         sc.setAuthorizedCaller(address(0xDEAD), true);
     }
 
-    // ─── Tests: State transition coverage ─────────────────────────────────
+    // ─── Tests: State transition coverage
+    // ─────────────────────────────────
 
     function test_updateStatus_activeToPurchased() public {
         _commitDefault(3000);
@@ -476,15 +487,15 @@ contract SignalCommitmentTest is Test {
         sc.voidSignal(3006);
     }
 
-    // ─── Tests: Invalid state transitions ────────────────────────────────
+    // ─── Tests: Invalid state transitions
+    // ────────────────────────────────
 
     function test_updateStatus_revertActiveToSettled() public {
         _commitDefault(4000);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4000, SignalStatus.Active, SignalStatus.Settled
+                SignalCommitment.InvalidStatusTransition.selector, 4000, SignalStatus.Active, SignalStatus.Settled
             )
         );
         vm.prank(authorizedCaller);
@@ -501,8 +512,7 @@ contract SignalCommitmentTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4001, SignalStatus.Settled, SignalStatus.Active
+                SignalCommitment.InvalidStatusTransition.selector, 4001, SignalStatus.Settled, SignalStatus.Active
             )
         );
         vm.prank(authorizedCaller);
@@ -519,8 +529,7 @@ contract SignalCommitmentTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4002, SignalStatus.Settled, SignalStatus.Purchased
+                SignalCommitment.InvalidStatusTransition.selector, 4002, SignalStatus.Settled, SignalStatus.Purchased
             )
         );
         vm.prank(authorizedCaller);
@@ -535,8 +544,7 @@ contract SignalCommitmentTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4003, SignalStatus.Voided, SignalStatus.Active
+                SignalCommitment.InvalidStatusTransition.selector, 4003, SignalStatus.Voided, SignalStatus.Active
             )
         );
         vm.prank(authorizedCaller);
@@ -551,8 +559,7 @@ contract SignalCommitmentTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4004, SignalStatus.Voided, SignalStatus.Purchased
+                SignalCommitment.InvalidStatusTransition.selector, 4004, SignalStatus.Voided, SignalStatus.Purchased
             )
         );
         vm.prank(authorizedCaller);
@@ -567,8 +574,7 @@ contract SignalCommitmentTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector,
-                4005, SignalStatus.Purchased, SignalStatus.Active
+                SignalCommitment.InvalidStatusTransition.selector, 4005, SignalStatus.Purchased, SignalStatus.Active
             )
         );
         vm.prank(authorizedCaller);

@@ -9,7 +9,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 ///         and burned by the Escrow contract when an Idiot uses them to offset a purchase fee.
 /// @dev This is intentionally NOT an ERC20. Credits cannot be transferred, approved, or redeemed for cash.
 contract CreditLedger is Ownable {
-    // ─── Storage ────────────────────────────────────────────────────────
+    // ─── Storage
+    // ────────────────────────────────────────────────────────
 
     /// @dev address => credit balance
     mapping(address => uint256) private _balances;
@@ -17,7 +18,8 @@ contract CreditLedger is Ownable {
     /// @dev address => whether it can call mint/burn
     mapping(address => bool) public authorizedCallers;
 
-    // ─── Events ─────────────────────────────────────────────────────────
+    // ─── Events
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Emitted when credits are minted to an address
     event CreditsMinted(address indexed to, uint256 amount);
@@ -28,7 +30,8 @@ contract CreditLedger is Ownable {
     /// @notice Emitted when an authorized caller is added or removed
     event AuthorizedCallerSet(address indexed caller, bool authorized);
 
-    // ─── Errors ─────────────────────────────────────────────────────────
+    // ─── Errors
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Caller is not authorized to mint or burn credits
     error CallerNotAuthorized(address caller);
@@ -45,7 +48,8 @@ contract CreditLedger is Ownable {
     /// @notice Cannot mint to the zero address
     error MintToZeroAddress();
 
-    // ─── Modifiers ──────────────────────────────────────────────────────
+    // ─── Modifiers
+    // ──────────────────────────────────────────────────────
 
     /// @dev Reverts if the caller is not an authorized contract
     modifier onlyAuthorized() {
@@ -55,13 +59,15 @@ contract CreditLedger is Ownable {
         _;
     }
 
-    // ─── Constructor ────────────────────────────────────────────────────
+    // ─── Constructor
+    // ────────────────────────────────────────────────────
 
     /// @notice Deploys the CreditLedger contract
     /// @param initialOwner Address that will own this contract and manage authorized callers
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    // ─── External Functions ─────────────────────────────────────────────
+    // ─── External Functions
+    // ─────────────────────────────────────────────
 
     /// @notice Mint credits to an address
     /// @dev Only callable by authorized contracts (e.g. Audit during negative settlement).
@@ -105,7 +111,8 @@ contract CreditLedger is Ownable {
         emit AuthorizedCallerSet(caller, authorized);
     }
 
-    // ─── View Functions ─────────────────────────────────────────────────
+    // ─── View Functions
+    // ─────────────────────────────────────────────────
 
     /// @notice Returns the credit balance of an address
     /// @param account The address to query

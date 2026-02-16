@@ -28,7 +28,7 @@ contract EscrowIntegrationTest is Test {
     uint256 constant SIGNAL_ID = 1;
     uint256 constant MAX_PRICE_BPS = 500; // 5%
     uint256 constant SLA_MULTIPLIER_BPS = 15_000; // 150%
-    uint256 constant NOTIONAL = 1_000e6; // 1000 USDC
+    uint256 constant NOTIONAL = 1000e6; // 1000 USDC
     uint256 constant ODDS = 1_910_000; // 1.91 (6 decimal fixed point)
 
     function setUp() public {
@@ -57,7 +57,8 @@ contract EscrowIntegrationTest is Test {
         account.setAuthorizedCaller(owner, true); // for recording outcomes in tests
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _buildDecoyLines() internal pure returns (string[] memory) {
         string[] memory decoys = new string[](10);
@@ -107,7 +108,8 @@ contract EscrowIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    // ─── Deposit / Withdraw Tests ────────────────────────────────────────
+    // ─── Deposit / Withdraw Tests
+    // ────────────────────────────────────────
 
     function test_deposit() public {
         uint256 amount = 500e6;
@@ -166,7 +168,8 @@ contract EscrowIntegrationTest is Test {
         assertEq(usdc.balanceOf(idiot), amount, "All USDC returned to idiot");
     }
 
-    // ─── Successful Purchase ─────────────────────────────────────────────
+    // ─── Successful Purchase
+    // ─────────────────────────────────────────────
 
     function test_purchase_success() public {
         _createSignal(SIGNAL_ID);
@@ -201,9 +204,7 @@ contract EscrowIntegrationTest is Test {
 
         // Verify collateral locked
         assertEq(collateral.getLocked(genius), requiredCollateral, "Collateral not locked");
-        assertEq(
-            collateral.getSignalLock(genius, SIGNAL_ID), requiredCollateral, "Signal lock amount mismatch"
-        );
+        assertEq(collateral.getSignalLock(genius, SIGNAL_ID), requiredCollateral, "Signal lock amount mismatch");
 
         // Verify signal status updated to Purchased
         Signal memory sig = signalCommitment.getSignal(SIGNAL_ID);
@@ -217,7 +218,8 @@ contract EscrowIntegrationTest is Test {
         assertEq(account.getSignalCount(genius, idiot), 1, "Account signal count wrong");
     }
 
-    // ─── Purchase With Credits ───────────────────────────────────────────
+    // ─── Purchase With Credits
+    // ───────────────────────────────────────────
 
     function test_purchase_with_credits() public {
         _createSignal(SIGNAL_ID);
@@ -283,7 +285,8 @@ contract EscrowIntegrationTest is Test {
         assertEq(escrow.feePool(genius, idiot, cycle), 0, "Fee pool should be zero when paid entirely by credits");
     }
 
-    // ─── Purchase Reverts ────────────────────────────────────────────────
+    // ─── Purchase Reverts
+    // ────────────────────────────────────────────────
 
     function test_purchase_reverts_insufficient_balance() public {
         _createSignal(SIGNAL_ID);
@@ -296,9 +299,7 @@ contract EscrowIntegrationTest is Test {
         uint256 insufficientDeposit = expectedFee / 2;
         _depositIdiotEscrow(insufficientDeposit);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Escrow.InsufficientBalance.selector, insufficientDeposit, expectedFee)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Escrow.InsufficientBalance.selector, insufficientDeposit, expectedFee));
         vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
     }
@@ -351,16 +352,15 @@ contract EscrowIntegrationTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                Collateral.InsufficientFreeCollateral.selector,
-                insufficientCollateral,
-                requiredCollateral
+                Collateral.InsufficientFreeCollateral.selector, insufficientCollateral, requiredCollateral
             )
         );
         vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
     }
 
-    // ─── Fee Calculation ─────────────────────────────────────────────────
+    // ─── Fee Calculation
+    // ─────────────────────────────────────────────────
 
     function test_fee_calculation_various_maxPrice() public {
         // Test with different maxPriceBps values
@@ -402,7 +402,8 @@ contract EscrowIntegrationTest is Test {
         }
     }
 
-    // ─── Multiple Purchases ──────────────────────────────────────────────
+    // ─── Multiple Purchases
+    // ──────────────────────────────────────────────
 
     function test_multiple_purchases_same_pair() public {
         uint256 numPurchases = 5;
@@ -442,7 +443,8 @@ contract EscrowIntegrationTest is Test {
         );
     }
 
-    // ─── Refund (via Audit) ──────────────────────────────────────────────
+    // ─── Refund (via Audit)
+    // ──────────────────────────────────────────────
 
     function test_refund_from_audit() public {
         // Complete a purchase to build up fee pool
@@ -494,9 +496,7 @@ contract EscrowIntegrationTest is Test {
         uint256 poolBalance = escrow.feePool(genius, idiot, cycle);
 
         // Try to refund more than pool contains
-        vm.expectRevert(
-            abi.encodeWithSelector(Escrow.InsufficientBalance.selector, poolBalance, poolBalance + 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Escrow.InsufficientBalance.selector, poolBalance, poolBalance + 1));
         escrow.refund(genius, idiot, cycle, poolBalance + 1);
     }
 
@@ -524,13 +524,12 @@ contract EscrowIntegrationTest is Test {
         assertEq(escrow.getBalance(idiot), expectedFee, "Idiot got full refund");
 
         // Third refund: pool is empty, should revert
-        vm.expectRevert(
-            abi.encodeWithSelector(Escrow.InsufficientBalance.selector, 0, 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Escrow.InsufficientBalance.selector, 0, 1));
         escrow.refund(genius, idiot, cycle, 1);
     }
 
-    // ─── setOutcome Tests ─────────────────────────────────────────────────
+    // ─── setOutcome Tests
+    // ─────────────────────────────────────────────────
 
     function test_setOutcome_success() public {
         // Complete a purchase

@@ -30,7 +30,7 @@ contract AuditIntegrationTest is Test {
     // Signal parameters
     uint256 constant MAX_PRICE_BPS = 500; // 5%
     uint256 constant SLA_MULTIPLIER_BPS = 15_000; // 150%
-    uint256 constant NOTIONAL = 1_000e6; // 1000 USDC
+    uint256 constant NOTIONAL = 1000e6; // 1000 USDC
     uint256 constant ODDS = 1_910_000; // 1.91 (6 decimal fixed point)
 
     function setUp() public {
@@ -72,7 +72,8 @@ contract AuditIntegrationTest is Test {
         escrow.setAuthorizedCaller(owner, true); // test contract sets purchase outcomes
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _buildDecoyLines() internal pure returns (string[] memory) {
         string[] memory decoys = new string[](10);
@@ -133,13 +134,10 @@ contract AuditIntegrationTest is Test {
     }
 
     /// @dev Create a signal, deposit collateral + extra for slashing, deposit escrow, purchase, record outcome
-    function _createAndPurchaseSignal(
-        uint256 signalId,
-        uint256 notional,
-        uint256 odds,
-        uint256 sla,
-        Outcome outcome
-    ) internal returns (uint256 purchaseId) {
+    function _createAndPurchaseSignal(uint256 signalId, uint256 notional, uint256 odds, uint256 sla, Outcome outcome)
+        internal
+        returns (uint256 purchaseId)
+    {
         _createSignal(signalId, sla);
 
         // Lock amount + surplus for protocol fee (0.5%) + potential trancheA refund (fee amount)
@@ -160,11 +158,10 @@ contract AuditIntegrationTest is Test {
     }
 
     /// @dev Create 10 signals and purchase all, returning purchase IDs
-    function _create10Signals(
-        Outcome[] memory outcomes,
-        uint256[] memory notionals,
-        uint256[] memory oddsArr
-    ) internal returns (uint256[] memory purchaseIds) {
+    function _create10Signals(Outcome[] memory outcomes, uint256[] memory notionals, uint256[] memory oddsArr)
+        internal
+        returns (uint256[] memory purchaseIds)
+    {
         purchaseIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
             purchaseIds[i] = _createAndPurchaseSignal(
@@ -177,11 +174,7 @@ contract AuditIntegrationTest is Test {
         }
     }
 
-    function _uniformArrays()
-        internal
-        pure
-        returns (uint256[] memory notionals, uint256[] memory oddsArr)
-    {
+    function _uniformArrays() internal pure returns (uint256[] memory notionals, uint256[] memory oddsArr) {
         notionals = new uint256[](10);
         oddsArr = new uint256[](10);
         for (uint256 i; i < 10; i++) {
@@ -190,7 +183,8 @@ contract AuditIntegrationTest is Test {
         }
     }
 
-    // ─── Quality Score Computation ───────────────────────────────────────
+    // ─── Quality Score Computation
+    // ───────────────────────────────────────
 
     function test_qualityScore_computation() public {
         // Create 10 signals: 6 favorable, 3 unfavorable, 1 void
@@ -275,7 +269,8 @@ contract AuditIntegrationTest is Test {
         assertEq(score, 0, "All void signals should give zero score");
     }
 
-    // ─── Positive QS: Genius Keeps Fees ──────────────────────────────────
+    // ─── Positive QS: Genius Keeps Fees
+    // ──────────────────────────────────
 
     function test_positiveScore_geniusKeepsFees() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -309,7 +304,8 @@ contract AuditIntegrationTest is Test {
         assertTrue(result.timestamp > 0, "Timestamp should be set");
     }
 
-    // ─── Negative QS: Tranche A + B ─────────────────────────────────────
+    // ─── Negative QS: Tranche A + B
+    // ─────────────────────────────────────
 
     function test_negativeScore_trancheA_and_B() public {
         // All unfavorable -> large negative score -> damages exceed fees paid
@@ -337,14 +333,10 @@ contract AuditIntegrationTest is Test {
         audit.trigger(genius, idiot);
 
         // Idiot gets USDC refund (tranche A) back to escrow balance
-        assertEq(
-            escrow.getBalance(idiot), idiotBalBefore + expectedTrancheA, "Idiot should get tranche A USDC refund"
-        );
+        assertEq(escrow.getBalance(idiot), idiotBalBefore + expectedTrancheA, "Idiot should get tranche A USDC refund");
 
         // Idiot gets credits (tranche B)
-        assertEq(
-            creditLedger.balanceOf(idiot), creditsBefore + expectedTrancheB, "Idiot should get tranche B credits"
-        );
+        assertEq(creditLedger.balanceOf(idiot), creditsBefore + expectedTrancheB, "Idiot should get tranche B credits");
 
         // Verify audit result
         AuditResult memory result = audit.getAuditResult(genius, idiot, 0);
@@ -407,7 +399,8 @@ contract AuditIntegrationTest is Test {
         assertEq(escrow.getBalance(idiot), idiotBalBefore + expectedDamages, "Idiot should get full damage refund");
     }
 
-    // ─── Protocol Fee ────────────────────────────────────────────────────
+    // ─── Protocol Fee
+    // ────────────────────────────────────────────────────
 
     function test_protocolFee_half_percent() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -431,7 +424,8 @@ contract AuditIntegrationTest is Test {
         assertEq(result.protocolFee, expectedFee, "Stored protocol fee mismatch");
     }
 
-    // ─── Collateral Release After Settlement ─────────────────────────────
+    // ─── Collateral Release After Settlement
+    // ─────────────────────────────
 
     function test_collateralReleasedAfterSettlement() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -460,7 +454,8 @@ contract AuditIntegrationTest is Test {
         assertEq(collateral.getLocked(genius), 0, "Total locked should be zero after settlement");
     }
 
-    // ─── New Cycle After Settlement ──────────────────────────────────────
+    // ─── New Cycle After Settlement
+    // ──────────────────────────────────────
 
     function test_newCycleStartsAfterSettlement() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -482,7 +477,8 @@ contract AuditIntegrationTest is Test {
         assertEq(account.getSignalCount(genius, idiot), 0, "Signal count should reset after new cycle");
     }
 
-    // ─── Early Exit ──────────────────────────────────────────────────────
+    // ─── Early Exit
+    // ──────────────────────────────────────────────────────
 
     function test_earlyExit_creditsDamagesOnly() public {
         // Create 5 signals (less than 10) - all unfavorable
@@ -541,7 +537,8 @@ contract AuditIntegrationTest is Test {
         audit.earlyExit(genius, idiot);
     }
 
-    // ─── Cannot Re-settle Same Cycle ─────────────────────────────────────
+    // ─── Cannot Re-settle Same Cycle
+    // ─────────────────────────────────────
 
     function test_cannotResettle() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -558,7 +555,8 @@ contract AuditIntegrationTest is Test {
         audit.trigger(genius, idiot);
     }
 
-    // ─── Mixed Outcome Scenario (10 signals) ────────────────────────────
+    // ─── Mixed Outcome Scenario (10 signals)
+    // ────────────────────────────
 
     function test_mixedOutcome_fullLifecycle() public {
         // 10 signals: 4 favorable, 4 unfavorable, 2 void
@@ -582,8 +580,8 @@ contract AuditIntegrationTest is Test {
         // favorable: 4 * 910e6 = 3640e6
         // unfavorable: 4 * 1500e6 = 6000e6
         // net = 3640e6 - 6000e6 = -2360e6
-        int256 expected = 4 * int256(NOTIONAL) * (int256(ODDS) - 1e6) / 1e6
-            - 4 * int256(NOTIONAL) * int256(SLA_MULTIPLIER_BPS) / 10_000;
+        int256 expected = 4 * int256(NOTIONAL) * (int256(ODDS) - 1e6) / 1e6 - 4 * int256(NOTIONAL)
+            * int256(SLA_MULTIPLIER_BPS) / 10_000;
         assertEq(score, expected, "Mixed outcome score mismatch");
         assertTrue(score < 0, "Score should be negative for this mix");
 
@@ -606,7 +604,8 @@ contract AuditIntegrationTest is Test {
         assertEq(account.getCurrentCycle(genius, idiot), 1, "New cycle should start");
     }
 
-    // ─── Protocol Fee With Void Signals ──────────────────────────────────
+    // ─── Protocol Fee With Void Signals
+    // ──────────────────────────────────
 
     function test_protocolFee_excludesVoidNotional() public {
         Outcome[] memory outcomes = new Outcome[](10);
@@ -629,7 +628,8 @@ contract AuditIntegrationTest is Test {
         assertEq(result.protocolFee, expectedFee, "Protocol fee should exclude void notional");
     }
 
-    // ─── Two Full Cycles ─────────────────────────────────────────────────
+    // ─── Two Full Cycles
+    // ─────────────────────────────────────────────────
 
     function test_twoCycles() public {
         // Cycle 0: all favorable

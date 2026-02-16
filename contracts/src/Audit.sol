@@ -103,11 +103,7 @@ contract Audit is Ownable, Pausable {
 
     /// @notice Emitted when an early exit is executed
     event EarlyExitSettled(
-        address indexed genius,
-        address indexed idiot,
-        uint256 cycle,
-        int256 qualityScore,
-        uint256 creditsAwarded
+        address indexed genius, address indexed idiot, uint256 cycle, int256 qualityScore, uint256 creditsAwarded
     );
 
     /// @notice Emitted when a contract address is updated
@@ -312,11 +308,11 @@ contract Audit is Ownable, Pausable {
     /// @param purchaseIds Array of purchase IDs in the cycle
     /// @return totalNotional Sum of notional for non-void purchases
     /// @return totalUsdcFeesPaid Sum of USDC fees paid across all purchases
-    function _aggregatePurchases(
-        address genius,
-        address idiot,
-        uint256[] memory purchaseIds
-    ) internal view returns (uint256 totalNotional, uint256 totalUsdcFeesPaid) {
+    function _aggregatePurchases(address genius, address idiot, uint256[] memory purchaseIds)
+        internal
+        view
+        returns (uint256 totalNotional, uint256 totalUsdcFeesPaid)
+    {
         for (uint256 i; i < purchaseIds.length; ++i) {
             Purchase memory p = escrow.getPurchase(purchaseIds[i]);
             Outcome outcome = account.getOutcome(genius, idiot, purchaseIds[i]);
@@ -371,12 +367,7 @@ contract Audit is Ownable, Pausable {
     /// @param idiot The Idiot address
     /// @param cycle The current audit cycle
     /// @param amount Amount to refund
-    function _refundFromFeePool(
-        address genius,
-        address idiot,
-        uint256 cycle,
-        uint256 amount
-    ) internal {
+    function _refundFromFeePool(address genius, address idiot, uint256 cycle, uint256 amount) internal {
         uint256 poolBalance = escrow.feePool(genius, idiot, cycle);
         uint256 refundAmount = amount < poolBalance ? amount : poolBalance;
         if (refundAmount > 0) {
@@ -403,13 +394,7 @@ contract Audit is Ownable, Pausable {
     /// @param cycle The current audit cycle
     /// @param score The computed Quality Score
     /// @param isEarlyExit If true, all damages paid as Credits only
-    function _settle(
-        address genius,
-        address idiot,
-        uint256 cycle,
-        int256 score,
-        bool isEarlyExit
-    ) internal {
+    function _settle(address genius, address idiot, uint256 cycle, int256 score, bool isEarlyExit) internal {
         AccountState memory state = account.getAccountState(genius, idiot);
         uint256[] memory purchaseIds = state.purchaseIds;
 
@@ -469,11 +454,11 @@ contract Audit is Ownable, Pausable {
     /// @param idiot The Idiot address
     /// @param cycle The audit cycle number
     /// @return result The AuditResult struct
-    function getAuditResult(
-        address genius,
-        address idiot,
-        uint256 cycle
-    ) external view returns (AuditResult memory result) {
+    function getAuditResult(address genius, address idiot, uint256 cycle)
+        external
+        view
+        returns (AuditResult memory result)
+    {
         return auditResults[genius][idiot][cycle];
     }
 

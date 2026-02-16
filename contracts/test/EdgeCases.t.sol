@@ -33,7 +33,7 @@ contract EdgeCaseIntegrationTest is Test {
 
     uint256 constant MAX_PRICE_BPS = 500; // 5%
     uint256 constant SLA_MULTIPLIER_BPS = 15_000; // 150%
-    uint256 constant NOTIONAL = 1_000e6;
+    uint256 constant NOTIONAL = 1000e6;
     uint256 constant ODDS = 1_910_000;
     uint256 nextSignalId = 1;
 
@@ -74,11 +74,14 @@ contract EdgeCaseIntegrationTest is Test {
         escrow.setAuthorizedCaller(owner, true);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _buildDecoyLines() internal pure returns (string[] memory) {
         string[] memory decoys = new string[](10);
-        for (uint256 i; i < 10; i++) decoys[i] = "decoy";
+        for (uint256 i; i < 10; i++) {
+            decoys[i] = "decoy";
+        }
         return decoys;
     }
 
@@ -139,7 +142,8 @@ contract EdgeCaseIntegrationTest is Test {
         escrow.setOutcome(purchaseId, outcome);
     }
 
-    // ─── Cancelled/Postponed Game → Void Outcome ────────────────────────
+    // ─── Cancelled/Postponed Game → Void Outcome
+    // ────────────────────────
 
     function test_cancelledGame_allVoid_zeroScore() public {
         for (uint256 i; i < 10; i++) {
@@ -180,7 +184,8 @@ contract EdgeCaseIntegrationTest is Test {
         assertEq(result.protocolFee, expectedFee, "Fee only on non-void signals");
     }
 
-    // ─── Push → Void Outcome ────────────────────────────────────────────
+    // ─── Push → Void Outcome
+    // ────────────────────────────────────────────
 
     function test_push_treatedAsVoid() public {
         // A "push" in sports betting means the game lands on the spread exactly.
@@ -200,7 +205,8 @@ contract EdgeCaseIntegrationTest is Test {
         assertEq(result.trancheB, 0);
     }
 
-    // ─── Expired Signal Cannot Be Purchased ─────────────────────────────
+    // ─── Expired Signal Cannot Be Purchased
+    // ─────────────────────────────
 
     function test_expiredSignal_purchaseReverts() public {
         uint256 sigId = _createSignal();
@@ -252,7 +258,8 @@ contract EdgeCaseIntegrationTest is Test {
         signalCommitment.voidSignal(sigId);
     }
 
-    // ─── Collateral Exhaustion ──────────────────────────────────────────
+    // ─── Collateral Exhaustion
+    // ──────────────────────────────────────────
 
     function test_collateralExhaustion_purchaseRevertsWhenInsufficient() public {
         uint256 sigId = _createSignal();
@@ -267,9 +274,7 @@ contract EdgeCaseIntegrationTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                Collateral.InsufficientFreeCollateral.selector,
-                insufficientCollateral,
-                requiredCollateral
+                Collateral.InsufficientFreeCollateral.selector, insufficientCollateral, requiredCollateral
             )
         );
         vm.prank(idiot);
@@ -289,14 +294,13 @@ contract EdgeCaseIntegrationTest is Test {
         }
 
         // Trying to withdraw more should fail
-        vm.expectRevert(
-            abi.encodeWithSelector(Collateral.WithdrawalExceedsAvailable.selector, 0, 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Collateral.WithdrawalExceedsAvailable.selector, 0, 1));
         vm.prank(genius);
         collateral.withdraw(1);
     }
 
-    // ─── Device Loss Recovery ───────────────────────────────────────────
+    // ─── Device Loss Recovery
+    // ───────────────────────────────────────────
 
     function test_keyRecovery_storeAndRetrieve() public {
         bytes memory blob1 = hex"aabbccdd11223344";
@@ -329,7 +333,8 @@ contract EdgeCaseIntegrationTest is Test {
         assertEq(retrieved.length, 0, "Should return empty bytes for unset blob");
     }
 
-    // ─── Early Exit Edge Cases ──────────────────────────────────────────
+    // ─── Early Exit Edge Cases
+    // ──────────────────────────────────────────
 
     function test_earlyExit_singleSignal() public {
         uint256 sigId = _createSignal();
@@ -399,7 +404,8 @@ contract EdgeCaseIntegrationTest is Test {
         audit.earlyExit(genius, idiot);
     }
 
-    // ─── Signal With Maximum SLA ────────────────────────────────────────
+    // ─── Signal With Maximum SLA
+    // ────────────────────────────────────────
 
     function test_highSLA_largeDamages() public {
         // SLA of 300% (30000 bps) — maximum damage per unfavorable signal
@@ -481,7 +487,8 @@ contract EdgeCaseIntegrationTest is Test {
         assertTrue(creditLedger.balanceOf(idiot) > 0, "Credits should be minted for damages");
     }
 
-    // ─── Outcome Recording Edge Cases ───────────────────────────────────
+    // ─── Outcome Recording Edge Cases
+    // ───────────────────────────────────
 
     function test_cannotRecordPendingOutcome() public {
         uint256 sigId = _createSignal();
@@ -496,13 +503,12 @@ contract EdgeCaseIntegrationTest is Test {
         uint256 pid = _purchaseSignal(sigId);
         _recordOutcome(pid, Outcome.Favorable);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.OutcomeAlreadyRecorded.selector, genius, idiot, pid)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.OutcomeAlreadyRecorded.selector, genius, idiot, pid));
         account.recordOutcome(genius, idiot, pid, Outcome.Unfavorable);
     }
 
-    // ─── Cycle Signal Limit ─────────────────────────────────────────────
+    // ─── Cycle Signal Limit
+    // ─────────────────────────────────────────────
 
     function test_cannotExceed10SignalsPerCycle() public {
         for (uint256 i; i < 10; i++) {
@@ -519,14 +525,13 @@ contract EdgeCaseIntegrationTest is Test {
         _depositCollateral(lockAmount + fee + protocolFee);
         _depositEscrow(fee);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(DjinnAccount.CycleSignalLimitReached.selector, genius, idiot, 10)
-        );
+        vm.expectRevert(abi.encodeWithSelector(DjinnAccount.CycleSignalLimitReached.selector, genius, idiot, 10));
         vm.prank(idiot);
         escrow.purchase(sigId, NOTIONAL, ODDS);
     }
 
-    // ─── Zero Notional Edge ─────────────────────────────────────────────
+    // ─── Zero Notional Edge
+    // ─────────────────────────────────────────────
 
     function test_zeroNotional_zeroFee() public {
         uint256 sigId = _createSignal();

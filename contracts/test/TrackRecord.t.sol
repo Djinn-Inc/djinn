@@ -45,7 +45,8 @@ contract TrackRecordTest is Test {
         trackRecord.setZKVerifier(address(verifier));
     }
 
-    // ─── Helper: Build mock public signals ─────────────────────────────────
+    // ─── Helper: Build mock public signals
+    // ─────────────────────────────────
 
     function _buildPubSignals(
         uint256 signalCount,
@@ -73,7 +74,8 @@ contract TrackRecordTest is Test {
         pC = [uint256(7), 8];
     }
 
-    // ─── Admin Tests ───────────────────────────────────────────────────────
+    // ─── Admin Tests
+    // ───────────────────────────────────────────────────────
 
     function test_setZKVerifier_onlyOwner() public {
         address newVerifier = address(new MockZKVerifier(true));
@@ -99,7 +101,8 @@ contract TrackRecordTest is Test {
         trackRecord.setZKVerifier(newVerifier);
     }
 
-    // ─── Submit Tests ──────────────────────────────────────────────────────
+    // ─── Submit Tests
+    // ──────────────────────────────────────────────────────
 
     function test_submit_storesRecord() public {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
@@ -129,15 +132,7 @@ contract TrackRecordTest is Test {
 
         vm.expectEmit(true, true, false, true);
         emit TrackRecord.TrackRecordSubmitted(
-            0,
-            genius1,
-            10,
-            1000e6,
-            300e6,
-            7,
-            2,
-            1,
-            keccak256(abi.encodePacked(pA, pB, pC, pubSignals))
+            0, genius1, 10, 1000e6, 300e6, 7, 2, 1, keccak256(abi.encodePacked(pA, pB, pC, pubSignals))
         );
 
         vm.prank(genius1);
@@ -185,7 +180,8 @@ contract TrackRecordTest is Test {
         assertEq(rec2.genius, genius2);
     }
 
-    // ─── Revert Tests ──────────────────────────────────────────────────────
+    // ─── Revert Tests
+    // ──────────────────────────────────────────────────────
 
     function test_submit_reverts_verifierNotSet() public {
         TrackRecord fresh = new TrackRecord(owner);
@@ -217,7 +213,8 @@ contract TrackRecordTest is Test {
         trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
-    // ─── View Tests ────────────────────────────────────────────────────────
+    // ─── View Tests
+    // ────────────────────────────────────────────────────────
 
     function test_getRecordCount_empty() public view {
         assertEq(trackRecord.getRecordCount(genius1), 0);
@@ -247,7 +244,8 @@ contract TrackRecordTest is Test {
         assertTrue(trackRecord.usedProofHashes(proofHash));
     }
 
-    // ─── Edge Cases ────────────────────────────────────────────────────────
+    // ─── Edge Cases
+    // ────────────────────────────────────────────────────────
 
     function test_submit_zeroStats() public {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
@@ -290,7 +288,7 @@ contract TrackRecordTest is Test {
     }
 
     function test_submit_recordsTimestamp() public {
-        vm.warp(1700000000);
+        vm.warp(1_700_000_000);
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
 
@@ -298,10 +296,11 @@ contract TrackRecordTest is Test {
         trackRecord.submit(pA, pB, pC, pubSignals);
 
         VerifiedRecord memory rec = trackRecord.getRecord(0);
-        assertEq(rec.submittedAt, 1700000000);
+        assertEq(rec.submittedAt, 1_700_000_000);
     }
 
-    // ─── Fuzz Tests ────────────────────────────────────────────────────────
+    // ─── Fuzz Tests
+    // ────────────────────────────────────────────────────────
 
     function testFuzz_submit_storesAnyStats(
         uint256 signalCount,
@@ -319,9 +318,8 @@ contract TrackRecordTest is Test {
         unfavCount = bound(unfavCount, 0, 20);
         voidCount = bound(voidCount, 0, 20);
 
-        uint256[106] memory pubSignals = _buildPubSignals(
-            signalCount, totalGain, totalLoss, favCount, unfavCount, voidCount
-        );
+        uint256[106] memory pubSignals =
+            _buildPubSignals(signalCount, totalGain, totalLoss, favCount, unfavCount, voidCount);
         // Vary proof elements to avoid duplicate proof hash
         uint256[2] memory pA = [signalCount, totalGain];
         uint256[2][2] memory pB = [[totalLoss, favCount], [unfavCount, voidCount]];
@@ -340,10 +338,7 @@ contract TrackRecordTest is Test {
         assertEq(rec.voidCount, voidCount);
     }
 
-    function testFuzz_submit_proofHashUnique(
-        uint256 seed1,
-        uint256 seed2
-    ) public {
+    function testFuzz_submit_proofHashUnique(uint256 seed1, uint256 seed2) public {
         vm.assume(seed1 != seed2);
 
         uint256[106] memory pubSignals1;

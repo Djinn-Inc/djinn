@@ -14,7 +14,8 @@ contract KeyRecoveryTest is Test {
         kr = new KeyRecovery();
     }
 
-    // ─── Tests: Store and retrieve recovery blob ─────────────────────────
+    // ─── Tests: Store and retrieve recovery blob
+    // ─────────────────────────
 
     function test_storeAndRetrieve() public {
         bytes memory blob = hex"deadbeefcafebabe";
@@ -41,7 +42,8 @@ contract KeyRecoveryTest is Test {
         assertEq(retrieved.length, 0);
     }
 
-    // ─── Tests: Overwrite existing blob ──────────────────────────────────
+    // ─── Tests: Overwrite existing blob
+    // ──────────────────────────────────
 
     function test_overwriteExistingBlob() public {
         bytes memory blob1 = hex"aaaa";
@@ -58,7 +60,8 @@ contract KeyRecoveryTest is Test {
         assertEq(retrieved.length, 4); // blob2 is 4 bytes
     }
 
-    // ─── Tests: Different users have different blobs ─────────────────────
+    // ─── Tests: Different users have different blobs
+    // ─────────────────────
 
     function test_differentUsersHaveDifferentBlobs() public {
         bytes memory blob1 = hex"1111";
@@ -78,7 +81,8 @@ contract KeyRecoveryTest is Test {
         assertTrue(keccak256(retrieved1) != keccak256(retrieved2));
     }
 
-    // ─── Tests: Revert on empty blob ─────────────────────────────────────
+    // ─── Tests: Revert on empty blob
+    // ─────────────────────────────────────
 
     function test_storeRecoveryBlob_revertOnEmpty() public {
         vm.expectRevert(KeyRecovery.EmptyBlob.selector);
@@ -86,7 +90,8 @@ contract KeyRecoveryTest is Test {
         kr.storeRecoveryBlob("");
     }
 
-    // ─── Tests: Large blob storage ───────────────────────────────────────
+    // ─── Tests: Large blob storage
+    // ───────────────────────────────────────
 
     function test_storeLargeBlob() public {
         // 1024 bytes blob

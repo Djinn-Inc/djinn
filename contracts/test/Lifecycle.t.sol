@@ -35,7 +35,7 @@ contract LifecycleIntegrationTest is Test {
 
     uint256 constant MAX_PRICE_BPS = 500; // 5%
     uint256 constant SLA_MULTIPLIER_BPS = 15_000; // 150%
-    uint256 constant NOTIONAL = 1_000e6; // 1000 USDC
+    uint256 constant NOTIONAL = 1000e6; // 1000 USDC
     uint256 constant ODDS = 1_910_000; // 1.91 (6 decimal fixed point)
     uint256 nextSignalId = 1;
 
@@ -78,7 +78,8 @@ contract LifecycleIntegrationTest is Test {
         escrow.setAuthorizedCaller(owner, true);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────
+    // ─── Helpers
+    // ─────────────────────────────────────────────────────────
 
     function _buildDecoyLines() internal pure returns (string[] memory) {
         string[] memory decoys = new string[](10);
@@ -129,13 +130,10 @@ contract LifecycleIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    function _purchaseSignal(
-        address genius,
-        address idiot,
-        uint256 signalId,
-        uint256 notional,
-        uint256 odds
-    ) internal returns (uint256 purchaseId) {
+    function _purchaseSignal(address genius, address idiot, uint256 signalId, uint256 notional, uint256 odds)
+        internal
+        returns (uint256 purchaseId)
+    {
         uint256 lockAmount = (notional * SLA_MULTIPLIER_BPS) / 10_000;
         uint256 fee = (notional * MAX_PRICE_BPS) / 10_000;
         uint256 protocolFeeShare = (notional * 50) / 10_000;
@@ -146,21 +144,15 @@ contract LifecycleIntegrationTest is Test {
         purchaseId = escrow.purchase(signalId, notional, odds);
     }
 
-    function _recordOutcome(
-        address genius,
-        address idiot,
-        uint256 purchaseId,
-        Outcome outcome
-    ) internal {
+    function _recordOutcome(address genius, address idiot, uint256 purchaseId, Outcome outcome) internal {
         account.recordOutcome(genius, idiot, purchaseId, outcome);
         escrow.setOutcome(purchaseId, outcome);
     }
 
-    function _fullCycle(
-        address genius,
-        address idiot,
-        Outcome[] memory outcomes
-    ) internal returns (uint256[] memory purchaseIds) {
+    function _fullCycle(address genius, address idiot, Outcome[] memory outcomes)
+        internal
+        returns (uint256[] memory purchaseIds)
+    {
         require(outcomes.length == 10, "Must provide 10 outcomes");
         purchaseIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
@@ -170,7 +162,8 @@ contract LifecycleIntegrationTest is Test {
         }
     }
 
-    // ─── Test 1: Complete Signal Lifecycle ────────────────────────────────
+    // ─── Test 1: Complete Signal Lifecycle
+    // ────────────────────────────────
 
     function test_completeLifecycle_commitToSettlement() public {
         // Step 1: Genius commits a signal with decoys
@@ -254,11 +247,15 @@ contract LifecycleIntegrationTest is Test {
     function test_multiplePairs_independent() public {
         // Pair 1: genius1 + idiot1 (all favorable)
         Outcome[] memory outcomes1 = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes1[i] = Outcome.Favorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes1[i] = Outcome.Favorable;
+        }
 
         // Pair 2: genius2 + idiot2 (all unfavorable)
         Outcome[] memory outcomes2 = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes2[i] = Outcome.Unfavorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes2[i] = Outcome.Unfavorable;
+        }
 
         // Run both cycles
         _fullCycle(genius1, idiot1, outcomes1);
@@ -289,12 +286,16 @@ contract LifecycleIntegrationTest is Test {
     function test_oneGenius_multipleIdiots() public {
         // genius1 with idiot1: favorable
         Outcome[] memory outcomes1 = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes1[i] = Outcome.Favorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes1[i] = Outcome.Favorable;
+        }
         _fullCycle(genius1, idiot1, outcomes1);
 
         // genius1 with idiot2: unfavorable
         Outcome[] memory outcomes2 = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes2[i] = Outcome.Unfavorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes2[i] = Outcome.Unfavorable;
+        }
         _fullCycle(genius1, idiot2, outcomes2);
 
         // Settle both
@@ -308,12 +309,15 @@ contract LifecycleIntegrationTest is Test {
         assertTrue(r2.qualityScore < 0, "Pair 2 should be negative");
     }
 
-    // ─── Test 4: Multi-Cycle with Credit Reuse ──────────────────────────
+    // ─── Test 4: Multi-Cycle with Credit Reuse
+    // ──────────────────────────
 
     function test_multiCycle_creditsFromCycle0_usedInCycle1() public {
         // Cycle 0: all unfavorable -> idiot gets credits from tranche B
         Outcome[] memory outcomes0 = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes0[i] = Outcome.Unfavorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes0[i] = Outcome.Unfavorable;
+        }
         _fullCycle(genius1, idiot1, outcomes0);
 
         audit.trigger(genius1, idiot1);
@@ -357,7 +361,8 @@ contract LifecycleIntegrationTest is Test {
         }
     }
 
-    // ─── Test 5: Three Full Cycles ──────────────────────────────────────
+    // ─── Test 5: Three Full Cycles
+    // ──────────────────────────────────────
 
     function test_threeCycles() public {
         for (uint256 cycle; cycle < 3; cycle++) {
@@ -433,11 +438,8 @@ contract LifecycleIntegrationTest is Test {
         audit.trigger(genius1, idiot1);
 
         // Invariant: all USDC accounted for
-        uint256 totalSystemUsdc = usdc.balanceOf(address(escrow))
-            + usdc.balanceOf(address(collateral))
-            + usdc.balanceOf(treasury)
-            + usdc.balanceOf(genius1)
-            + usdc.balanceOf(idiot1);
+        uint256 totalSystemUsdc = usdc.balanceOf(address(escrow)) + usdc.balanceOf(address(collateral))
+            + usdc.balanceOf(treasury) + usdc.balanceOf(genius1) + usdc.balanceOf(idiot1);
 
         assertEq(totalSystemUsdc, totalMinted, "USDC conservation invariant violated");
 
@@ -445,7 +447,8 @@ contract LifecycleIntegrationTest is Test {
         assertEq(collateral.getLocked(genius1), 0, "All locks should be released");
     }
 
-    // ─── Test 7: Early Exit Then Full Cycle ─────────────────────────────
+    // ─── Test 7: Early Exit Then Full Cycle
+    // ─────────────────────────────
 
     function test_earlyExit_thenFullCycle() public {
         // Create 5 signals (not enough for audit)
@@ -467,14 +470,17 @@ contract LifecycleIntegrationTest is Test {
 
         // Now do a full cycle
         Outcome[] memory outcomes = new Outcome[](10);
-        for (uint256 i; i < 10; i++) outcomes[i] = Outcome.Favorable;
+        for (uint256 i; i < 10; i++) {
+            outcomes[i] = Outcome.Favorable;
+        }
         _fullCycle(genius1, idiot1, outcomes);
 
         audit.trigger(genius1, idiot1);
         assertEq(account.getCurrentCycle(genius1, idiot1), 2, "Should be on cycle 2");
     }
 
-    // ─── Test 8: Concurrent Signals from Same Genius ────────────────────
+    // ─── Test 8: Concurrent Signals from Same Genius
+    // ────────────────────
 
     function test_concurrent_signals_sameGenius() public {
         // Genius creates multiple signals at once, each purchased by different idiots
@@ -501,16 +507,36 @@ contract LifecycleIntegrationTest is Test {
         uint256[] memory oddsArr = new uint256[](10);
         Outcome[] memory outcomes = new Outcome[](10);
 
-        notionals[0] = 500e6;  oddsArr[0] = 1_500_000;  outcomes[0] = Outcome.Favorable;
-        notionals[1] = 2000e6; oddsArr[1] = 2_000_000;  outcomes[1] = Outcome.Favorable;
-        notionals[2] = 100e6;  oddsArr[2] = 3_000_000;  outcomes[2] = Outcome.Unfavorable;
-        notionals[3] = 1000e6; oddsArr[3] = 1_910_000;  outcomes[3] = Outcome.Unfavorable;
-        notionals[4] = 750e6;  oddsArr[4] = 1_800_000;  outcomes[4] = Outcome.Favorable;
-        notionals[5] = 300e6;  oddsArr[5] = 2_500_000;  outcomes[5] = Outcome.Void;
-        notionals[6] = 1500e6; oddsArr[6] = 1_200_000;  outcomes[6] = Outcome.Favorable;
-        notionals[7] = 200e6;  oddsArr[7] = 4_000_000;  outcomes[7] = Outcome.Unfavorable;
-        notionals[8] = 800e6;  oddsArr[8] = 1_600_000;  outcomes[8] = Outcome.Void;
-        notionals[9] = 1000e6; oddsArr[9] = 1_910_000;  outcomes[9] = Outcome.Favorable;
+        notionals[0] = 500e6;
+        oddsArr[0] = 1_500_000;
+        outcomes[0] = Outcome.Favorable;
+        notionals[1] = 2000e6;
+        oddsArr[1] = 2_000_000;
+        outcomes[1] = Outcome.Favorable;
+        notionals[2] = 100e6;
+        oddsArr[2] = 3_000_000;
+        outcomes[2] = Outcome.Unfavorable;
+        notionals[3] = 1000e6;
+        oddsArr[3] = 1_910_000;
+        outcomes[3] = Outcome.Unfavorable;
+        notionals[4] = 750e6;
+        oddsArr[4] = 1_800_000;
+        outcomes[4] = Outcome.Favorable;
+        notionals[5] = 300e6;
+        oddsArr[5] = 2_500_000;
+        outcomes[5] = Outcome.Void;
+        notionals[6] = 1500e6;
+        oddsArr[6] = 1_200_000;
+        outcomes[6] = Outcome.Favorable;
+        notionals[7] = 200e6;
+        oddsArr[7] = 4_000_000;
+        outcomes[7] = Outcome.Unfavorable;
+        notionals[8] = 800e6;
+        oddsArr[8] = 1_600_000;
+        outcomes[8] = Outcome.Void;
+        notionals[9] = 1000e6;
+        oddsArr[9] = 1_910_000;
+        outcomes[9] = Outcome.Favorable;
 
         for (uint256 i; i < 10; i++) {
             uint256 sigId = _createSignal(genius1);

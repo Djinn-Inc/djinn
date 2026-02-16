@@ -10,7 +10,8 @@ import {Signal, SignalStatus} from "./interfaces/IDjinn.sol";
 ///         The real signal content remains hidden inside the AES-256-GCM encrypted blob.
 /// @dev Signal IDs are externally generated and must be globally unique.
 contract SignalCommitment is Ownable {
-    // ─── Types ──────────────────────────────────────────────────────────
+    // ─── Types
+    // ──────────────────────────────────────────────────────────
 
     /// @notice Parameters for committing a new signal, packed to avoid stack-too-deep
     struct CommitParams {
@@ -25,7 +26,8 @@ contract SignalCommitment is Ownable {
         string[] availableSportsbooks;
     }
 
-    // ─── Storage ────────────────────────────────────────────────────────
+    // ─── Storage
+    // ────────────────────────────────────────────────────────
 
     /// @dev signalId => Signal struct
     mapping(uint256 => Signal) private _signals;
@@ -36,7 +38,8 @@ contract SignalCommitment is Ownable {
     /// @dev address => whether it can call updateStatus
     mapping(address => bool) public authorizedCallers;
 
-    // ─── Events ─────────────────────────────────────────────────────────
+    // ─── Events
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Emitted when a Genius commits a new signal
     event SignalCommitted(
@@ -57,7 +60,8 @@ contract SignalCommitment is Ownable {
     /// @notice Emitted when an authorized caller is added or removed
     event AuthorizedCallerSet(address indexed caller, bool authorized);
 
-    // ─── Errors ─────────────────────────────────────────────────────────
+    // ─── Errors
+    // ─────────────────────────────────────────────────────────
 
     /// @notice Signal ID already exists
     error SignalAlreadyExists(uint256 signalId);
@@ -95,7 +99,8 @@ contract SignalCommitment is Ownable {
     /// @notice Commit hash must not be zero
     error ZeroCommitHash();
 
-    // ─── Modifiers ──────────────────────────────────────────────────────
+    // ─── Modifiers
+    // ──────────────────────────────────────────────────────
 
     /// @dev Reverts if the caller is not an authorized contract
     modifier onlyAuthorized() {
@@ -103,7 +108,8 @@ contract SignalCommitment is Ownable {
         _;
     }
 
-    // ─── Internal ────────────────────────────────────────────────────────
+    // ─── Internal
+    // ────────────────────────────────────────────────────────
 
     function _checkAuthorized() internal view {
         if (!authorizedCallers[msg.sender]) {
@@ -111,13 +117,15 @@ contract SignalCommitment is Ownable {
         }
     }
 
-    // ─── Constructor ────────────────────────────────────────────────────
+    // ─── Constructor
+    // ────────────────────────────────────────────────────
 
     /// @notice Deploys the SignalCommitment contract
     /// @param initialOwner Address that will own this contract and manage authorized callers
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    // ─── External Functions ─────────────────────────────────────────────
+    // ─── External Functions
+    // ─────────────────────────────────────────────
 
     /// @notice Commit a new encrypted signal on-chain
     /// @dev The encrypted blob contains the real signal encrypted with AES-256-GCM.
@@ -130,7 +138,7 @@ contract SignalCommitment is Ownable {
         if (p.commitHash == bytes32(0)) revert ZeroCommitHash();
         if (p.decoyLines.length != 10) revert InvalidDecoyLinesLength(p.decoyLines.length);
         if (p.slaMultiplierBps < 10_000) revert SlaMultiplierTooLow(p.slaMultiplierBps);
-        if (p.maxPriceBps == 0 || p.maxPriceBps > 5_000) revert InvalidMaxPriceBps(p.maxPriceBps);
+        if (p.maxPriceBps == 0 || p.maxPriceBps > 5000) revert InvalidMaxPriceBps(p.maxPriceBps);
         if (p.expiresAt <= block.timestamp) revert ExpirationInPast(p.expiresAt, block.timestamp);
 
         _exists[p.signalId] = true;
@@ -156,9 +164,7 @@ contract SignalCommitment is Ownable {
             s.availableSportsbooks.push(p.availableSportsbooks[i]);
         }
 
-        emit SignalCommitted(
-            p.signalId, msg.sender, p.sport, p.maxPriceBps, p.slaMultiplierBps, p.expiresAt
-        );
+        emit SignalCommitted(p.signalId, msg.sender, p.sport, p.maxPriceBps, p.slaMultiplierBps, p.expiresAt);
     }
 
     /// @notice Void a signal that has not yet been purchased
@@ -219,7 +225,8 @@ contract SignalCommitment is Ownable {
         emit AuthorizedCallerSet(caller, authorized);
     }
 
-    // ─── View Functions ─────────────────────────────────────────────────
+    // ─── View Functions
+    // ─────────────────────────────────────────────────
 
     /// @notice Retrieve the full Signal struct for a given signal ID
     /// @param signalId The signal to look up

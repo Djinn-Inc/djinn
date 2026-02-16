@@ -62,7 +62,8 @@ contract PausableTest is Test {
         account.setAuthorizedCaller(owner, true);
     }
 
-    // ─── Escrow Pause Tests ─────────────────────────────────────────────
+    // ─── Escrow Pause Tests
+    // ─────────────────────────────────────────────
 
     function test_escrow_pause_onlyOwner() public {
         escrow.pause();
@@ -153,7 +154,8 @@ contract PausableTest is Test {
         assertEq(escrow.getBalance(idiot), 500e6, "Withdraw should work after unpause");
     }
 
-    // ─── Collateral Pause Tests ─────────────────────────────────────────
+    // ─── Collateral Pause Tests
+    // ─────────────────────────────────────────
 
     function test_collateral_pause_onlyOwner() public {
         collateral.pause();
@@ -220,7 +222,8 @@ contract PausableTest is Test {
         assertEq(collateral.getDeposit(genius), 5000e6, "Deposit should work after unpause");
     }
 
-    // ─── Audit Pause Tests ──────────────────────────────────────────────
+    // ─── Audit Pause Tests
+    // ──────────────────────────────────────────────
 
     function test_audit_pause_onlyOwner() public {
         audit.pause();
@@ -267,7 +270,8 @@ contract PausableTest is Test {
         audit.earlyExit(genius, idiot);
     }
 
-    // ─── Cross-contract pause isolation ─────────────────────────────────
+    // ─── Cross-contract pause isolation
+    // ─────────────────────────────────
 
     function test_escrow_pause_does_not_affect_collateral() public {
         escrow.pause();
@@ -295,7 +299,8 @@ contract PausableTest is Test {
         assertEq(escrow.getBalance(idiot), 1000e6, "Escrow deposit should work when only collateral is paused");
     }
 
-    // ─── Pause state queries ────────────────────────────────────────────
+    // ─── Pause state queries
+    // ────────────────────────────────────────────
 
     function test_escrow_starts_unpaused() public view {
         assertFalse(escrow.paused(), "Escrow should start unpaused");

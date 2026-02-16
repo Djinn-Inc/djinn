@@ -28,11 +28,13 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployerKey);
 
-        // ─── 1. Deploy MockUSDC ─────────────────────────────────────────
+        // ─── 1. Deploy MockUSDC
+        // ─────────────────────────────────────────
         MockUSDC usdc_ = new MockUSDC();
         console.log("MockUSDC:", address(usdc_));
 
-        // ─── 2. Deploy independent contracts ────────────────────────────
+        // ─── 2. Deploy independent contracts
+        // ────────────────────────────
         DjinnAccount acct_ = new DjinnAccount(deployer);
         console.log("Account:", address(acct_));
 
@@ -48,25 +50,29 @@ contract Deploy is Script {
         KeyRecovery kr_ = new KeyRecovery();
         console.log("KeyRecovery:", address(kr_));
 
-        // ─── 3. Deploy USDC-dependent contracts ─────────────────────────
+        // ─── 3. Deploy USDC-dependent contracts
+        // ─────────────────────────
         Collateral coll_ = new Collateral(address(usdc_), deployer);
         console.log("Collateral:", address(coll_));
 
         Escrow esc_ = new Escrow(address(usdc_), deployer);
         console.log("Escrow:", address(esc_));
 
-        // ─── 4. Deploy Audit ────────────────────────────────────────────
+        // ─── 4. Deploy Audit
+        // ────────────────────────────────────────────
         Audit aud_ = new Audit(deployer);
         console.log("Audit:", address(aud_));
 
-        // ─── 5. Deploy Groth16 verifiers ────────────────────────────────
+        // ─── 5. Deploy Groth16 verifiers
+        // ────────────────────────────────
         Groth16AuditVerifier audVerifier_ = new Groth16AuditVerifier();
         console.log("Groth16AuditVerifier:", address(audVerifier_));
 
         Groth16TrackRecordVerifier trVerifier_ = new Groth16TrackRecordVerifier();
         console.log("Groth16TrackRecordVerifier:", address(trVerifier_));
 
-        // ─── 6. Wire contracts ──────────────────────────────────────────
+        // ─── 6. Wire contracts
+        // ──────────────────────────────────────────
 
         // Audit -> all protocol contracts + treasury
         aud_.setEscrow(address(esc_));
@@ -102,18 +108,21 @@ contract Deploy is Script {
         zk_.setAuditVerifier(address(audVerifier_));
         zk_.setTrackRecordVerifier(address(trVerifier_));
 
-        // ─── 6b. Deploy and wire TrackRecord ──────────────────────────────
+        // ─── 6b. Deploy and wire TrackRecord
+        // ──────────────────────────────
         TrackRecord tr_ = new TrackRecord(deployer);
         tr_.setZKVerifier(address(zk_));
         console.log("TrackRecord:", address(tr_));
 
-        // ─── 7. Mint test USDC to deployer ──────────────────────────────
+        // ─── 7. Mint test USDC to deployer
+        // ──────────────────────────────
         usdc_.mint(deployer, 1_000_000 * 1e6); // 1M USDC
         console.log("Minted 1,000,000 USDC to deployer");
 
         vm.stopBroadcast();
 
-        // ─── Summary ────────────────────────────────────────────────────
+        // ─── Summary
+        // ────────────────────────────────────────────────────
         console.log("");
         console.log("=== DEPLOYMENT COMPLETE ===");
         console.log("Copy these to your .env files:");

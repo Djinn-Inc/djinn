@@ -71,8 +71,7 @@ contract ZKVerifier is Ownable {
 
         (bool success, bytes memory result) = auditVerifier.staticcall(
             abi.encodeWithSignature(
-                "verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[52])",
-                _pA, _pB, _pC, _pubSignals
+                "verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[52])", _pA, _pB, _pC, _pubSignals
             )
         );
         if (!success || result.length < 32) revert VerificationCallFailed();
@@ -95,8 +94,7 @@ contract ZKVerifier is Ownable {
 
         (bool success, bytes memory result) = trackRecordVerifier.staticcall(
             abi.encodeWithSignature(
-                "verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[106])",
-                _pA, _pB, _pC, _pubSignals
+                "verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[106])", _pA, _pB, _pC, _pubSignals
             )
         );
         if (!success || result.length < 32) revert VerificationCallFailed();
