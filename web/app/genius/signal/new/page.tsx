@@ -228,8 +228,8 @@ export default function CreateSignal() {
         setStep("configure");
         return;
       }
-      if (isNaN(slaNum) || !Number.isFinite(slaNum) || slaNum <= 0 || slaNum > 100) {
-        setStepError("Invalid SLA multiplier (must be 0-100%)");
+      if (isNaN(slaNum) || !Number.isFinite(slaNum) || slaNum < 100 || slaNum > 1000) {
+        setStepError("Invalid SLA multiplier (must be 100-1000%)");
         setStep("configure");
         return;
       }
