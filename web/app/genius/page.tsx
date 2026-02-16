@@ -66,9 +66,14 @@ export default function GeniusDashboard() {
             Manage your signals, collateral, and track record
           </p>
         </div>
-        <Link href="/genius/signal/new" className="btn-primary">
-          Create Signal
-        </Link>
+        <div className="flex gap-3">
+          <Link href="/genius/track-record" className="btn-secondary">
+            Track Record Proof
+          </Link>
+          <Link href="/genius/signal/new" className="btn-primary">
+            Create Signal
+          </Link>
+        </div>
       </div>
 
       {/* Stats row */}
