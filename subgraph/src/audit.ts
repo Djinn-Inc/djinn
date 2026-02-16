@@ -46,6 +46,7 @@ function getOrCreateProtocolStats(): ProtocolStats {
     stats.totalCollateralSlashed = BigInt.zero();
     stats.uniqueGeniuses = BigInt.zero();
     stats.uniqueIdiots = BigInt.zero();
+    stats.totalTrackRecordProofs = BigInt.zero();
   }
   return stats;
 }
@@ -65,6 +66,7 @@ function ensureGenius(address: Bytes, timestamp: BigInt): Genius {
     genius.collateralDeposited = BigInt.zero();
     genius.collateralLocked = BigInt.zero();
     genius.totalSlashed = BigInt.zero();
+    genius.totalTrackRecordProofs = BigInt.zero();
     genius.createdAt = timestamp;
   }
   return genius;

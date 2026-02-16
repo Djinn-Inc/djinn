@@ -52,6 +52,7 @@ function ensureGenius(address: Bytes, timestamp: BigInt): void {
     genius.collateralDeposited = BigInt.zero();
     genius.collateralLocked = BigInt.zero();
     genius.totalSlashed = BigInt.zero();
+    genius.totalTrackRecordProofs = BigInt.zero();
     genius.createdAt = timestamp;
     genius.save();
   }

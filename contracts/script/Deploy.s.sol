@@ -13,6 +13,7 @@ import {Escrow} from "../src/Escrow.sol";
 import {Audit} from "../src/Audit.sol";
 import {Groth16AuditVerifier} from "../src/Groth16AuditVerifier.sol";
 import {Groth16TrackRecordVerifier} from "../src/Groth16TrackRecordVerifier.sol";
+import {TrackRecord} from "../src/TrackRecord.sol";
 
 /// @title Deploy
 /// @notice Deploys the full Djinn Protocol to a testnet (Base Sepolia).
@@ -101,6 +102,11 @@ contract Deploy is Script {
         zk_.setAuditVerifier(address(audVerifier_));
         zk_.setTrackRecordVerifier(address(trVerifier_));
 
+        // ─── 6b. Deploy and wire TrackRecord ──────────────────────────────
+        TrackRecord tr_ = new TrackRecord(deployer);
+        tr_.setZKVerifier(address(zk_));
+        console.log("TrackRecord:", address(tr_));
+
         // ─── 7. Mint test USDC to deployer ──────────────────────────────
         usdc_.mint(deployer, 1_000_000 * 1e6); // 1M USDC
         console.log("Minted 1,000,000 USDC to deployer");
@@ -121,5 +127,6 @@ contract Deploy is Script {
         console.log("AUDIT_ADDRESS=", address(aud_));
         console.log("ZK_VERIFIER_ADDRESS=", address(zk_));
         console.log("KEY_RECOVERY_ADDRESS=", address(kr_));
+        console.log("NEXT_PUBLIC_TRACK_RECORD_ADDRESS=", address(tr_));
     }
 }

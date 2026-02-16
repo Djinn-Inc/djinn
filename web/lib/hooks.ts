@@ -7,6 +7,7 @@ import {
   getEscrowContract,
   getCollateralContract,
   getCreditLedgerContract,
+  getTrackRecordContract,
   getUsdcContract,
   ADDRESSES,
 } from "./contracts";
@@ -525,4 +526,45 @@ export function useApproveUsdc() {
   );
 
   return { approve, loading, error };
+}
+
+// ---------------------------------------------------------------------------
+// Track record proof submission hook
+// ---------------------------------------------------------------------------
+
+export function useSubmitTrackRecord() {
+  const signer = useEthersSigner();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  const submit = useCallback(
+    async (
+      pA: [bigint, bigint],
+      pB: [[bigint, bigint], [bigint, bigint]],
+      pC: [bigint, bigint],
+      pubSignals: bigint[],
+    ) => {
+      if (!signer) throw new Error("Wallet not connected");
+      setLoading(true);
+      setError(null);
+      setTxHash(null);
+      try {
+        const contract = getTrackRecordContract(signer);
+        const gas = await estimateGas(contract, "submit", [pA, pB, pC, pubSignals]);
+        const tx = await contract.submit(pA, pB, pC, pubSignals, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
+        setTxHash(tx.hash);
+        const receipt = await tx.wait();
+        return receipt;
+      } catch (err) {
+        setError(humanizeError(err, "Track record submission failed"));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [signer]
+  );
+
+  return { submit, loading, error, txHash };
 }

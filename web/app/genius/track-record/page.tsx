@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import {
   generateTrackRecordProof,
+  proofToSolidityCalldata,
   type SignalData,
 } from "@/lib/zkproof";
 import type { TrackRecordProofResult } from "@/lib/zkproof";
+import { useSubmitTrackRecord } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/types";
 
 type ProofState = "idle" | "generating" | "complete" | "error";
@@ -35,6 +37,10 @@ export default function TrackRecordPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<TrackRecordProofResult | null>(null);
   const [proofJson, setProofJson] = useState<string | null>(null);
+  const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted">("idle");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitTxHash, setSubmitTxHash] = useState<string | null>(null);
+  const { submit: submitOnChain, loading: submitLoading } = useSubmitTrackRecord();
 
   if (!authenticated) {
     return (
@@ -117,6 +123,22 @@ export default function TrackRecordPage() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleSubmitOnChain = async () => {
+    if (!result) return;
+    setSubmitError(null);
+    setSubmitState("submitting");
+    try {
+      const calldataStr = await proofToSolidityCalldata(result.proof, result.publicSignals);
+      const calldata = JSON.parse(`[${calldataStr}]`);
+      const [pA, pB, pC, pubSignals] = calldata;
+      await submitOnChain(pA, pB, pC, pubSignals);
+      setSubmitState("submitted");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "On-chain submission failed");
+      setSubmitState("idle");
+    }
   };
 
   const handleDownloadProof = () => {
@@ -216,12 +238,48 @@ export default function TrackRecordPage() {
             </pre>
           </div>
 
+          {/* On-chain submission */}
+          <div className="card">
+            <h3 className="text-sm font-medium text-slate-900 mb-3">
+              Submit On-Chain
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Submit this proof to the TrackRecord contract for permanent,
+              verifiable storage on Base chain.
+            </p>
+            {submitState === "submitted" ? (
+              <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+                <p className="text-sm text-green-700 font-medium">
+                  Proof submitted on-chain successfully
+                </p>
+              </div>
+            ) : (
+              <>
+                {submitError && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-3">
+                    <p className="text-xs text-red-600">{submitError}</p>
+                  </div>
+                )}
+                <button
+                  onClick={handleSubmitOnChain}
+                  disabled={submitLoading}
+                  className="btn-primary w-full py-2"
+                >
+                  {submitLoading ? "Submitting..." : "Submit Proof On-Chain"}
+                </button>
+              </>
+            )}
+          </div>
+
           <div className="flex gap-4">
             <button
               onClick={() => {
                 setState("idle");
                 setResult(null);
                 setProofJson(null);
+                setSubmitState("idle");
+                setSubmitError(null);
+                setSubmitTxHash(null);
               }}
               className="btn-secondary"
             >

@@ -38,6 +38,7 @@ function getOrCreateProtocolStats(): ProtocolStats {
     stats.totalCollateralSlashed = BigInt.zero();
     stats.uniqueGeniuses = BigInt.zero();
     stats.uniqueIdiots = BigInt.zero();
+    stats.totalTrackRecordProofs = BigInt.zero();
   }
   return stats;
 }

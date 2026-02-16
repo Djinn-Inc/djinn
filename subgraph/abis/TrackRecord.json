@@ -1,0 +1,18 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "recordId", "type": "uint256" },
+      { "indexed": true, "internalType": "address", "name": "genius", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "signalCount", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "totalGain", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "totalLoss", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "favCount", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "unfavCount", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "voidCount", "type": "uint256" },
+      { "indexed": false, "internalType": "bytes32", "name": "proofHash", "type": "bytes32" }
+    ],
+    "name": "TrackRecordSubmitted",
+    "type": "event"
+  }
+]
