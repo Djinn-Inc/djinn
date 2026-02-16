@@ -4,12 +4,13 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title Collateral
 /// @notice Holds Genius USDC collateral to cover worst-case damages on active signals.
 /// Required collateral = sum of (notional * slaMultiplierBps / 10000) for all active signal purchases.
 /// If a Genius's collateral drops below the locked minimum, open signals can be auto-cancelled.
-contract Collateral is Ownable {
+contract Collateral is Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     /// @notice USDC token (6 decimals)
@@ -72,7 +73,7 @@ contract Collateral is Ownable {
 
     /// @notice Deposit USDC collateral. Caller must have approved this contract.
     /// @param amount Amount of USDC to deposit (6 decimals)
-    function deposit(uint256 amount) external {
+    function deposit(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         deposits[msg.sender] += amount;
@@ -81,7 +82,7 @@ contract Collateral is Ownable {
 
     /// @notice Withdraw excess collateral not currently locked
     /// @param amount Amount of USDC to withdraw (6 decimals)
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
         uint256 available = deposits[msg.sender] - locked[msg.sender];
         if (amount > available) {
@@ -173,5 +174,19 @@ contract Collateral is Ownable {
     /// @return Amount locked for this signal in USDC (6 decimals)
     function getSignalLock(address genius, uint256 signalId) external view returns (uint256) {
         return signalLocks[genius][signalId];
+    }
+
+    // -------------------------------------------------------------------------
+    // Emergency pause
+    // -------------------------------------------------------------------------
+
+    /// @notice Pause deposits and withdrawals
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpause deposits and withdrawals
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

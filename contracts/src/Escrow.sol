@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Outcome, Purchase, Signal, SignalStatus} from "./interfaces/IDjinn.sol";
 
 /// @notice Minimal interface for the SignalCommitment contract
@@ -34,7 +35,7 @@ interface IAccount {
 ///         Buyers deposit USDC ahead of time for instant purchases. Fees are split between
 ///         escrowed USDC and Djinn Credits (credits used first). A fee pool tracks collections
 ///         per genius-idiot-cycle for audit-time refunds.
-contract Escrow is Ownable {
+contract Escrow is Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     // -------------------------------------------------------------------------
@@ -205,7 +206,7 @@ contract Escrow is Ownable {
 
     /// @notice Deposit USDC into escrow. Caller must have approved this contract.
     /// @param amount Amount of USDC to deposit (6 decimals)
-    function deposit(uint256 amount) external {
+    function deposit(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
         balances[msg.sender] += amount;
@@ -216,7 +217,7 @@ contract Escrow is Ownable {
 
     /// @notice Withdraw unused USDC from escrow
     /// @param amount Amount of USDC to withdraw (6 decimals)
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
         uint256 bal = balances[msg.sender];
         if (bal < amount) revert InsufficientBalance(bal, amount);
@@ -234,7 +235,7 @@ contract Escrow is Ownable {
     /// @param notional Reference amount chosen by the buyer (6-decimal USDC scale)
     /// @param odds Decimal odds scaled by 100 (e.g. 191 = 1.91x = -110 American)
     /// @return purchaseId The auto-incremented purchase identifier
-    function purchase(uint256 signalId, uint256 notional, uint256 odds) external returns (uint256 purchaseId) {
+    function purchase(uint256 signalId, uint256 notional, uint256 odds) external whenNotPaused returns (uint256 purchaseId) {
         // --- Validate dependencies are wired up ---
         if (address(signalCommitment) == address(0)) revert ContractNotSet("SignalCommitment");
         if (address(collateral) == address(0)) revert ContractNotSet("Collateral");
@@ -342,5 +343,19 @@ contract Escrow is Ownable {
     /// @return Array of purchaseIds for this signal
     function getPurchasesBySignal(uint256 signalId) external view returns (uint256[] memory) {
         return _purchasesBySignal[signalId];
+    }
+
+    // -------------------------------------------------------------------------
+    // Emergency pause
+    // -------------------------------------------------------------------------
+
+    /// @notice Pause deposits, withdrawals, and purchases
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpause deposits, withdrawals, and purchases
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

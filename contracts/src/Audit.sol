@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Purchase, Outcome, Signal, AccountState} from "./interfaces/IDjinn.sol";
 
 /// @notice Minimal interface for the Escrow contract
@@ -51,7 +52,7 @@ struct AuditResult {
 ///         Computes the Quality Score per the whitepaper formula, distributes damages
 ///         across Tranche A (USDC refund) and Tranche B (Credits), collects a 0.5%
 ///         protocol fee on total notional, and releases remaining collateral locks.
-contract Audit is Ownable {
+contract Audit is Ownable, Pausable {
     // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
@@ -195,7 +196,7 @@ contract Audit is Ownable {
     ///      Computes the Quality Score, executes settlement, and starts a new cycle.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function trigger(address genius, address idiot) external {
+    function trigger(address genius, address idiot) external whenNotPaused {
         _validateDependencies();
         if (!account.isAuditReady(genius, idiot)) {
             revert NotAuditReady(genius, idiot);
@@ -254,7 +255,7 @@ contract Audit is Ownable {
     ///         protocol fee, collateral release, and cycle advancement.
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function settle(address genius, address idiot) external {
+    function settle(address genius, address idiot) external whenNotPaused {
         _validateDependencies();
         if (!account.isAuditReady(genius, idiot)) {
             revert NotAuditReady(genius, idiot);
@@ -274,7 +275,7 @@ contract Audit is Ownable {
     ///         (not USDC), per whitepaper: "insufficient sample for USDC movement."
     /// @param genius The Genius address
     /// @param idiot The Idiot address
-    function earlyExit(address genius, address idiot) external {
+    function earlyExit(address genius, address idiot) external whenNotPaused {
         _validateDependencies();
 
         // Only the genius or idiot can trigger early exit
@@ -495,5 +496,19 @@ contract Audit is Ownable {
         if (address(escrow) == address(0)) revert ContractNotSet("Escrow");
         if (address(account) == address(0)) revert ContractNotSet("Account");
         if (address(signalCommitment) == address(0)) revert ContractNotSet("SignalCommitment");
+    }
+
+    // -------------------------------------------------------------------------
+    // Emergency pause
+    // -------------------------------------------------------------------------
+
+    /// @notice Pause audit trigger, settlement, and early exit
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpause audit trigger, settlement, and early exit
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }
