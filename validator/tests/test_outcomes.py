@@ -302,15 +302,12 @@ class TestOutcomeAttestor:
             event_id="evt1", home_score=110, away_score=105, status="final"
         )
 
-        # 3 validators, need 2/3 + 1 = 3
+        # 3 validators, ≥2/3 quorum → threshold = ceil(3*2/3) = 2
         attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
-        assert attestor.check_consensus("sig1", 3) is None
+        assert attestor.check_consensus("sig1", 3) is None  # 1 < 2
 
         attestor.attest("sig1", "v2", Outcome.FAVORABLE, result)
-        assert attestor.check_consensus("sig1", 3) is None
-
-        attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
-        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE
+        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE  # 2 >= 2
 
     def test_consensus_zero_validators(self) -> None:
         attestor = OutcomeAttestor()
@@ -330,8 +327,8 @@ class TestOutcomeAttestor:
         attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
         attestor.attest("sig1", "v2", Outcome.UNFAVORABLE, result)
         attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
-        # 2 favorable, 1 unfavorable — threshold for 3 is 3, not reached
-        assert attestor.check_consensus("sig1", 3) is None
+        # 2 favorable, 1 unfavorable — threshold for 3 is 2, so consensus reached
+        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE
 
     @pytest.mark.asyncio
     async def test_resolve_signal_pending(self) -> None:
@@ -407,16 +404,15 @@ class TestOutcomeAttestor:
         assert removed == 0
 
     def test_consensus_threshold_rounding(self) -> None:
-        """Threshold = int(n * 2/3) + 1. For n=3: int(2.0)+1 = 3."""
+        """Threshold = ceil(n * 2/3). For n=3: ceil(2.0) = 2."""
         attestor = OutcomeAttestor()
         result = EventResult(event_id="evt1", status="final", home_score=100, away_score=90)
 
-        # With 3 validators, threshold is int(3*2/3)+1 = 3 → all must agree
+        # With 3 validators, threshold is ceil(3*2/3) = 2 → need 2/3
         attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
+        assert attestor.check_consensus("sig1", 3) is None  # 1 < 2
         attestor.attest("sig1", "v2", Outcome.FAVORABLE, result)
-        assert attestor.check_consensus("sig1", 3) is None  # 2 < 3
-        attestor.attest("sig1", "v3", Outcome.FAVORABLE, result)
-        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE  # 3 >= 3
+        assert attestor.check_consensus("sig1", 3) == Outcome.FAVORABLE  # 2 >= 2
 
     def test_consensus_with_4_validators(self) -> None:
         """For n=4: int(4*2/3)+1 = int(2.66)+1 = 3 → need 3 of 4."""

@@ -13,6 +13,7 @@ Outcome determination logic:
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import re
 import time
@@ -574,7 +575,10 @@ class OutcomeAttestor:
         if total_validators <= 0:
             return None
 
-        threshold = int(total_validators * quorum) + 1
+        # ≥ 2/3 quorum: ceil ensures we round up for non-integer products.
+        # Previous formula (int(x) + 1) was off-by-one when total_validators
+        # * quorum was exact (e.g. 3 * 2/3 = 2 → required 3/3 instead of 2/3).
+        threshold = math.ceil(total_validators * quorum)
 
         # Count votes per outcome
         votes: dict[Outcome, int] = {}

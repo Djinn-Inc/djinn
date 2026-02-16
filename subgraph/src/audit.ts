@@ -123,6 +123,15 @@ export function handleAuditSettled(event: AuditSettled): void {
   let idiot = ensureIdiot(event.params.idiot, event.block.timestamp);
   idiot.save();
 
+  // Update Account entity
+  let acctId = accountId(event.params.genius, event.params.idiot);
+  let account = Account.load(acctId);
+  if (account != null) {
+    account.qualityScore = event.params.qualityScore;
+    account.settled = true;
+    account.save();
+  }
+
   // Update protocol stats
   let stats = getOrCreateProtocolStats();
   stats.totalAudits = stats.totalAudits.plus(BigInt.fromI32(1));
@@ -165,6 +174,15 @@ export function handleEarlyExitSettled(event: EarlyExitSettled): void {
   // Ensure Idiot entity exists
   let idiot = ensureIdiot(event.params.idiot, event.block.timestamp);
   idiot.save();
+
+  // Update Account entity
+  let acctId = accountId(event.params.genius, event.params.idiot);
+  let account = Account.load(acctId);
+  if (account != null) {
+    account.qualityScore = event.params.qualityScore;
+    account.settled = true;
+    account.save();
+  }
 
   // Update protocol stats
   let stats = getOrCreateProtocolStats();

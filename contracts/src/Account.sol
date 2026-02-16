@@ -197,6 +197,7 @@ contract Account is Ownable {
             acct.currentCycle++;
         }
         acct.signalCount = 0;
+        acct.qualityScore = 0;
         delete acct.purchaseIds;
         acct.settled = false;
 
@@ -246,6 +247,7 @@ contract Account is Ownable {
             acct.currentCycle++;
         }
         acct.signalCount = 0;
+        acct.qualityScore = 0;
         delete acct.purchaseIds;
         acct.settled = false;
 

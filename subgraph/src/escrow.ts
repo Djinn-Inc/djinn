@@ -1,4 +1,4 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, log } from "@graphprotocol/graph-ts";
 import {
   Deposited,
   Withdrawn,
@@ -106,7 +106,13 @@ export function handleWithdrawn(event: Withdrawn): void {
 export function handleSignalPurchased(event: SignalPurchased): void {
   let signalId = event.params.signalId.toString();
   let signal = Signal.load(signalId);
-  if (signal == null) return;
+  if (signal == null) {
+    log.warning("SignalPurchased for unknown signal {}, purchase {} dropped", [
+      signalId,
+      event.params.purchaseId.toString(),
+    ]);
+    return;
+  }
 
   // Use the on-chain purchaseId for deterministic entity linking
   let purchaseId = event.params.purchaseId.toString();
