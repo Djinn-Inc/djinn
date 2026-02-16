@@ -83,24 +83,34 @@ class TestGetSignal:
 
     @pytest.mark.asyncio
     async def test_parses_contract_result(self, client: ChainClient) -> None:
+        # 12-field Signal struct: genius, encryptedBlob, commitHash, sport,
+        # maxPriceBps, slaMultiplierBps, expiresAt, decoyLines,
+        # availableSportsbooks, walletRecoveryBlob, status, createdAt
         mock_result = [
-            "0xGenius",      # genius
-            b"\x00" * 32,   # commitHash
-            b"\xab\xcd",    # encryptedBlob
-            500,             # maxPriceBps
-            200,             # slaBps
-            1,               # status
-            1700000000,      # timestamp
+            "0xGenius",            # [0] genius
+            b"\xab\xcd",          # [1] encryptedBlob
+            b"\x00" * 32,         # [2] commitHash
+            "basketball_nba",     # [3] sport
+            500,                   # [4] maxPriceBps
+            200,                   # [5] slaMultiplierBps
+            1700100000,            # [6] expiresAt
+            ["line1", "line2"],   # [7] decoyLines
+            ["draftkings"],       # [8] availableSportsbooks
+            b"\xff",              # [9] walletRecoveryBlob
+            1,                     # [10] status
+            1700000000,            # [11] createdAt
         ]
         mock_call = AsyncMock(return_value=mock_result)
         client._signal.functions.getSignal.return_value.call = mock_call
 
         result = await client.get_signal(42)
         assert result["genius"] == "0xGenius"
+        assert result["sport"] == "basketball_nba"
         assert result["maxPriceBps"] == 500
-        assert result["slaBps"] == 200
+        assert result["slaMultiplierBps"] == 200
+        assert result["expiresAt"] == 1700100000
         assert result["status"] == 1
-        assert result["timestamp"] == 1700000000
+        assert result["createdAt"] == 1700000000
 
 
 class TestVerifyPurchase:

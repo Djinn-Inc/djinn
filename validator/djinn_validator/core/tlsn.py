@@ -140,13 +140,18 @@ async def verify_proof(
 
     server_name = result.get("server_name", "")
 
-    # Check expected server if provided
-    if expected_server and expected_server not in server_name:
-        return TLSNVerifyResult(
-            verified=False,
-            server_name=server_name,
-            error=f"server mismatch: expected {expected_server}, got {server_name}",
+    # Check expected server if provided (exact or subdomain match, not substring)
+    if expected_server:
+        server_match = (
+            server_name == expected_server
+            or server_name.endswith("." + expected_server)
         )
+        if not server_match:
+            return TLSNVerifyResult(
+                verified=False,
+                server_name=server_name,
+                error=f"server mismatch: expected {expected_server}, got {server_name}",
+            )
 
     return TLSNVerifyResult(
         verified=True,

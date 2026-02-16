@@ -134,3 +134,12 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 - **Serialization fix**: `deserialize_dh_public_key` and `deserialize_choices` now handle both `0x`-prefixed and raw hex formats. Server uses `serialize_dh_public_key()` for consistent fixed-width encoding.
 **Limitation:** 2-party only — for n > 2 validators, peer-to-peer OT connections would be needed (each pair must independently run the OT protocol). The star topology (coordinator hub) still means the coordinator collects all Shamir evaluations; a fully peer-to-peer topology is deferred.
 **Impact:** 7 new integration tests verify available/unavailable/single-index/all-indices/fallback/3-validator scenarios. 743 total validator tests pass.
+
+## DEV-013: Tranche A Slash Direct to Idiot Wallet [CHANGES SETTLEMENT FLOW]
+
+**Whitepaper Section:** Section 7 — Audit Settlement
+**Whitepaper Says:** "Collateral → Escrow (Tranche A)" — genius collateral is slashed to escrow, then idiot gets a refund.
+**What we did:** Changed `Audit._distributeDamages()` to slash collateral directly to the idiot's wallet (`collateral.slash(genius, trancheA, idiot)`) instead of routing through escrow.
+**Why:** The original flow created stranded USDC: collateral was slashed to the escrow contract address, but escrow's internal accounting (feePool/balances) didn't track the incoming tokens. The `_refundFromFeePool` call moved existing fee pool accounting (fees the idiot already paid) rather than accounting for the newly-slashed collateral. This left the slashed USDC permanently unwithdrawable in the escrow contract.
+**Alternative considered:** Adding a `creditBalance(address, uint256)` function to Escrow callable by Audit would have preserved the "Collateral → Escrow" path. Chose direct-to-wallet for simplicity and better UX (idiot receives USDC immediately without needing to withdraw from escrow).
+**Impact:** Economic outcome identical — idiot receives the same USDC amount. UX improved — no additional withdrawal step. Fee pool for the cycle is left intact (genius earned fees stay in escrow; a future genius fee claim mechanism may be needed).

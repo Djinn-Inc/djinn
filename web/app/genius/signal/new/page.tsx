@@ -263,12 +263,14 @@ export default function CreateSignal() {
 
       const storePromises = shares.map((share, i) => {
         const validator = validators[i % validators.length];
+        // Send only the individual Shamir share — NEVER the full AES key
+        const shareHex = share.y.toString(16).padStart(64, "0");
         return validator.storeShare({
           signal_id: signalIdStr,
           genius_address: geniusAddress,
           share_x: share.x,
           share_y: share.y.toString(16),
-          encrypted_key_share: toHex(aesKey),
+          encrypted_key_share: shareHex,
         });
       });
 

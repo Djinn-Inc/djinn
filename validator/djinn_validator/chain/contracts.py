@@ -60,13 +60,24 @@ SIGNAL_COMMITMENT_ABI = [
         "inputs": [{"name": "signalId", "type": "uint256"}],
         "name": "getSignal",
         "outputs": [
-            {"name": "genius", "type": "address"},
-            {"name": "commitHash", "type": "bytes32"},
-            {"name": "encryptedBlob", "type": "bytes"},
-            {"name": "maxPriceBps", "type": "uint256"},
-            {"name": "slaBps", "type": "uint256"},
-            {"name": "status", "type": "uint8"},
-            {"name": "timestamp", "type": "uint256"},
+            {
+                "components": [
+                    {"name": "genius", "type": "address"},
+                    {"name": "encryptedBlob", "type": "bytes"},
+                    {"name": "commitHash", "type": "bytes32"},
+                    {"name": "sport", "type": "string"},
+                    {"name": "maxPriceBps", "type": "uint256"},
+                    {"name": "slaMultiplierBps", "type": "uint256"},
+                    {"name": "expiresAt", "type": "uint256"},
+                    {"name": "decoyLines", "type": "string[]"},
+                    {"name": "availableSportsbooks", "type": "string[]"},
+                    {"name": "walletRecoveryBlob", "type": "bytes"},
+                    {"name": "status", "type": "uint8"},
+                    {"name": "createdAt", "type": "uint256"},
+                ],
+                "name": "",
+                "type": "tuple",
+            },
         ],
         "stateMutability": "view",
         "type": "function",
@@ -245,14 +256,19 @@ class ChainClient:
             result = await self._with_failover(
                 lambda: self._signal.functions.getSignal(signal_id).call()  # type: ignore[union-attr]
             )
+            # Tuple order matches Signal struct: genius, encryptedBlob, commitHash,
+            # sport, maxPriceBps, slaMultiplierBps, expiresAt, decoyLines,
+            # availableSportsbooks, walletRecoveryBlob, status, createdAt
             return {
                 "genius": result[0],
-                "commitHash": result[1],
-                "encryptedBlob": result[2],
-                "maxPriceBps": result[3],
-                "slaBps": result[4],
-                "status": result[5],
-                "timestamp": result[6],
+                "encryptedBlob": result[1],
+                "commitHash": result[2],
+                "sport": result[3],
+                "maxPriceBps": result[4],
+                "slaMultiplierBps": result[5],
+                "expiresAt": result[6],
+                "status": result[10],
+                "createdAt": result[11],
             }
         except Exception as e:
             log.error("get_signal_failed", signal_id=signal_id, err=str(e))

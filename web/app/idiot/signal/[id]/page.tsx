@@ -4,8 +4,9 @@ import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
-import { getValidatorClient, getMinerClient } from "@/lib/api";
-import { decrypt, fromHex, bigIntToKey } from "@/lib/crypto";
+import { getValidatorClient, getValidatorClients, getMinerClient } from "@/lib/api";
+import { decrypt, fromHex, bigIntToKey, reconstructSecret } from "@/lib/crypto";
+import type { ShamirShare } from "@/lib/crypto";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import QualityScore from "@/components/QualityScore";
@@ -152,23 +153,50 @@ export default function PurchaseSignal() {
         return;
       }
 
-      // Step 2: Request purchase from validator (MPC check)
+      // Step 2: Request purchase from all validators (MPC check + share collection)
       setStep("purchasing_validator");
 
-      const validator = getValidatorClient();
-      const purchaseResult = await validator.purchaseSignal(
-        signalId.toString(),
-        {
-          buyer_address: buyerAddress,
-          sportsbook: selectedSportsbook,
-          available_indices: checkResult.available_indices,
-        },
+      const validators = getValidatorClients();
+      const purchaseReq = {
+        buyer_address: buyerAddress,
+        sportsbook: selectedSportsbook,
+        available_indices: checkResult.available_indices,
+      };
+
+      // Contact all validators in parallel to collect Shamir shares
+      const purchaseResults = await Promise.allSettled(
+        validators.map((v) => v.purchaseSignal(signalId.toString(), purchaseReq)),
       );
 
-      if (!purchaseResult.available || !purchaseResult.encrypted_key_share) {
+      // Collect successful shares with their x-coordinates
+      const collectedShares: ShamirShare[] = [];
+      let firstAvailable = purchaseResults.find(
+        (r) => r.status === "fulfilled" && r.value.available && r.value.encrypted_key_share,
+      );
+
+      for (const result of purchaseResults) {
+        if (
+          result.status === "fulfilled" &&
+          result.value.available &&
+          result.value.encrypted_key_share &&
+          result.value.share_x != null
+        ) {
+          collectedShares.push({
+            x: result.value.share_x,
+            y: BigInt("0x" + result.value.encrypted_key_share),
+          });
+        }
+      }
+
+      const purchaseResult = firstAvailable?.status === "fulfilled" ? firstAvailable.value : null;
+
+      if (!purchaseResult || !purchaseResult.available) {
+        const failedMsg = purchaseResults
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => r.reason?.message || "unknown")
+          .join("; ");
         setStepError(
-          purchaseResult.message ||
-            "Signal not available at this sportsbook (MPC check failed)",
+          failedMsg || "Signal not available at this sportsbook (MPC check failed)",
         );
         setStep("error");
         return;
@@ -199,11 +227,11 @@ export default function PurchaseSignal() {
       // Step 4: Decrypt the signal
       setStep("decrypting");
 
-      if (purchaseResult.encrypted_key_share) {
+      if (collectedShares.length > 0) {
         try {
-          // In local single-validator mode, the validator returns the full key
-          // In production, we'd collect k shares and reconstruct via Shamir
-          const keyBytes = fromHex(purchaseResult.encrypted_key_share);
+          // Reconstruct AES key from Shamir shares (need ≥ threshold shares)
+          const reconstructedBigInt = reconstructSecret(collectedShares);
+          const keyBytes = bigIntToKey(reconstructedBigInt);
 
           // The encrypted blob is stored on-chain as hex-encoded bytes
           // Parse it: format is "iv:ciphertext"

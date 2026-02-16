@@ -391,6 +391,7 @@ def create_app(
             status="complete",
             available=True,
             encrypted_key_share=share_data.hex(),
+            share_x=record.share.x,
             message="Key share released",
         )
 

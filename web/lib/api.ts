@@ -29,7 +29,8 @@ export interface PurchaseResponse {
   signal_id: string;
   status: string;
   available: boolean | null;
-  encrypted_key_share: string | null;
+  encrypted_key_share: string | null; // Hex-encoded Shamir share y-value
+  share_x: number | null; // Shamir share x-coordinate
   message: string;
 }
 

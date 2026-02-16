@@ -78,7 +78,8 @@ class PurchaseResponse(BaseModel):
     signal_id: str
     status: str
     available: bool | None = None
-    encrypted_key_share: str | None = None  # Hex-encoded, only on success
+    encrypted_key_share: str | None = None  # Hex-encoded Shamir share y-value
+    share_x: int | None = None  # Shamir share x-coordinate
     message: str = ""
 
 
