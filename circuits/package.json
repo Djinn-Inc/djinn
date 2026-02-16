@@ -7,8 +7,8 @@
   "scripts": {
     "compile": "circom src/audit_proof.circom --r1cs --wasm --sym -o build/ && circom src/track_record.circom --r1cs --wasm --sym -o build/",
     "setup": "bash scripts/setup.sh",
-    "test": "node test/audit_proof.test.js",
-    "test:all": "node test/audit_proof.test.js"
+    "test": "node test/audit_proof.test.js && node test/track_record.test.js",
+    "test:all": "node test/audit_proof.test.js && node test/track_record.test.js"
   },
   "keywords": [],
   "author": "",

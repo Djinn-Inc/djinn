@@ -10,7 +10,7 @@ const WASM_PATH = resolve(__dirname, "../build/track_record_js/track_record.wasm
 const ZKEY_PATH = resolve(__dirname, "../build/track_record.zkey");
 const VKEY_PATH = resolve(__dirname, "../build/track_record_vkey.json");
 
-const MAX_SIGNALS = 64;
+const MAX_SIGNALS = 20;  // Matches circuit (DEV-005: reduced from 64 for EVM contract size limit)
 const ODDS_PRECISION = 1000000n;
 const BPS_DENOM = 10000n;
 
@@ -314,9 +314,9 @@ await test("Invalid preimage is rejected", async () => {
     assert(threw, "Should reject invalid preimage");
 });
 
-await test("Large batch - 32 signals", async () => {
+await test("Full batch - 20 signals (MAX_SIGNALS)", async () => {
     const signals = [];
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < 20; i++) {
         signals.push({
             preimage: BigInt(8000 + i),
             index: BigInt((i % 10) + 1),
@@ -329,7 +329,7 @@ await test("Large batch - 32 signals", async () => {
 
     const input = buildInput(signals);
     const { valid } = await generateAndVerifyProof(input);
-    assert(valid, "Proof should be valid for 32 signals");
+    assert(valid, "Proof should be valid for 20 signals (max batch)");
 });
 
 // ─── Summary ───
