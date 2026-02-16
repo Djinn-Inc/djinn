@@ -106,6 +106,13 @@ class MPCOrchestrator:
         """Release the shared HTTP client."""
         await self._http.aclose()
 
+    def _mark_session_failed(self, session: Any) -> None:
+        """Mark an MPC session as FAILED to prevent resource leaks."""
+        if session.status not in (SessionStatus.COMPLETE, SessionStatus.FAILED):
+            with self._coordinator._lock:
+                session.status = SessionStatus.FAILED
+            log.info("mpc_session_failed_cleanup", session_id=session.session_id)
+
     def _get_peer_breaker(self, peer_uid: int) -> CircuitBreaker:
         """Get or create a circuit breaker for a peer validator."""
         if peer_uid not in self._peer_breakers:
@@ -419,6 +426,7 @@ class MPCOrchestrator:
                     available=len(all_secret_shares),
                     threshold=self._threshold,
                 )
+                self._mark_session_failed(session)
                 return None
             actual_secret = reconstruct_at_zero(
                 {s.x: s.y for s in all_secret_shares},
@@ -435,6 +443,7 @@ class MPCOrchestrator:
             )
             my_mac_key = self._coordinator.get_mac_key_share(session.session_id, my_x)
             if my_auth_triples is None or my_mac_key is None:
+                self._mark_session_failed(session)
                 return None
             my_state_auth = AuthenticatedParticipantState(
                 validator_x=my_x,
@@ -452,6 +461,7 @@ class MPCOrchestrator:
                 my_x,
             )
             if my_triples is None:
+                self._mark_session_failed(session)
                 return None
             my_state_basic = DistributedParticipantState(
                 validator_x=my_x,
@@ -544,6 +554,7 @@ class MPCOrchestrator:
                 timeout=GATHER_TIMEOUT,
                 n_peers=len(peers),
             )
+            self._mark_session_failed(session)
             return None
 
         init_failures = sum(1 for r in results if r is None or isinstance(r, BaseException))
@@ -561,6 +572,7 @@ class MPCOrchestrator:
                 accepted=len(accepted_peers) + 1,
                 threshold=self._threshold,
             )
+            self._mark_session_failed(session)
             return None
 
         log.info(
@@ -648,6 +660,7 @@ class MPCOrchestrator:
                     timeout=GATHER_TIMEOUT,
                     n_peers=len(active_peers),
                 )
+                self._mark_session_failed(session)
                 return None
 
             failed = []
@@ -673,6 +686,7 @@ class MPCOrchestrator:
                     remaining=len(d_vals),
                     threshold=self._threshold,
                 )
+                self._mark_session_failed(session)
                 return None
 
             # Reconstruct publicly opened d and e

@@ -60,6 +60,12 @@ export function humanizeError(err: unknown, fallback = "Transaction failed"): st
 }
 
 // ---------------------------------------------------------------------------
+// Chain ID — expected chain for all transactions (Base Sepolia: 84532, Base: 8453)
+// ---------------------------------------------------------------------------
+
+const EXPECTED_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532");
+
+// ---------------------------------------------------------------------------
 // Provider hook — returns an ethers BrowserProvider from the user's wallet
 // ---------------------------------------------------------------------------
 
@@ -84,8 +90,18 @@ export function useEthersSigner(): ethers.Signer | null {
   useEffect(() => {
     let cancelled = false;
     if (provider) {
-      provider.getSigner().then((s) => {
-        if (!cancelled) setSigner(s);
+      provider.getSigner().then(async (s) => {
+        if (cancelled) return;
+        // Verify the wallet is connected to the expected chain
+        const network = await s.provider.getNetwork();
+        if (Number(network.chainId) !== EXPECTED_CHAIN_ID) {
+          console.warn(
+            `[Djinn] Wrong network: connected to chain ${network.chainId}, expected ${EXPECTED_CHAIN_ID}. Transactions will be blocked.`
+          );
+          setSigner(null);
+          return;
+        }
+        setSigner(s);
       }).catch((err: unknown) => {
         // Expected when wallet not connected; log unexpected errors
         if (err instanceof Error && !err.message.includes("unknown account")) {
@@ -99,6 +115,26 @@ export function useEthersSigner(): ethers.Signer | null {
   }, [provider]);
 
   return signer;
+}
+
+/** Check if the wallet is on the expected chain. */
+export function useChainId(): { chainId: number | null; isCorrectChain: boolean } {
+  const provider = useEthersProvider();
+  const [chainId, setChainId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (provider) {
+      provider.getNetwork().then((network) => {
+        if (!cancelled) setChainId(Number(network.chainId));
+      }).catch(() => {
+        // Wallet not connected
+      });
+    }
+    return () => { cancelled = true; };
+  }, [provider]);
+
+  return { chainId, isCorrectChain: chainId === EXPECTED_CHAIN_ID };
 }
 
 // ---------------------------------------------------------------------------
