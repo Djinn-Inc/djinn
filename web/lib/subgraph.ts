@@ -138,6 +138,64 @@ export async function fetchTrackRecordProofs(
   return result?.trackRecordProofs ?? [];
 }
 
+// ---------------------------------------------------------------------------
+// Genius signal queries (for track record proof auto-population)
+// ---------------------------------------------------------------------------
+
+export interface SubgraphSignalPurchase {
+  id: string;
+  onChainPurchaseId: string;
+  notional: string;
+  feePaid: string;
+  outcome: string; // "Pending" | "Favorable" | "Unfavorable" | "Void"
+  purchasedAt: string;
+}
+
+export interface SubgraphSignal {
+  id: string;
+  sport: string;
+  maxPriceBps: string;
+  slaMultiplierBps: string;
+  status: string; // "Active" | "Purchased" | "Settled" | "Voided"
+  createdAt: string;
+  purchases: SubgraphSignalPurchase[];
+}
+
+/** Fetch a genius's signals with their purchase data (for track record proofs) */
+export async function fetchGeniusSignals(
+  geniusAddress: string,
+  limit = 100,
+): Promise<SubgraphSignal[]> {
+  if (!ETH_ADDRESS_RE.test(geniusAddress)) return [];
+
+  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
+  const result = await querySubgraph<{ signals: SubgraphSignal[] }>(`{
+    signals(
+      where: { genius: "${geniusAddress.toLowerCase()}" }
+      orderBy: createdAt
+      orderDirection: desc
+      first: ${safeLimit}
+    ) {
+      id
+      sport
+      maxPriceBps
+      slaMultiplierBps
+      status
+      createdAt
+      purchases(first: 10) {
+        id
+        onChainPurchaseId
+        notional
+        feePaid
+        outcome
+        purchasedAt
+      }
+    }
+  }`);
+
+  return result?.signals ?? [];
+}
+
 /** Fetch protocol-wide statistics */
 export async function fetchProtocolStats(): Promise<SubgraphProtocolStats | null> {
   const result = await querySubgraph<{

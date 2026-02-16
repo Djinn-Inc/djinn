@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -11,8 +11,20 @@ import {
 import type { TrackRecordProofResult } from "@/lib/zkproof";
 import { useSubmitTrackRecord } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/types";
+import {
+  useSettledSignals,
+  getSavedSignals,
+  type ProofReadySignal,
+} from "@/lib/hooks/useSettledSignals";
 
 type ProofState = "idle" | "generating" | "complete" | "error";
+type InputMode = "auto" | "manual";
+
+const OUTCOME_MAP: Record<string, bigint> = {
+  Favorable: 1n,
+  Unfavorable: 2n,
+  Void: 3n,
+};
 
 const EXAMPLE_SIGNAL = JSON.stringify(
   [
@@ -30,8 +42,10 @@ const EXAMPLE_SIGNAL = JSON.stringify(
 );
 
 export default function TrackRecordPage() {
-  const { authenticated } = usePrivy();
+  const { authenticated, user } = usePrivy();
+  const address = user?.wallet?.address;
   const router = useRouter();
+  const [inputMode, setInputMode] = useState<InputMode>("auto");
   const [signalJson, setSignalJson] = useState("");
   const [state, setState] = useState<ProofState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -40,6 +54,36 @@ export default function TrackRecordPage() {
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { submit: submitOnChain, loading: submitLoading } = useSubmitTrackRecord();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Fetch settled signals (merges localStorage + subgraph + on-chain data)
+  const {
+    signals: settledSignals,
+    loading: signalsLoading,
+    error: signalsError,
+  } = useSettledSignals(address);
+
+  // Filter to signals that have at least one settled purchase
+  const proofableSignals = useMemo(
+    () => settledSignals.filter((s) => s.purchases.length > 0),
+    [settledSignals],
+  );
+
+  const savedCount = getSavedSignals().length;
+
+  const toggleSignal = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 20) next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    const ids = proofableSignals.slice(0, 20).map((s) => s.signalId);
+    setSelectedIds(new Set(ids));
+  };
 
   if (!authenticated) {
     return (
@@ -54,7 +98,45 @@ export default function TrackRecordPage() {
     );
   }
 
-  const handleGenerate = async () => {
+  const handleGenerateFromSelected = async () => {
+    setErrorMsg(null);
+    setState("generating");
+
+    try {
+      const signals: SignalData[] = [];
+
+      for (const sig of proofableSignals) {
+        if (!selectedIds.has(sig.signalId)) continue;
+
+        // Use the first settled purchase for each signal
+        const purchase = sig.purchases[0];
+        if (!purchase) continue;
+
+        const outcomeNum = OUTCOME_MAP[purchase.outcome];
+        if (!outcomeNum) continue;
+
+        signals.push({
+          preimage: BigInt(sig.preimage),
+          index: BigInt(sig.realIndex),
+          outcome: outcomeNum,
+          notional: BigInt(purchase.notional),
+          odds: BigInt(purchase.odds || "1910000"), // fallback to common odds
+          slaBps: BigInt(purchase.slaBps || "10000"),
+        });
+      }
+
+      if (signals.length === 0) {
+        throw new Error("No valid signals selected for proof generation");
+      }
+
+      await generateAndSetResult(signals);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Proof generation failed");
+      setState("error");
+    }
+  };
+
+  const handleGenerateFromJson = async () => {
     setErrorMsg(null);
     setState("generating");
 
@@ -65,10 +147,7 @@ export default function TrackRecordPage() {
       }
 
       const signals: SignalData[] = parsed.map(
-        (
-          s: Record<string, string>,
-          i: number,
-        ) => {
+        (s: Record<string, string>, i: number) => {
           if (!s.preimage || !s.index || !s.outcome || !s.notional || !s.odds) {
             throw new Error(
               `Signal at index ${i} missing required fields (preimage, index, outcome, notional, odds)`,
@@ -85,43 +164,34 @@ export default function TrackRecordPage() {
         },
       );
 
-      const proofResult = await generateTrackRecordProof(signals);
-      setResult(proofResult);
-      setProofJson(
-        JSON.stringify(
-          {
-            proof: proofResult.proof,
-            publicSignals: proofResult.publicSignals,
-            stats: {
-              favCount: proofResult.favCount.toString(),
-              unfavCount: proofResult.unfavCount.toString(),
-              voidCount: proofResult.voidCount.toString(),
-              totalGain: proofResult.totalGain.toString(),
-              totalLoss: proofResult.totalLoss.toString(),
-            },
-          },
-          null,
-          2,
-        ),
-      );
-      setState("complete");
+      await generateAndSetResult(signals);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Proof generation failed");
       setState("error");
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result;
-      if (typeof text === "string") {
-        setSignalJson(text);
-      }
-    };
-    reader.readAsText(file);
+  const generateAndSetResult = async (signals: SignalData[]) => {
+    const proofResult = await generateTrackRecordProof(signals);
+    setResult(proofResult);
+    setProofJson(
+      JSON.stringify(
+        {
+          proof: proofResult.proof,
+          publicSignals: proofResult.publicSignals,
+          stats: {
+            favCount: proofResult.favCount.toString(),
+            unfavCount: proofResult.unfavCount.toString(),
+            voidCount: proofResult.voidCount.toString(),
+            totalGain: proofResult.totalGain.toString(),
+            totalLoss: proofResult.totalLoss.toString(),
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    setState("complete");
   };
 
   const handleSubmitOnChain = async () => {
@@ -151,6 +221,19 @@ export default function TrackRecordPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
+      if (typeof text === "string") {
+        setSignalJson(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="max-w-3xl mx-auto">
       <button
@@ -170,6 +253,7 @@ export default function TrackRecordPage() {
       </p>
 
       {state === "complete" && result ? (
+        /* ─── Proof Result View ─── */
         <div className="space-y-6">
           <div className="rounded-lg bg-green-50 border border-green-200 p-4">
             <p className="text-green-700 font-medium">
@@ -179,56 +263,31 @@ export default function TrackRecordPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="card text-center">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Favorable
-              </p>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                {result.favCount.toString()}
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Favorable</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{result.favCount.toString()}</p>
             </div>
             <div className="card text-center">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Unfavorable
-              </p>
-              <p className="text-2xl font-bold text-red-500 mt-1">
-                {result.unfavCount.toString()}
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Unfavorable</p>
+              <p className="text-2xl font-bold text-red-500 mt-1">{result.unfavCount.toString()}</p>
             </div>
             <div className="card text-center">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Void
-              </p>
-              <p className="text-2xl font-bold text-slate-400 mt-1">
-                {result.voidCount.toString()}
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Void</p>
+              <p className="text-2xl font-bold text-slate-400 mt-1">{result.voidCount.toString()}</p>
             </div>
             <div className="card text-center">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Total Gain
-              </p>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                ${formatUsdc(result.totalGain)}
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Total Gain</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">${formatUsdc(result.totalGain)}</p>
             </div>
             <div className="card text-center">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Total Loss
-              </p>
-              <p className="text-2xl font-bold text-red-500 mt-1">
-                ${formatUsdc(result.totalLoss)}
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Total Loss</p>
+              <p className="text-2xl font-bold text-red-500 mt-1">${formatUsdc(result.totalLoss)}</p>
             </div>
           </div>
 
           <div className="card">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-slate-900">
-                Proof Data
-              </h3>
-              <button
-                onClick={handleDownloadProof}
-                className="btn-primary text-xs py-1 px-3"
-              >
+              <h3 className="text-sm font-medium text-slate-900">Proof Data</h3>
+              <button onClick={handleDownloadProof} className="btn-primary text-xs py-1 px-3">
                 Download JSON
               </button>
             </div>
@@ -237,11 +296,8 @@ export default function TrackRecordPage() {
             </pre>
           </div>
 
-          {/* On-chain submission */}
           <div className="card">
-            <h3 className="text-sm font-medium text-slate-900 mb-3">
-              Submit On-Chain
-            </h3>
+            <h3 className="text-sm font-medium text-slate-900 mb-3">Submit On-Chain</h3>
             <p className="text-sm text-slate-500 mb-4">
               Submit this proof to the TrackRecord contract for permanent,
               verifiable storage on Base chain.
@@ -283,74 +339,201 @@ export default function TrackRecordPage() {
             >
               Generate Another
             </button>
-            <button
-              onClick={() => router.push("/genius")}
-              className="btn-primary"
-            >
+            <button onClick={() => router.push("/genius")} className="btn-primary">
               Back to Dashboard
             </button>
           </div>
         </div>
       ) : (
+        /* ─── Input View ─── */
         <div className="space-y-6">
-          <div className="card">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Signal Data
-            </h2>
-            <p className="text-sm text-slate-500 mb-4">
-              Paste your signal data as a JSON array, or upload a JSON file.
-              Each signal needs: preimage, index, outcome (1=Favorable,
-              2=Unfavorable, 3=Void), notional, odds, and slaBps. Up to 20
-              signals per proof.
-            </p>
-
-            <div className="mb-4">
-              <label htmlFor="signalFile" className="label">Upload JSON File</label>
-              <input
-                id="signalFile"
-                type="file"
-                accept=".json"
-                onChange={handleFileUpload}
-                className="input"
-              />
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="signalJson" className="label">Or Paste JSON</label>
-              <textarea
-                id="signalJson"
-                value={signalJson}
-                onChange={(e) => setSignalJson(e.target.value)}
-                placeholder={EXAMPLE_SIGNAL}
-                rows={12}
-                className="input font-mono text-xs"
-              />
-            </div>
-
-            {errorMsg && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
-                <p className="text-xs text-red-600">{errorMsg}</p>
-              </div>
-            )}
-
-            {state === "generating" && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
-                <p className="text-xs text-blue-600">
-                  Generating Groth16 proof... This may take a few seconds.
-                </p>
-              </div>
-            )}
-
+          {/* Mode toggle */}
+          <div className="flex gap-2">
             <button
-              onClick={handleGenerate}
-              disabled={state === "generating" || !signalJson.trim()}
-              className="btn-primary w-full py-3"
+              type="button"
+              onClick={() => setInputMode("auto")}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                inputMode === "auto"
+                  ? "bg-genius-500 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
             >
-              {state === "generating"
-                ? "Generating Proof..."
-                : "Generate Track Record Proof"}
+              My Signals ({savedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode("manual")}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                inputMode === "manual"
+                  ? "bg-genius-500 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Manual Input
             </button>
           </div>
+
+          {inputMode === "auto" ? (
+            /* ─── Auto-populated signals ─── */
+            <div className="card">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Your Signals
+              </h2>
+              <p className="text-sm text-slate-500 mb-4">
+                Select settled signals to include in your track record proof.
+                Signal data is saved locally when you create signals and merged
+                with on-chain purchase outcomes.
+              </p>
+
+              {signalsLoading && (
+                <div className="text-center py-8">
+                  <div className="inline-block w-6 h-6 border-2 border-genius-500 border-t-transparent rounded-full animate-spin mb-2" />
+                  <p className="text-xs text-slate-500">Loading signal data...</p>
+                </div>
+              )}
+
+              {signalsError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
+                  <p className="text-xs text-red-600">{signalsError}</p>
+                </div>
+              )}
+
+              {!signalsLoading && savedCount === 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-center">
+                  <p className="text-sm text-amber-700 mb-2">
+                    No saved signal data found.
+                  </p>
+                  <p className="text-xs text-amber-600">
+                    Signal data is saved automatically when you create new signals.
+                    For signals created before this feature, use the Manual Input tab.
+                  </p>
+                </div>
+              )}
+
+              {!signalsLoading && proofableSignals.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-slate-400">
+                      {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
+                    </p>
+                    <button
+                      type="button"
+                      onClick={selectAll}
+                      className="text-xs text-genius-600 hover:text-genius-800"
+                    >
+                      Select all (max 20)
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
+                    {proofableSignals.map((sig) => (
+                      <SignalRow
+                        key={sig.signalId}
+                        signal={sig}
+                        selected={selectedIds.has(sig.signalId)}
+                        onToggle={() => toggleSignal(sig.signalId)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {!signalsLoading && savedCount > 0 && proofableSignals.length === 0 && (
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
+                  <p className="text-sm text-slate-600">
+                    You have {savedCount} saved signal{savedCount !== 1 ? "s" : ""}, but none have settled purchases yet.
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Purchases need to be settled through the audit cycle before they can be included in a proof.
+                  </p>
+                </div>
+              )}
+
+              {errorMsg && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
+                  <p className="text-xs text-red-600">{errorMsg}</p>
+                </div>
+              )}
+
+              {state === "generating" && (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
+                  <p className="text-xs text-blue-600">
+                    Generating Groth16 proof... This may take a few seconds.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={handleGenerateFromSelected}
+                disabled={state === "generating" || selectedIds.size === 0}
+                className="btn-primary w-full py-3"
+              >
+                {state === "generating"
+                  ? "Generating Proof..."
+                  : `Generate Proof (${selectedIds.size} signal${selectedIds.size !== 1 ? "s" : ""})`}
+              </button>
+            </div>
+          ) : (
+            /* ─── Manual JSON input ─── */
+            <div className="card">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">
+                Manual Signal Data
+              </h2>
+              <p className="text-sm text-slate-500 mb-4">
+                Paste your signal data as a JSON array, or upload a JSON file.
+                Each signal needs: preimage, index, outcome (1=Favorable,
+                2=Unfavorable, 3=Void), notional, odds, and slaBps. Up to 20
+                signals per proof.
+              </p>
+
+              <div className="mb-4">
+                <label htmlFor="signalFile" className="label">Upload JSON File</label>
+                <input
+                  id="signalFile"
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileUpload}
+                  className="input"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="signalJson" className="label">Or Paste JSON</label>
+                <textarea
+                  id="signalJson"
+                  value={signalJson}
+                  onChange={(e) => setSignalJson(e.target.value)}
+                  placeholder={EXAMPLE_SIGNAL}
+                  rows={12}
+                  className="input font-mono text-xs"
+                />
+              </div>
+
+              {errorMsg && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
+                  <p className="text-xs text-red-600">{errorMsg}</p>
+                </div>
+              )}
+
+              {state === "generating" && (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
+                  <p className="text-xs text-blue-600">
+                    Generating Groth16 proof... This may take a few seconds.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={handleGenerateFromJson}
+                disabled={state === "generating" || !signalJson.trim()}
+                className="btn-primary w-full py-3"
+              >
+                {state === "generating"
+                  ? "Generating Proof..."
+                  : "Generate Track Record Proof"}
+              </button>
+            </div>
+          )}
 
           <div className="card">
             <h3 className="text-sm font-medium text-slate-900 mb-3">
@@ -378,5 +561,73 @@ export default function TrackRecordPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Signal selection row
+// ---------------------------------------------------------------------------
+
+function SignalRow({
+  signal,
+  selected,
+  onToggle,
+}: {
+  signal: ProofReadySignal;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const purchase = signal.purchases[0];
+  const outcomeColor =
+    purchase?.outcome === "Favorable"
+      ? "text-green-600"
+      : purchase?.outcome === "Unfavorable"
+        ? "text-red-500"
+        : "text-slate-400";
+
+  const date = new Date(signal.createdAt * 1000);
+
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-lg px-4 py-3 cursor-pointer transition-colors ${
+        selected
+          ? "bg-genius-50 border-2 border-genius-300"
+          : "bg-slate-50 border border-slate-200 hover:border-slate-300"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        className="w-4 h-4 rounded text-genius-500 border-slate-300"
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-800 truncate">
+            {signal.pick || `Signal ${signal.signalId.slice(0, 8)}...`}
+          </span>
+          <span className="text-[10px] bg-slate-200 text-slate-500 rounded px-1.5 py-0.5">
+            {signal.sport}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
+          <span>
+            {date.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+          {purchase && (
+            <>
+              <span className={`font-medium ${outcomeColor}`}>
+                {purchase.outcome}
+              </span>
+              <span>${formatUsdc(BigInt(purchase.notional))} notional</span>
+            </>
+          )}
+        </div>
+      </div>
+    </label>
   );
 }

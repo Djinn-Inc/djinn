@@ -286,6 +286,24 @@ export default function CreateSignal() {
         console.warn(`${failed}/10 share stores failed (${succeeded} succeeded)`);
       }
 
+      // Persist private signal data for future track record proof generation
+      try {
+        const stored = JSON.parse(localStorage.getItem("djinn-signal-data") || "[]");
+        stored.push({
+          signalId: signalId.toString(),
+          preimage: keyToBigInt(aesKey).toString(),
+          realIndex: realIndex + 1, // 1-indexed as used in ZK circuit
+          sport: selectedSport.label,
+          pick: formatLine(realPick),
+          slaMultiplierBps: Math.round(slaNum * 100),
+          createdAt: Math.floor(Date.now() / 1000),
+        });
+        localStorage.setItem("djinn-signal-data", JSON.stringify(stored));
+      } catch {
+        // localStorage may be unavailable; non-fatal
+        console.warn("Failed to save signal data to localStorage");
+      }
+
       setStep("success");
     } catch (err) {
       setStepError(
@@ -570,39 +588,56 @@ export default function CreateSignal() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="maxPriceBps" className="label">Max Price (%)</label>
-            <input
-              id="maxPriceBps"
-              type="number"
-              value={maxPriceBps}
-              onChange={(e) => setMaxPriceBps(e.target.value)}
-              placeholder="5"
-              min="0.01"
-              max="50"
-              step="0.01"
-              className="input"
-              required
-            />
-            <p className="text-xs text-slate-500 mt-1">Fee as % of notional (max 50%)</p>
-          </div>
-          <div>
-            <label htmlFor="slaMultiplier" className="label">SLA Multiplier (%)</label>
-            <input
-              id="slaMultiplier"
-              type="number"
-              value={slaMultiplier}
-              onChange={(e) => setSlaMultiplier(e.target.value)}
-              placeholder="100"
-              min="100"
-              max="1000"
-              step="1"
-              className="input"
-              required
-            />
-            <p className="text-xs text-slate-500 mt-1">Damages rate if unfavorable (min 100%)</p>
-          </div>
+        <div>
+          <label htmlFor="maxPriceBps" className="label">Signal Fee (%)</label>
+          <input
+            id="maxPriceBps"
+            type="number"
+            value={maxPriceBps}
+            onChange={(e) => setMaxPriceBps(e.target.value)}
+            placeholder="5"
+            min="0.01"
+            max="50"
+            step="0.01"
+            className="input"
+            required
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Percentage buyers pay per purchase. Higher fee = more revenue but fewer buyers.
+          </p>
+          {(() => {
+            const pct = parseFloat(maxPriceBps);
+            if (!isNaN(pct) && pct > 0 && pct <= 50) {
+              return (
+                <div className="mt-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600 space-y-0.5">
+                  <p>At $100 notional, buyer pays <span className="font-semibold text-genius-700">${(100 * pct / 100).toFixed(2)}</span> fee</p>
+                  <p>At $500 notional, buyer pays <span className="font-semibold text-genius-700">${(500 * pct / 100).toFixed(2)}</span> fee</p>
+                  <p>At $1,000 notional, buyer pays <span className="font-semibold text-genius-700">${(1000 * pct / 100).toFixed(2)}</span> fee</p>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+
+        <div>
+          <label htmlFor="slaMultiplier" className="label">SLA Multiplier (%)</label>
+          <input
+            id="slaMultiplier"
+            type="number"
+            value={slaMultiplier}
+            onChange={(e) => setSlaMultiplier(e.target.value)}
+            placeholder="100"
+            min="100"
+            max="1000"
+            step="1"
+            className="input"
+            required
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            If your pick is wrong, you owe the buyer this % of their notional from your collateral.
+            100% = full notional at risk. Higher = more buyer protection.
+          </p>
         </div>
 
         <div>

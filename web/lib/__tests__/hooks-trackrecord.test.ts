@@ -93,7 +93,7 @@ describe("useTrackRecordProofs", () => {
 
     const { result, rerender } = renderHook(
       ({ addr }: { addr?: string }) => useTrackRecordProofs(addr),
-      { initialProps: { addr: "0xGenius1" } },
+      { initialProps: { addr: "0xGenius1" } as { addr?: string } },
     );
 
     await waitFor(() => {
