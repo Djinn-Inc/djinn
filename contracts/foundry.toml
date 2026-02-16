@@ -20,6 +20,11 @@ quote_style = "double"
 tab_width = 4
 wrap_comments = true
 
+# Production profile: higher optimizer runs for lower gas costs on frequently-called contracts
+[profile.production]
+optimizer_runs = 10000
+via_ir = true
+
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
