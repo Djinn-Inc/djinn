@@ -7,6 +7,7 @@ import QualityScore from "@/components/QualityScore";
 import { useCollateral, useDepositCollateral, useWithdrawCollateral } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
+import { useTrackRecordProofs } from "@/lib/hooks/useTrackRecordProofs";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function GeniusDashboard() {
@@ -17,6 +18,7 @@ export default function GeniusDashboard() {
   const { withdraw: withdrawCollateral, loading: withdrawLoading } = useWithdrawCollateral();
   const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address);
   const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
+  const { proofs, loading: proofsLoading } = useTrackRecordProofs(address);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -244,6 +246,53 @@ export default function GeniusDashboard() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Track Record Proofs */}
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Verified Track Records
+          </h2>
+          <Link href="/genius/track-record" className="text-sm text-genius-500 hover:text-genius-600 transition-colors">
+            Generate New Proof
+          </Link>
+        </div>
+        {proofsLoading ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">Loading proofs...</p>
+          </div>
+        ) : proofs.length === 0 ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">
+              No verified track record proofs yet. Generate and submit a proof to build your on-chain reputation.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {proofs.map((p) => (
+              <div key={p.recordId.toString()} className="card">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">
+                      Proof #{p.recordId.toString()} &middot; {p.signalCount.toString()} signals
+                    </p>
+                    <div className="flex gap-4 mt-1 text-xs text-slate-500">
+                      <span className="text-green-600">{p.favCount.toString()} fav</span>
+                      <span className="text-red-500">{p.unfavCount.toString()} unfav</span>
+                      <span>{p.voidCount.toString()} void</span>
+                      <span className="text-green-600">+${formatUsdc(p.totalGain)}</span>
+                      <span className="text-red-500">-${formatUsdc(p.totalLoss)}</span>
+                    </div>
+                  </div>
+                  <span className="rounded-full px-3 py-1 text-xs font-medium bg-genius-100 text-genius-600 border border-genius-200">
+                    Verified
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Collateral Management */}

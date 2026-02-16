@@ -2,16 +2,15 @@
 
 import { useState } from "react";
 import QualityScore from "@/components/QualityScore";
-import { truncateAddress, type GeniusLeaderboardEntry } from "@/lib/types";
+import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
+import { truncateAddress } from "@/lib/types";
 
 type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi";
 
 export default function Leaderboard() {
+  const { data, loading, error, configured } = useLeaderboard();
   const [sortBy, setSortBy] = useState<SortField>("qualityScore");
   const [sortDesc, setSortDesc] = useState(true);
-
-  // Will be populated from subgraph once signals are live
-  const data: GeniusLeaderboardEntry[] = [];
 
   const sorted = [...data].sort((a, b) => {
     const multiplier = sortDesc ? -1 : 1;
@@ -40,6 +39,19 @@ export default function Leaderboard() {
           Geniuses ranked by cryptographically verified track records
         </p>
       </div>
+
+      {!configured && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-sm text-amber-700">
+          Subgraph not configured. Leaderboard data will appear once the
+          subgraph is deployed and NEXT_PUBLIC_SUBGRAPH_URL is set.
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 mb-6 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
@@ -74,7 +86,13 @@ export default function Leaderboard() {
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="text-center text-slate-500 py-12">
+                  Loading leaderboard...
+                </td>
+              </tr>
+            ) : sorted.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center text-slate-500 py-12">
                   No leaderboard data available. Genius rankings will appear

@@ -1,0 +1,68 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { ethers } from "ethers";
+import { useEthersProvider } from "../hooks";
+import { getTrackRecordContract, ADDRESSES } from "../contracts";
+
+export interface TrackRecordProofEntry {
+  recordId: bigint;
+  genius: string;
+  signalCount: bigint;
+  totalGain: bigint;
+  totalLoss: bigint;
+  favCount: bigint;
+  unfavCount: bigint;
+  voidCount: bigint;
+  proofHash: string;
+  blockNumber: number;
+}
+
+const TRACK_RECORD_SUBMITTED_TOPIC = ethers.id(
+  "TrackRecordSubmitted(uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes32)"
+);
+
+export function useTrackRecordProofs(geniusAddress?: string) {
+  const provider = useEthersProvider();
+  const [proofs, setProofs] = useState<TrackRecordProofEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!provider || !geniusAddress || ADDRESSES.trackRecord === ethers.ZeroAddress) return;
+    setLoading(true);
+    try {
+      const contract = getTrackRecordContract(provider);
+      const filter = contract.filters.TrackRecordSubmitted(null, geniusAddress);
+      const events = await contract.queryFilter(filter, 0, "latest");
+
+      const entries: TrackRecordProofEntry[] = events.map((e) => {
+        const log = e as ethers.EventLog;
+        return {
+          recordId: BigInt(log.args[0]),
+          genius: String(log.args[1]),
+          signalCount: BigInt(log.args[2]),
+          totalGain: BigInt(log.args[3]),
+          totalLoss: BigInt(log.args[4]),
+          favCount: BigInt(log.args[5]),
+          unfavCount: BigInt(log.args[6]),
+          voidCount: BigInt(log.args[7]),
+          proofHash: String(log.args[8]),
+          blockNumber: log.blockNumber,
+        };
+      });
+
+      entries.sort((a, b) => b.blockNumber - a.blockNumber);
+      setProofs(entries);
+    } catch (err) {
+      console.warn("useTrackRecordProofs error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [provider, geniusAddress]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { proofs, loading, refresh };
+}

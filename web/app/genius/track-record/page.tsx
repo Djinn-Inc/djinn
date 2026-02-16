@@ -39,7 +39,6 @@ export default function TrackRecordPage() {
   const [proofJson, setProofJson] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitTxHash, setSubmitTxHash] = useState<string | null>(null);
   const { submit: submitOnChain, loading: submitLoading } = useSubmitTrackRecord();
 
   if (!authenticated) {
@@ -279,7 +278,6 @@ export default function TrackRecordPage() {
                 setProofJson(null);
                 setSubmitState("idle");
                 setSubmitError(null);
-                setSubmitTxHash(null);
               }}
               className="btn-secondary"
             >
