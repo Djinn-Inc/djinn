@@ -542,4 +542,37 @@ contract EdgeCaseIntegrationTest is Test {
         vm.prank(idiot);
         escrow.purchase(sigId, 0, ODDS);
     }
+
+    // ─── Zero-address checks on auth setters
+    // ─────────────────────────────────────────────
+
+    function test_escrow_setAuthorizedCaller_zeroAddress_reverts() public {
+        vm.expectRevert(Escrow.ZeroAddress.selector);
+        escrow.setAuthorizedCaller(address(0), true);
+    }
+
+    function test_account_setAuthorizedCaller_zeroAddress_reverts() public {
+        vm.expectRevert(DjinnAccount.ZeroAddress.selector);
+        account.setAuthorizedCaller(address(0), true);
+    }
+
+    function test_collateral_setAuthorized_zeroAddress_reverts() public {
+        vm.expectRevert(Collateral.ZeroAddress.selector);
+        collateral.setAuthorized(address(0), true);
+    }
+
+    function test_creditLedger_setAuthorizedCaller_zeroAddress_reverts() public {
+        vm.expectRevert(CreditLedger.ZeroAddress.selector);
+        creditLedger.setAuthorizedCaller(address(0), true);
+    }
+
+    function test_signalCommitment_setAuthorizedCaller_zeroAddress_reverts() public {
+        vm.expectRevert(SignalCommitment.ZeroAddress.selector);
+        signalCommitment.setAuthorizedCaller(address(0), true);
+    }
+
+    function test_collateral_constructor_zeroUsdc_reverts() public {
+        vm.expectRevert(Collateral.ZeroAddress.selector);
+        new Collateral(address(0), owner);
+    }
 }
