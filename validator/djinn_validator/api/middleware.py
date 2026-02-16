@@ -30,14 +30,24 @@ log = structlog.get_logger()
 # ---------------------------------------------------------------------------
 
 
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cache-Control": "no-store",
+}
+
+
 class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Assign a unique request ID and log every request.
+    """Assign a unique request ID, add security headers, and log every request.
 
     - Reads ``X-Request-ID`` from the incoming request (forwarded by a
       reverse-proxy) or generates a new UUID4.
     - Binds the ID to structlog contextvars so every log line emitted
       during the request includes ``request_id``.
     - Returns the ID in the ``X-Request-ID`` response header.
+    - Adds standard security headers to every response.
     - Logs method, path, status code, and duration for every request.
     """
 
@@ -48,6 +58,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
+            for header, value in _SECURITY_HEADERS.items():
+                response.headers.setdefault(header, value)
             duration_s = time.monotonic() - start
             duration_ms = round(duration_s * 1000, 1)
             path = request.url.path

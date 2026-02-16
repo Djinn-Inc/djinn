@@ -73,6 +73,35 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm vitest run --coverage
 
+  security-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scan validator dependencies
+        run: |
+          pip install pip-audit
+          pip install -e validator/.[dev]
+          pip-audit --strict --desc 2>&1 || echo "::warning::Validator dependency vulnerabilities found"
+      - name: Scan miner dependencies
+        run: |
+          pip install -e miner/.[dev]
+          pip-audit --strict --desc 2>&1 || echo "::warning::Miner dependency vulnerabilities found"
+      - name: Scan web dependencies
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level=high 2>&1 || echo "::warning::Web dependency vulnerabilities found"
+
   docker:
     name: Docker Build (${{ matrix.service }})
     runs-on: ubuntu-latest
