@@ -78,6 +78,19 @@ template AuditProof(N) {
         idxLe[i].out === 1;
     }
 
+    // ─── 2b. Odds Range Verification ───
+    // Proves: odds[i] >= ODDS_PRECISION for all signals.
+    // Prevents BN254 field wraparound on (odds - ODDS_PRECISION) subtraction.
+    // On-chain validation already enforces MIN_ODDS > ODDS_PRECISION, so this
+    // is always satisfiable for valid data.
+    component oddsGe[N];
+    for (var i = 0; i < N; i++) {
+        oddsGe[i] = GreaterEqThan(64);
+        oddsGe[i].in[0] <== odds[i];
+        oddsGe[i].in[1] <== ODDS_PRECISION;
+        oddsGe[i].out === 1;
+    }
+
     // ─── 3. Quality Score Computation ───
     // Favorable:   +notional * (odds - 1e6) / 1e6
     // Unfavorable: -notional * slaBps / 10000

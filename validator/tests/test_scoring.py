@@ -107,7 +107,7 @@ class TestMinerScorer:
         scorer.reset_epoch()
         assert m.queries_total == 0
         assert m.health_checks_total == 0
-        assert m.consecutive_epochs == 5  # Preserved
+        assert m.consecutive_epochs == 6  # Incremented (miner participated)
 
     def test_remove_miner(self) -> None:
         scorer = MinerScorer()

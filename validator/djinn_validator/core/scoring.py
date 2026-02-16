@@ -204,8 +204,18 @@ class MinerScorer:
         return result
 
     def reset_epoch(self) -> None:
-        """Reset per-epoch metrics while preserving history."""
+        """Reset per-epoch metrics while preserving history.
+
+        Increments consecutive_epochs for miners that participated (responded
+        to at least one health check or answered at least one query). Resets
+        the counter to 0 for miners that were completely inactive.
+        """
         for m in self._miners.values():
+            participated = m.queries_total > 0 or m.health_checks_responded > 0
+            if participated:
+                m.consecutive_epochs += 1
+            else:
+                m.consecutive_epochs = 0
             m.queries_total = 0
             m.queries_correct = 0
             m.latencies.clear()

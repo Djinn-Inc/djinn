@@ -238,11 +238,22 @@ class ShareStore:
                 raise
 
     def remove(self, signal_id: str) -> None:
-        """Remove a share (e.g., signal voided or expired)."""
+        """Remove a share (e.g., signal voided or expired).
+
+        Uses an explicit transaction to ensure both deletes are atomic.
+        """
         with self._lock:
-            self._conn.execute("DELETE FROM releases WHERE signal_id = ?", (signal_id,))
-            self._conn.execute("DELETE FROM shares WHERE signal_id = ?", (signal_id,))
-            self._conn.commit()
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._conn.execute("DELETE FROM releases WHERE signal_id = ?", (signal_id,))
+                self._conn.execute("DELETE FROM shares WHERE signal_id = ?", (signal_id,))
+                self._conn.execute("COMMIT")
+            except Exception:
+                try:
+                    self._conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
 
     @property
     def count(self) -> int:

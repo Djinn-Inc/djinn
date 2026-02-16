@@ -738,7 +738,7 @@ class TestMultiEpochScoring:
         self, scorer: MinerScorer
     ) -> None:
         """reset_epoch clears queries, latencies, proofs, health checks
-        but preserves consecutive_epochs."""
+        and increments consecutive_epochs for participating miners."""
         m = scorer.get_or_create(1, "hk1")
         m.record_query(correct=True, latency=0.1, proof_submitted=True)
         m.record_health_check(responded=True)
@@ -752,7 +752,17 @@ class TestMultiEpochScoring:
         assert m.proofs_submitted == 0
         assert m.health_checks_total == 0
         assert m.health_checks_responded == 0
-        assert m.consecutive_epochs == 10
+        assert m.consecutive_epochs == 11  # Incremented because miner participated
+
+    def test_reset_epoch_resets_inactive_miner(self, scorer: MinerScorer) -> None:
+        """reset_epoch resets consecutive_epochs to 0 for inactive miners."""
+        m = scorer.get_or_create(1, "hk1")
+        m.consecutive_epochs = 5
+        # No queries or health check responses this epoch
+
+        scorer.reset_epoch()
+
+        assert m.consecutive_epochs == 0
 
     def test_three_epoch_simulation(self, scorer: MinerScorer) -> None:
         """Simulate 3 epochs and track weight changes for 4 miners."""
@@ -773,27 +783,28 @@ class TestMultiEpochScoring:
                     proof_submitted=True,
                 )
                 m.record_health_check(responded=True)
-            m.consecutive_epochs += 1
 
         w = scorer.compute_weights(is_active_epoch=True)
         epoch_weights.append(w)
         assert w[1] > w[2] > w[3] > w[4]
 
         scorer.reset_epoch()
+        # After reset: all miners participated → consecutive_epochs = 1
 
         # Epoch 2: empty epoch (no active signals), only uptime matters
         for uid in range(1, 5):
             m = miners[uid]
             for _ in range(10):
                 m.record_health_check(responded=(uid != 4))
-            m.consecutive_epochs += 1
 
         w2 = scorer.compute_weights(is_active_epoch=False)
         epoch_weights.append(w2)
-        # Miner 4 has 0 uptime and fewer consecutive epochs
+        # Miner 4 has 0 uptime; all have same consecutive_epochs from epoch 1
         assert w2[4] < w2[1]
 
         scorer.reset_epoch()
+        # After reset: miners 1-3 responded → consecutive_epochs = 2
+        # Miner 4 didn't respond → consecutive_epochs = 0
 
         # Epoch 3: active again, miner 4 comes back strong
         for uid in range(1, 5):
@@ -805,7 +816,6 @@ class TestMultiEpochScoring:
                     proof_submitted=True,
                 )
                 m.record_health_check(responded=True)
-            m.consecutive_epochs += 1
 
         w3 = scorer.compute_weights(is_active_epoch=True)
         epoch_weights.append(w3)

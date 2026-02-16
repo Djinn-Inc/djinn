@@ -452,6 +452,12 @@ export function useDepositEscrow() {
         if (balance < amount) {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
+        // Reset allowance to 0 first to prevent ERC-20 approve race condition
+        const currentEscrowAllowance = await usdc.allowance(await signer.getAddress(), ADDRESSES.escrow);
+        if (currentEscrowAllowance > 0n) {
+          const resetTx = await usdc.approve(ADDRESSES.escrow, 0n);
+          await resetTx.wait();
+        }
         const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
         await approveTx.wait();
 
@@ -484,6 +490,12 @@ export function useDepositCollateral() {
       setError(null);
       try {
         const usdc = getUsdcContract(signer);
+        // Reset allowance to 0 first to prevent ERC-20 approve race condition
+        const currentCollateralAllowance = await usdc.allowance(await signer.getAddress(), ADDRESSES.collateral);
+        if (currentCollateralAllowance > 0n) {
+          const resetTx = await usdc.approve(ADDRESSES.collateral, 0n);
+          await resetTx.wait();
+        }
         const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
         await approveTx.wait();
 
