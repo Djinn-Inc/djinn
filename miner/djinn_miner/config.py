@@ -55,8 +55,15 @@ class Config:
     rate_limit_capacity: int = _int_env("RATE_LIMIT_CAPACITY", "30")
     rate_limit_rate: int = _int_env("RATE_LIMIT_RATE", "5")
 
-    def validate(self) -> list[str]:
-        """Validate config at startup. Raises ValueError on hard errors, returns warnings."""
+    def validate(self, *, strict: bool | None = None) -> list[str]:
+        """Validate config at startup. Raises ValueError on hard errors, returns warnings.
+
+        Args:
+            strict: If True, raise ValueError on any warning. Defaults to True
+                    when bt_network is a production network (finney/mainnet).
+        """
+        if strict is None:
+            strict = self.bt_network in ("finney", "mainnet")
         warnings: list[str] = []
         if not self.odds_api_key:
             raise ValueError("ODDS_API_KEY is required. Get one at https://the-odds-api.com")
@@ -84,4 +91,8 @@ class Config:
             raise ValueError(f"RATE_LIMIT_CAPACITY must be >= 1, got {self.rate_limit_capacity}")
         if self.rate_limit_rate < 1:
             raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
+        if strict and warnings:
+            raise ValueError(
+                f"Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings)
+            )
         return warnings

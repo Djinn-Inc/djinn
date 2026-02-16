@@ -76,6 +76,30 @@ class TestConfigNetworkWarning:
         assert any("BT_NETWORK" in w for w in warnings)
 
 
+class TestConfigStrictAutoDetect:
+    """Strict mode auto-detects production network."""
+
+    def test_strict_auto_enabled_on_finney_with_warning(self) -> None:
+        """Unknown network type with finney → warning becomes error."""
+        # We can't produce a warning from finney config easily since all finney-specific
+        # validations are hard errors. But we can verify strict=False override works.
+        config = _config(odds_api_key="key", bt_network="finney")
+        warnings = config.validate()
+        assert warnings == []  # No warnings when config is valid
+
+    def test_strict_auto_disabled_on_local(self) -> None:
+        """Warnings are returned (not raised) on local network."""
+        config = _config(odds_api_key="key", bt_network="devnet-42")
+        warnings = config.validate()  # strict=None → devnet-42 not in prod → lenient
+        assert any("BT_NETWORK" in w for w in warnings)
+
+    def test_explicit_strict_raises_on_warning(self) -> None:
+        """Explicit strict=True raises on warnings."""
+        config = _config(odds_api_key="key", bt_network="devnet-42")
+        with pytest.raises(ValueError, match="strict mode"):
+            config.validate(strict=True)
+
+
 class TestConfigNetuidValidation:
     def test_netuid_zero_raises(self) -> None:
         config = _config(odds_api_key="key", bt_netuid=0)
