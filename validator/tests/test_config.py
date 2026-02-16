@@ -300,6 +300,26 @@ class TestFloatEnv:
         del os.environ["_TEST_FLOAT_BAD"]
 
 
+class TestMpcAvailabilityTimeout:
+    def test_default_value(self) -> None:
+        config = Config()
+        assert config.mpc_availability_timeout == 15.0
+
+    def test_too_low_raises(self) -> None:
+        config = _config(sports_api_key="key", bt_network="local", mpc_availability_timeout=2.0)
+        with pytest.raises(ValueError, match="MPC_AVAILABILITY_TIMEOUT"):
+            config.validate()
+
+    def test_too_high_raises(self) -> None:
+        config = _config(sports_api_key="key", bt_network="local", mpc_availability_timeout=200.0)
+        with pytest.raises(ValueError, match="MPC_AVAILABILITY_TIMEOUT"):
+            config.validate()
+
+    def test_valid_range_accepted(self) -> None:
+        config = _config(sports_api_key="key", bt_network="local", mpc_availability_timeout=30.0)
+        config.validate()
+
+
 class TestBaseRpcUrls:
     def test_single_url(self) -> None:
         config = _config(base_rpc_url="https://mainnet.base.org")

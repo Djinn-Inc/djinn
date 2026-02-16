@@ -190,6 +190,7 @@ async def async_main() -> None:
         mpc_coordinator=mpc_coordinator,
         rate_limit_capacity=config.rate_limit_capacity,
         rate_limit_rate=config.rate_limit_rate,
+        mpc_availability_timeout=config.mpc_availability_timeout,
     )
 
     log.info(

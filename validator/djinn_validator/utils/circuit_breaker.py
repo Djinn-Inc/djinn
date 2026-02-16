@@ -69,12 +69,24 @@ class CircuitBreaker:
             return False
         return False  # OPEN
 
+    def _update_gauge(self) -> None:
+        """Update Prometheus gauge for circuit breaker state."""
+        try:
+            from djinn_validator.api.metrics import CIRCUIT_BREAKER_STATE
+
+            CIRCUIT_BREAKER_STATE.labels(target=self.name).set(
+                1 if self._state == CircuitState.OPEN else 0
+            )
+        except ImportError:
+            pass
+
     def record_success(self) -> None:
         """Record a successful request."""
         if self._state in (CircuitState.HALF_OPEN, CircuitState.OPEN):
             log.info("circuit_breaker_closed", name=self.name)
         self._failure_count = 0
         self._state = CircuitState.CLOSED
+        self._update_gauge()
 
     def record_failure(self) -> None:
         """Record a failed request."""
@@ -90,6 +102,7 @@ class CircuitBreaker:
                 name=self.name,
                 failures=self._failure_count,
             )
+        self._update_gauge()
 
     def reset(self) -> None:
         """Reset the circuit breaker to closed state."""

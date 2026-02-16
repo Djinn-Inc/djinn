@@ -148,6 +148,7 @@ def create_app(
     mpc_coordinator: MPCCoordinator | None = None,
     rate_limit_capacity: int = 60,
     rate_limit_rate: int = 10,
+    mpc_availability_timeout: float = 15.0,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     # Resources that need cleanup on shutdown
@@ -312,7 +313,7 @@ def create_app(
                     local_share=record.share,
                     available_indices=available_set,
                 ),
-                timeout=15.0,
+                timeout=mpc_availability_timeout,
             )
         except TimeoutError:
             from djinn_validator.api.metrics import MPC_ERRORS

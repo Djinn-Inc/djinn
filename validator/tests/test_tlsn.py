@@ -10,6 +10,7 @@ import pytest
 
 from djinn_validator.core.tlsn import (
     TLSNVerifyResult,
+    _HEX_KEY_RE,
     is_available,
     verify_proof,
 )
@@ -156,3 +157,31 @@ class TestVerifyProof:
 
         assert result.verified is False
         assert "timed out" in result.error
+
+
+class TestNotaryKeyValidation:
+    """Test TRUSTED_NOTARY_KEYS hex validation regex."""
+
+    def test_valid_64_char_hex_accepted(self) -> None:
+        key = "a" * 64
+        assert _HEX_KEY_RE.match(key) is not None
+
+    def test_valid_130_char_hex_accepted(self) -> None:
+        key = "0" * 130
+        assert _HEX_KEY_RE.match(key) is not None
+
+    def test_short_hex_rejected(self) -> None:
+        key = "abcdef"
+        assert _HEX_KEY_RE.match(key) is None
+
+    def test_non_hex_rejected(self) -> None:
+        key = "g" * 64
+        assert _HEX_KEY_RE.match(key) is None
+
+    def test_spaces_rejected(self) -> None:
+        key = " " * 64
+        assert _HEX_KEY_RE.match(key) is None
+
+    def test_mixed_case_hex_accepted(self) -> None:
+        key = "aAbBcCdDeEfF" * 6  # 72 chars
+        assert _HEX_KEY_RE.match(key) is not None

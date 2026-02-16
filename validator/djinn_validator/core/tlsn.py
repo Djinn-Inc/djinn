@@ -28,7 +28,18 @@ VERIFIER_BINARY = os.getenv(
 
 # Trusted notary public keys (hex-encoded secp256k1). If empty, any key is
 # accepted (dev mode). In production, configure via TLSN_TRUSTED_NOTARY_KEYS.
-TRUSTED_NOTARY_KEYS: set[str] = set(filter(None, os.getenv("TLSN_TRUSTED_NOTARY_KEYS", "").split(",")))
+import re as _re
+
+_HEX_KEY_RE = _re.compile(r"^[0-9a-fA-F]{64,130}$")
+
+_raw_keys = set(filter(None, os.getenv("TLSN_TRUSTED_NOTARY_KEYS", "").split(",")))
+TRUSTED_NOTARY_KEYS: set[str] = set()
+for _k in _raw_keys:
+    _k = _k.strip()
+    if _HEX_KEY_RE.match(_k):
+        TRUSTED_NOTARY_KEYS.add(_k)
+    elif _k:
+        log.warning("invalid_notary_key_ignored", key=_k[:16] + "...", reason="must be 64-130 hex chars")
 
 
 @dataclass

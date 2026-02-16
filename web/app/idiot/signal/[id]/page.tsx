@@ -31,7 +31,12 @@ export default function PurchaseSignal() {
   const params = useParams();
   const router = useRouter();
   const { authenticated, user } = usePrivy();
-  const signalId = params.id ? BigInt(params.id as string) : undefined;
+  let signalId: bigint | undefined;
+  try {
+    signalId = params.id ? BigInt(params.id as string) : undefined;
+  } catch {
+    // Invalid signal ID in URL — will show "not found" via useSignal
+  }
   const { signal, loading: signalLoading, error: signalError } =
     useSignal(signalId);
   const { purchase, loading: purchaseLoading, error: purchaseError } =

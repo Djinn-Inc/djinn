@@ -170,3 +170,26 @@ class TestMPCOrchestratorPeerBreakers:
         b1 = orch._get_peer_breaker(1)
         b2 = orch._get_peer_breaker(2)
         assert b1 is not b2
+
+
+class TestCircuitBreakerGauge:
+    def test_gauge_updated_on_open(self):
+        from djinn_validator.api.metrics import CIRCUIT_BREAKER_STATE
+
+        cb = CircuitBreaker(name="test_gauge_open", failure_threshold=2)
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        val = CIRCUIT_BREAKER_STATE.labels(target="test_gauge_open")._value.get()
+        assert val == 1
+
+    def test_gauge_updated_on_close(self):
+        from djinn_validator.api.metrics import CIRCUIT_BREAKER_STATE
+
+        cb = CircuitBreaker(name="test_gauge_close", failure_threshold=2)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()
+        assert cb.state == CircuitState.CLOSED
+        val = CIRCUIT_BREAKER_STATE.labels(target="test_gauge_close")._value.get()
+        assert val == 0
