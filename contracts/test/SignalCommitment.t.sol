@@ -649,4 +649,90 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
         assertTrue(sc.signalExists(5101));
     }
+
+    // ─── Tests: Per-string length limits
+    // ──────────────────────────────────
+
+    function _makeOversizedString(uint256 length) internal pure returns (string memory) {
+        bytes memory b = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            b[i] = "A";
+        }
+        return string(b);
+    }
+
+    function test_commit_revertOnDecoyLineTooLong() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6000);
+        p.decoyLines[0] = _makeOversizedString(sc.MAX_DECOY_LINE_LENGTH() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.StringTooLong.selector,
+                "decoyLine",
+                sc.MAX_DECOY_LINE_LENGTH() + 1,
+                sc.MAX_DECOY_LINE_LENGTH()
+            )
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_decoyLineAtMaxLength() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6001);
+        p.decoyLines[0] = _makeOversizedString(sc.MAX_DECOY_LINE_LENGTH());
+
+        vm.prank(genius);
+        sc.commit(p);
+        assertTrue(sc.signalExists(6001));
+    }
+
+    function test_commit_revertOnSportTooLong() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6002);
+        p.sport = _makeOversizedString(sc.MAX_SPORT_LENGTH() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.StringTooLong.selector,
+                "sport",
+                sc.MAX_SPORT_LENGTH() + 1,
+                sc.MAX_SPORT_LENGTH()
+            )
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_sportAtMaxLength() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6003);
+        p.sport = _makeOversizedString(sc.MAX_SPORT_LENGTH());
+
+        vm.prank(genius);
+        sc.commit(p);
+        assertTrue(sc.signalExists(6003));
+    }
+
+    function test_commit_revertOnSportsbookNameTooLong() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6004);
+        p.availableSportsbooks[0] = _makeOversizedString(sc.MAX_SPORTSBOOK_LENGTH() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.StringTooLong.selector,
+                "sportsbook",
+                sc.MAX_SPORTSBOOK_LENGTH() + 1,
+                sc.MAX_SPORTSBOOK_LENGTH()
+            )
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_sportsbookNameAtMaxLength() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(6005);
+        p.availableSportsbooks[0] = _makeOversizedString(sc.MAX_SPORTSBOOK_LENGTH());
+
+        vm.prank(genius);
+        sc.commit(p);
+        assertTrue(sc.signalExists(6005));
+    }
 }

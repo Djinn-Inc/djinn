@@ -108,11 +108,23 @@ contract SignalCommitment is Ownable {
     /// @notice Commit hash must not be zero
     error ZeroCommitHash();
 
+    /// @notice A string field exceeds its maximum allowed length
+    error StringTooLong(string field, uint256 length, uint256 max);
+
     /// @notice Maximum encrypted blob size (64 KB)
     uint256 public constant MAX_BLOB_SIZE = 65536;
 
     /// @notice Maximum number of sportsbooks per signal
     uint256 public constant MAX_SPORTSBOOKS = 50;
+
+    /// @notice Maximum length per decoy line (1 KB)
+    uint256 public constant MAX_DECOY_LINE_LENGTH = 1024;
+
+    /// @notice Maximum length for sport string (256 bytes)
+    uint256 public constant MAX_SPORT_LENGTH = 256;
+
+    /// @notice Maximum length per sportsbook name (256 bytes)
+    uint256 public constant MAX_SPORTSBOOK_LENGTH = 256;
 
     // ─── Modifiers
     // ──────────────────────────────────────────────────────
@@ -154,6 +166,7 @@ contract SignalCommitment is Ownable {
         if (p.availableSportsbooks.length > MAX_SPORTSBOOKS) revert TooManySportsbooks(p.availableSportsbooks.length, MAX_SPORTSBOOKS);
         if (p.commitHash == bytes32(0)) revert ZeroCommitHash();
         if (p.decoyLines.length != 10) revert InvalidDecoyLinesLength(p.decoyLines.length);
+        if (bytes(p.sport).length > MAX_SPORT_LENGTH) revert StringTooLong("sport", bytes(p.sport).length, MAX_SPORT_LENGTH);
         if (p.slaMultiplierBps < 10_000) revert SlaMultiplierTooLow(p.slaMultiplierBps);
         if (p.maxPriceBps == 0 || p.maxPriceBps > 5000) revert InvalidMaxPriceBps(p.maxPriceBps);
         if (p.expiresAt <= block.timestamp) revert ExpirationInPast(p.expiresAt, block.timestamp);
@@ -173,11 +186,17 @@ contract SignalCommitment is Ownable {
 
         uint256 len = p.decoyLines.length;
         for (uint256 i; i < len; ++i) {
+            if (bytes(p.decoyLines[i]).length > MAX_DECOY_LINE_LENGTH) {
+                revert StringTooLong("decoyLine", bytes(p.decoyLines[i]).length, MAX_DECOY_LINE_LENGTH);
+            }
             s.decoyLines.push(p.decoyLines[i]);
         }
 
         len = p.availableSportsbooks.length;
         for (uint256 i; i < len; ++i) {
+            if (bytes(p.availableSportsbooks[i]).length > MAX_SPORTSBOOK_LENGTH) {
+                revert StringTooLong("sportsbook", bytes(p.availableSportsbooks[i]).length, MAX_SPORTSBOOK_LENGTH);
+            }
             s.availableSportsbooks.push(p.availableSportsbooks[i]);
         }
 
