@@ -51,6 +51,9 @@ class Config:
     rate_limit_capacity: int = _int_env("RATE_LIMIT_CAPACITY", "60")
     rate_limit_rate: int = _int_env("RATE_LIMIT_RATE", "10")
 
+    # MPC
+    mpc_peer_timeout: float = float(os.getenv("MPC_PEER_TIMEOUT", "10.0"))
+
     # Protocol constants
     signals_per_cycle: int = 10
     shares_total: int = 10
@@ -68,14 +71,22 @@ class Config:
             raise ValueError(f"BT_NETUID must be 1-65535, got {self.bt_netuid}")
         if self.api_port < 1 or self.api_port > 65535:
             raise ValueError(f"API_PORT must be 1-65535, got {self.api_port}")
+        is_production = self.bt_network in ("finney", "mainnet")
         if not self.sports_api_key:
+            if is_production:
+                raise ValueError("SPORTS_API_KEY must be set in production — outcome resolution requires it")
             warnings.append("SPORTS_API_KEY not set — outcome resolution will fail")
-        if self.bt_network in ("finney", "mainnet"):
+        if is_production:
             for name in ("escrow_address", "signal_commitment_address", "account_address", "collateral_address"):
                 addr = getattr(self, name)
                 if not addr:
-                    warnings.append(f"{name.upper()} not set — chain interactions will fail")
+                    raise ValueError(f"{name.upper()} must be set in production")
                 elif not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
+                    raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
+        elif self.bt_network not in ("finney", "mainnet"):
+            for name in ("escrow_address", "signal_commitment_address", "account_address", "collateral_address"):
+                addr = getattr(self, name)
+                if addr and not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
                     raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
         known_networks = ("finney", "mainnet", "test", "local", "mock")
         if self.bt_network not in known_networks:
@@ -96,4 +107,6 @@ class Config:
             raise ValueError(f"RATE_LIMIT_CAPACITY must be >= 1, got {self.rate_limit_capacity}")
         if self.rate_limit_rate < 1:
             raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
+        if self.mpc_peer_timeout < 1.0:
+            raise ValueError(f"MPC_PEER_TIMEOUT must be >= 1.0, got {self.mpc_peer_timeout}")
         return warnings

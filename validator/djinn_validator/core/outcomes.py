@@ -13,6 +13,7 @@ Outcome determination logic:
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -402,7 +403,8 @@ class OutcomeAttestor:
                         attempt=attempt + 1,
                     )
                     if attempt < 2:
-                        await asyncio.sleep(1.0 * (attempt + 1))
+                        base = 1.0 * (attempt + 1)
+                        await asyncio.sleep(base * (0.5 + random.random()))
                         continue
                     self._record_api_failure()
                     return EventResult(event_id=event_id, status="error")
@@ -427,7 +429,8 @@ class OutcomeAttestor:
                     attempt=attempt + 1,
                 )
                 if attempt < 2:
-                    await asyncio.sleep(1.0 * (attempt + 1))
+                    base = 1.0 * (attempt + 1)
+                    await asyncio.sleep(base * (0.5 + random.random()))
                     continue
                 self._record_api_failure()
                 return EventResult(event_id=event_id, status="error")

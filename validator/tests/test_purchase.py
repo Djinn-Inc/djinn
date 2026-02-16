@@ -1,5 +1,7 @@
 """Tests for purchase orchestration."""
 
+import pytest
+
 from djinn_validator.core.mpc import MPCResult
 from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
@@ -141,3 +143,32 @@ class TestPurchaseOrchestrator:
     def test_confirm_payment_nonexistent(self) -> None:
         result = self.orch.confirm_payment("nope", "0x", "0xTx")
         assert result is None
+
+
+class TestSignalIdValidation:
+    """Signal IDs must not contain ':' or other special chars."""
+
+    def setup_method(self) -> None:
+        self.store = ShareStore()
+        self.orch = PurchaseOrchestrator(self.store)
+
+    def test_valid_signal_id(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        assert req.status == PurchaseStatus.CHECKING_AVAILABILITY
+
+    def test_signal_id_with_colon_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.orch.initiate("sig:evil", "0xBuyer", "DK")
+
+    def test_signal_id_with_slash_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.orch.initiate("sig/path", "0xBuyer", "DK")
+
+    def test_signal_id_with_spaces_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.orch.initiate("sig id", "0xBuyer", "DK")
+
+    def test_empty_signal_id_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.orch.initiate("", "0xBuyer", "DK")

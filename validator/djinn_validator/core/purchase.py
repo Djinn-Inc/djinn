@@ -10,6 +10,7 @@ Implements the purchase lifecycle from Appendix A:
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -55,6 +56,8 @@ class PurchaseOrchestrator:
         self._store = share_store
         self._active: dict[str, PurchaseRequest] = {}  # keyed by signal_id:buyer
 
+    _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
+
     def _key(self, signal_id: str, buyer: str) -> str:
         return f"{signal_id}:{buyer}"
 
@@ -65,6 +68,8 @@ class PurchaseOrchestrator:
         sportsbook: str,
     ) -> PurchaseRequest:
         """Start a new purchase flow."""
+        if not self._SAFE_ID_RE.match(signal_id):
+            raise ValueError(f"Invalid signal_id: must match [a-zA-Z0-9_-]{{1,256}}")
         key = self._key(signal_id, buyer_address)
 
         if key in self._active:

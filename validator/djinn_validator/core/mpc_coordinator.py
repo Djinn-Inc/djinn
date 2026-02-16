@@ -81,6 +81,9 @@ class MPCCoordinator:
 
     def __init__(self) -> None:
         self._sessions: dict[str, MPCSessionState] = {}
+        # threading.Lock (not asyncio.Lock) is intentional: all critical sections
+        # are sub-millisecond dict ops so they won't block the event loop, and
+        # threading.Lock is safe to use from both sync and async callers.
         self._lock = threading.Lock()
 
     def create_session(

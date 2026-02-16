@@ -40,12 +40,17 @@ class TestConfigValidation:
         warnings = config.validate()
         assert len(warnings) == 0
 
-    def test_missing_sports_api_key_warns(self) -> None:
-        config = _config(sports_api_key="")
+    def test_missing_sports_api_key_warns_in_dev(self) -> None:
+        config = _config(bt_network="local", sports_api_key="")
         warnings = config.validate()
         assert any("SPORTS_API_KEY" in w for w in warnings)
 
-    def test_mainnet_missing_addresses_warns(self) -> None:
+    def test_missing_sports_api_key_raises_in_prod(self) -> None:
+        config = _config(bt_network="finney", sports_api_key="")
+        with pytest.raises(ValueError, match="SPORTS_API_KEY must be set in production"):
+            config.validate()
+
+    def test_mainnet_missing_addresses_raises(self) -> None:
         config = _config(
             bt_network="finney",
             sports_api_key="key",
@@ -54,8 +59,8 @@ class TestConfigValidation:
             account_address="",
             collateral_address="",
         )
-        warnings = config.validate()
-        assert len(warnings) >= 4
+        with pytest.raises(ValueError, match="must be set in production"):
+            config.validate()
 
     def test_local_network_no_address_warnings(self) -> None:
         config = _config(
@@ -164,6 +169,17 @@ class TestConfigRateLimits:
             config.validate()
 
 
+class TestConfigMPCPeerTimeout:
+    def test_default_mpc_peer_timeout(self) -> None:
+        config = Config()
+        assert config.mpc_peer_timeout == 10.0
+
+    def test_mpc_peer_timeout_too_low_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", mpc_peer_timeout=0.5)
+        with pytest.raises(ValueError, match="MPC_PEER_TIMEOUT"):
+            config.validate()
+
+
 class TestConfigAddressValidation:
     def test_valid_address_accepted(self) -> None:
         config = _config(
@@ -197,6 +213,15 @@ class TestConfigAddressValidation:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+        )
+        with pytest.raises(ValueError, match="not a valid Ethereum address"):
+            config.validate()
+
+    def test_invalid_address_in_dev_mode_raises(self) -> None:
+        config = _config(
+            bt_network="local",
+            sports_api_key="key",
+            escrow_address="not-an-address",
         )
         with pytest.raises(ValueError, match="not a valid Ethereum address"):
             config.validate()

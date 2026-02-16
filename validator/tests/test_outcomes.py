@@ -758,7 +758,7 @@ class TestFetchEventResultRetry:
 
     @pytest.mark.asyncio
     async def test_5xx_backoff_delays(self) -> None:
-        """Verify that 5xx retries use increasing backoff delays."""
+        """Verify that 5xx retries use increasing backoff delays with jitter."""
         attestor = OutcomeAttestor(sports_api_key="test-key")
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=self._make_response(500))
@@ -771,8 +771,11 @@ class TestFetchEventResultRetry:
         with patch("djinn_validator.core.outcomes.asyncio.sleep", side_effect=mock_sleep):
             await attestor.fetch_event_result("evt1", "basketball_nba")
 
-        # First retry: 1.0s, second retry: 2.0s
-        assert sleep_calls == [1.0, 2.0]
+        assert len(sleep_calls) == 2
+        # base=1.0 * jitter[0.5,1.5] → [0.5, 1.5]
+        assert 0.5 <= sleep_calls[0] <= 1.5
+        # base=2.0 * jitter[0.5,1.5] → [1.0, 3.0]
+        assert 1.0 <= sleep_calls[1] <= 3.0
 
 
 # ---------------------------------------------------------------------------
