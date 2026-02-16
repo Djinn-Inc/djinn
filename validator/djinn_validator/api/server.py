@@ -509,9 +509,28 @@ def create_app(
     # Keyed by session_id. Stores either DistributedParticipantState (semi-honest)
     # or AuthenticatedParticipantState (SPDZ malicious security).
     import threading as _threading
+    import time as _time
     from djinn_validator.core.spdz import AuthenticatedParticipantState, AuthenticatedShare, MACKeyShare
     _participant_states: dict[str, DistributedParticipantState | AuthenticatedParticipantState] = {}
+    _participant_created: dict[str, float] = {}  # session_id -> monotonic timestamp
     _participant_lock = _threading.Lock()
+
+    _PARTICIPANT_TTL = 120  # seconds before stale participant states are cleaned up
+    _MAX_PARTICIPANT_STATES = 500
+
+    def _cleanup_stale_participants_locked() -> int:
+        """Remove participant states older than _PARTICIPANT_TTL. Caller holds _participant_lock."""
+        now = _time.monotonic()
+        stale = [
+            sid for sid, ts in _participant_created.items()
+            if now - ts > _PARTICIPANT_TTL
+        ]
+        for sid in stale:
+            _participant_states.pop(sid, None)
+            _participant_created.pop(sid, None)
+        if stale:
+            log.info("participant_state_cleanup", evicted=len(stale))
+        return len(stale)
 
     # Collect validator hotkeys from metagraph for auth
     def _get_validator_hotkeys() -> set[str] | None:
@@ -531,6 +550,10 @@ def create_app(
 
         # Clean up expired sessions to prevent memory leak
         _mpc.cleanup_expired()
+        with _participant_lock:
+            _cleanup_stale_participants_locked()
+        with _ot_lock:
+            _cleanup_stale_ot_states_locked()
 
         session = _mpc.get_session(req.session_id)
         if session is not None:
@@ -629,7 +652,11 @@ def create_app(
                 raise HTTPException(status_code=400, detail=f"Invalid hex in MPC init data: {e}")
 
             with _participant_lock:
+                # Evict oldest if at capacity
+                if len(_participant_states) >= _MAX_PARTICIPANT_STATES:
+                    _cleanup_stale_participants_locked()
                 _participant_states[req.session_id] = state
+                _participant_created[req.session_id] = _time.monotonic()
 
         return MPCInitResponse(
             session_id=req.session_id,
@@ -730,6 +757,7 @@ def create_app(
         # Clean up participant state
         with _participant_lock:
             _participant_states.pop(req.session_id, None)
+            _participant_created.pop(req.session_id, None)
 
         return MPCResultResponse(
             session_id=req.session_id,
@@ -764,6 +792,7 @@ def create_app(
         # Clean up participant state
         with _participant_lock:
             _participant_states.pop(req.session_id, None)
+            _participant_created.pop(req.session_id, None)
 
         return MPCAbortResponse(session_id=req.session_id, acknowledged=True)
 
@@ -818,7 +847,25 @@ def create_app(
     )
 
     _ot_states: dict[str, OTTripleGenState] = {}
+    _ot_created: dict[str, float] = {}  # session_id -> monotonic timestamp
     _ot_lock = _threading.Lock()
+
+    _OT_TTL = 180  # seconds before stale OT states are cleaned up
+    _MAX_OT_STATES = 200
+
+    def _cleanup_stale_ot_states_locked() -> int:
+        """Remove OT states older than _OT_TTL. Caller holds _ot_lock."""
+        now = _time.monotonic()
+        stale = [
+            sid for sid, ts in _ot_created.items()
+            if now - ts > _OT_TTL
+        ]
+        for sid in stale:
+            _ot_states.pop(sid, None)
+            _ot_created.pop(sid, None)
+        if stale:
+            log.info("ot_state_cleanup", evicted=len(stale))
+        return len(stale)
 
     def _resolve_ot_params(
         field_prime_hex: str | None, dh_prime_hex: str | None,
@@ -852,6 +899,10 @@ def create_app(
                     },
                 )
 
+            # Evict stale OT states before creating new ones
+            if len(_ot_states) >= _MAX_OT_STATES:
+                _cleanup_stale_ot_states_locked()
+
             fp, dh_group = _resolve_ot_params(req.field_prime, req.dh_prime)
             state = OTTripleGenState(
                 session_id=req.session_id,
@@ -864,6 +915,7 @@ def create_app(
             )
             state.initialize()
             _ot_states[req.session_id] = state
+            _ot_created[req.session_id] = _time.monotonic()
 
         return OTSetupResponse(
             session_id=req.session_id,

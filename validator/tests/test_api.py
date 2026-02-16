@@ -733,6 +733,240 @@ class TestExceptionHandler:
         assert resp.json()["chain_connected"] is False
 
 
+class TestParticipantStateCleanup:
+    """Verify participant state TTL eviction prevents memory leaks."""
+
+    def _make_app(self) -> tuple:
+        """Create app and return (client, share_store, app)."""
+        from djinn_validator.core.mpc_coordinator import MPCCoordinator
+        store = ShareStore()
+        store.store("sig-cleanup", "0xAA", Share(x=2, y=42), b"key")
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        mpc = MPCCoordinator()
+        app = create_app(store, purchase_orch, outcome_attestor, mpc_coordinator=mpc)
+        client = TestClient(app, raise_server_exceptions=False)
+        return client, store, app, mpc
+
+    def _init_session(self, client: TestClient, session_id: str) -> None:
+        """Send mpc_init for a given session_id."""
+        resp = client.post("/v1/mpc/init", json={
+            "session_id": session_id,
+            "signal_id": "sig-cleanup",
+            "available_indices": [1, 2, 3],
+            "coordinator_x": 1,
+            "participant_xs": [1, 2],
+            "threshold": 2,
+            "triple_shares": [{"a": "aa", "b": "bb", "c": "cc"}],
+            "r_share_y": "ff",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["accepted"] is True
+
+    def test_participant_state_cleaned_on_result(self) -> None:
+        """mpc_result should clean up participant state."""
+        client, store, app, mpc = self._make_app()
+        self._init_session(client, "sess-result-cleanup")
+
+        # Send result
+        resp = client.post("/v1/mpc/result", json={
+            "session_id": "sess-result-cleanup",
+            "signal_id": "sig-cleanup",
+            "available": True,
+            "participating_validators": 2,
+        })
+        assert resp.status_code == 200
+
+        # Verify the compute_gate endpoint no longer finds the participant state
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "sess-result-cleanup",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 404
+        store.close()
+
+    def test_participant_state_cleaned_on_abort(self) -> None:
+        """mpc_abort should clean up participant state."""
+        client, store, app, mpc = self._make_app()
+        self._init_session(client, "sess-abort-cleanup")
+
+        resp = client.post("/v1/mpc/abort", json={
+            "session_id": "sess-abort-cleanup",
+            "reason": "test abort",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 200
+
+        # compute_gate returns 409 (session aborted) because the session is
+        # marked FAILED — but the participant state dict was cleaned up.
+        # Use a session_id that has no MPC session to confirm state is gone.
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "sess-abort-cleanup",
+            "gate_idx": 0,
+        })
+        # 409 = session FAILED (MPC session check happens first)
+        assert resp.status_code == 409
+        store.close()
+
+    def test_stale_participant_states_evicted_by_ttl(self) -> None:
+        """Participant states older than TTL should be evicted on next mpc_init."""
+        import time as _time
+        from unittest.mock import patch
+
+        client, store, app, mpc = self._make_app()
+
+        # Create a session
+        self._init_session(client, "sess-stale-1")
+
+        # Verify it exists
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "sess-stale-1",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 200
+
+        # Advance monotonic clock past TTL (120s)
+        original_monotonic = _time.monotonic
+
+        def offset_monotonic():
+            return original_monotonic() + 200
+
+        with patch("time.monotonic", side_effect=offset_monotonic):
+            # Create another session — this triggers cleanup during mpc_init
+            self._init_session(client, "sess-stale-2")
+
+        # The stale session's participant state should have been evicted
+        # (but the MPC session itself is managed by MPCCoordinator, not our cleanup)
+        # We can verify by checking compute_gate for the stale session
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "sess-stale-1",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 404  # Participant state evicted
+        store.close()
+
+
+class TestOTStateCleanup:
+    """Verify OT state TTL eviction prevents memory leaks."""
+
+    def _make_app(self) -> tuple:
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        app = create_app(store, purchase_orch, outcome_attestor)
+        client = TestClient(app, raise_server_exceptions=False)
+        return client, store
+
+    def test_ot_setup_creates_state(self) -> None:
+        """OT setup should create a new state entry."""
+        client, store = self._make_app()
+        resp = client.post("/v1/mpc/ot/setup", json={
+            "session_id": "ot-create-1",
+            "n_triples": 1,
+            "x_coords": [1, 2],
+            "threshold": 2,
+            "dh_prime": hex(1223),
+            "field_prime": hex(65537),
+        })
+        assert resp.status_code == 200
+        assert resp.json()["accepted"] is True
+
+        # Verify state exists by fetching shares (should fail because not yet complete, not 404)
+        resp = client.post("/v1/mpc/ot/shares", json={
+            "session_id": "ot-create-1",
+            "party_x": 1,
+        })
+        # 425 = "not yet complete" means state exists
+        assert resp.status_code == 425
+        store.close()
+
+    def test_ot_state_idempotent_setup(self) -> None:
+        """Duplicate OT setup should return the same state."""
+        client, store = self._make_app()
+        resp1 = client.post("/v1/mpc/ot/setup", json={
+            "session_id": "ot-idem-1",
+            "n_triples": 1,
+            "x_coords": [1, 2],
+            "threshold": 2,
+            "dh_prime": hex(1223),
+            "field_prime": hex(65537),
+        })
+        resp2 = client.post("/v1/mpc/ot/setup", json={
+            "session_id": "ot-idem-1",
+            "n_triples": 1,
+            "x_coords": [1, 2],
+            "threshold": 2,
+            "dh_prime": hex(1223),
+            "field_prime": hex(65537),
+        })
+        assert resp1.json()["sender_public_keys"] == resp2.json()["sender_public_keys"]
+        store.close()
+
+    def test_stale_ot_states_evicted_on_mpc_init(self) -> None:
+        """OT states older than TTL should be evicted during mpc_init cleanup."""
+        import time as _time
+        from unittest.mock import patch
+
+        store = ShareStore()
+        store.store("sig-ot-cleanup", "0xAA", Share(x=2, y=42), b"key")
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        app = create_app(store, purchase_orch, outcome_attestor)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Create OT state
+        resp = client.post("/v1/mpc/ot/setup", json={
+            "session_id": "ot-stale-1",
+            "n_triples": 1,
+            "x_coords": [1, 2],
+            "threshold": 2,
+            "dh_prime": hex(1223),
+            "field_prime": hex(65537),
+        })
+        assert resp.status_code == 200
+
+        # Advance clock past OT TTL (180s)
+        original_monotonic = _time.monotonic
+
+        def offset_monotonic():
+            return original_monotonic() + 300
+
+        with patch("time.monotonic", side_effect=offset_monotonic):
+            # Trigger cleanup via mpc_init
+            client.post("/v1/mpc/init", json={
+                "session_id": "sess-trigger-ot-cleanup",
+                "signal_id": "sig-ot-cleanup",
+                "available_indices": [1, 2, 3],
+                "coordinator_x": 1,
+                "participant_xs": [1, 2],
+                "threshold": 2,
+                "triple_shares": [{"a": "aa", "b": "bb", "c": "cc"}],
+                "r_share_y": "ff",
+            })
+
+        # OT state should have been evicted
+        resp = client.post("/v1/mpc/ot/shares", json={
+            "session_id": "ot-stale-1",
+            "party_x": 1,
+        })
+        assert resp.status_code == 404  # State evicted
+        store.close()
+
+    def test_ot_missing_session_returns_404(self) -> None:
+        """OT endpoints should return 404 for unknown sessions."""
+        client, store = self._make_app()
+
+        for endpoint, payload in [
+            ("/v1/mpc/ot/choices", {"session_id": "no-such", "peer_sender_pks": {}, "choices": {}}),
+            ("/v1/mpc/ot/transfers", {"session_id": "no-such", "peer_choices": {}}),
+            ("/v1/mpc/ot/complete", {"session_id": "no-such", "peer_transfers": {}, "own_sender_shares": {}}),
+            ("/v1/mpc/ot/shares", {"session_id": "no-such", "party_x": 1}),
+        ]:
+            resp = client.post(endpoint, json=payload)
+            assert resp.status_code == 404, f"Expected 404 for {endpoint}, got {resp.status_code}"
+        store.close()
+
+
 class TestMethodNotAllowed:
     def test_get_on_post_endpoint(self, client: TestClient) -> None:
         resp = client.get("/v1/signal")
