@@ -19,8 +19,7 @@ async function ensureSnarkjs(): Promise<typeof SnarkjsTypes> {
   return _snarkjs;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let poseidonBuilder: any = null;
+let poseidonBuilder: any = null; // circomlibjs lacks TS types
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -74,9 +73,7 @@ export interface TrackRecordProofResult extends Groth16Proof {
 // Poseidon hash (lazy-loaded)
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _poseidon: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _poseidon: any = null; // circomlibjs lacks TS types
 let _F: any = null;
 
 async function ensurePoseidon(): Promise<void> {
@@ -154,7 +151,7 @@ function computeTrackRecordAggregates(signals: SignalData[]): {
 
 async function buildAuditInput(
   signals: SignalData[],
-): Promise<Record<string, unknown>> {
+): Promise<SnarkjsTypes.CircuitSignals> {
   if (signals.length !== MAX_AUDIT_SIGNALS) {
     throw new Error(
       `Audit proof requires exactly ${MAX_AUDIT_SIGNALS} signals, got ${signals.length}`,
@@ -203,7 +200,7 @@ function padArray(arr: bigint[], len: number, defaultVal: bigint): bigint[] {
 
 async function buildTrackRecordInput(
   signals: SignalData[],
-): Promise<Record<string, unknown>> {
+): Promise<SnarkjsTypes.CircuitSignals> {
   if (signals.length > MAX_TRACK_RECORD_SIGNALS) {
     throw new Error(
       `Track record proof supports at most ${MAX_TRACK_RECORD_SIGNALS} signals, got ${signals.length}`,
@@ -314,7 +311,7 @@ export async function generateTrackRecordProof(
 // Verification
 // ---------------------------------------------------------------------------
 
-async function fetchVkey(path: string): Promise<SnarkjsTypes.VKey> {
+async function fetchVkey(path: string): Promise<object> {
   const resp = await fetch(path);
   if (!resp.ok) throw new Error(`Failed to fetch verification key: ${path}`);
   return resp.json();
