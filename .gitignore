@@ -203,5 +203,9 @@ uv.lock
 validator/data/
 miner/data/
 
+# Playwright
+web/playwright-report/
+web/test-results/
+
 # Next.js build cache (root-level)
 .next/
