@@ -13,6 +13,7 @@ import signal
 import structlog
 import uvicorn
 
+from djinn_validator import __version__
 from djinn_validator.logging import configure_logging
 
 configure_logging()
@@ -195,7 +196,7 @@ async def async_main() -> None:
 
     log.info(
         "validator_starting",
-        version="0.1.0",
+        version=__version__,
         host=config.api_host,
         port=config.api_port,
         netuid=config.bt_netuid,

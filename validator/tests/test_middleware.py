@@ -420,3 +420,10 @@ class TestSecurityHeaders:
     def test_forwarded_request_id_preserved(self, header_app: TestClient) -> None:
         resp = header_app.get("/test", headers={"X-Request-ID": "custom-id-123"})
         assert resp.headers["X-Request-ID"] == "custom-id-123"
+
+
+class TestVersionConsistency:
+    def test_api_version_matches_package(self) -> None:
+        from djinn_validator import __version__
+
+        assert API_VERSION == __version__

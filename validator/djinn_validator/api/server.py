@@ -187,9 +187,11 @@ def create_app(
             except Exception:
                 pass
 
+    from djinn_validator import __version__
+
     app = FastAPI(
         title="Djinn Validator",
-        version="0.1.0",
+        version=__version__,
         description="Djinn Protocol Bittensor Validator API",
         lifespan=_lifespan,
     )
