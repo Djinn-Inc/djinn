@@ -78,6 +78,7 @@ contract TrackRecord is Ownable {
     error VerifierNotSet();
     error ProofVerificationFailed();
     error DuplicateProof();
+    error InvalidSignalCount(uint256 count);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -131,6 +132,10 @@ contract TrackRecord is Ownable {
         // Compute proof hash for deduplication
         bytes32 proofHash = keccak256(abi.encodePacked(_pA, _pB, _pC, _pubSignals));
         if (usedProofHashes[proofHash]) revert DuplicateProof();
+
+        // Validate signalCount is within circuit bounds (1..20)
+        uint256 sc = _pubSignals[100];
+        if (sc == 0 || sc > 20) revert InvalidSignalCount(sc);
 
         // Verify the Groth16 proof on-chain
         if (!zkVerifier.verifyTrackRecordProof(_pA, _pB, _pC, _pubSignals)) {

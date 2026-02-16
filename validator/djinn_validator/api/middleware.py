@@ -314,8 +314,14 @@ async def validate_signed_request(
     timestamp_str = request.headers.get("X-Timestamp")
     nonce = request.headers.get("X-Nonce")
 
-    # In dev mode (no hotkey header), skip auth
+    # Reject unauthenticated requests when a hotkey allowlist is active (production).
+    # In dev/test mode (no neuron, no allowlist), skip auth gracefully.
     if not hotkey and not signature:
+        if allowed_hotkeys:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required (missing X-Hotkey header)",
+            )
         return None
 
     if not all([hotkey, signature, timestamp_str, nonce]):

@@ -154,6 +154,25 @@ contract SignalCommitmentTest is Test {
         assertTrue(sc.signalExists(201));
     }
 
+    function test_commit_revertOnSlaMultiplierTooHigh() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(202);
+        p.slaMultiplierBps = 100_001;
+
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SlaMultiplierTooHigh.selector, 100_001));
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_slaMultiplierExactMaximum() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(203);
+        p.slaMultiplierBps = 100_000;
+
+        vm.prank(genius);
+        sc.commit(p);
+
+        assertTrue(sc.signalExists(203));
+    }
+
     // ─── Tests: Revert on invalid max price
     // ──────────────────────────────
 

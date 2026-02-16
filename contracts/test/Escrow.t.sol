@@ -570,4 +570,10 @@ contract EscrowIntegrationTest is Test {
         vm.prank(random);
         escrow.setOutcome(0, Outcome.Favorable);
     }
+
+    function test_setOutcome_pending_reverts() public {
+        escrow.setAuthorizedCaller(owner, true);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.InvalidOutcome.selector, Outcome.Pending));
+        escrow.setOutcome(0, Outcome.Pending);
+    }
 }

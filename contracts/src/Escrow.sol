@@ -209,12 +209,14 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
 
     error PurchaseNotFound(uint256 purchaseId);
     error OutcomeAlreadySet(uint256 purchaseId, Outcome current);
+    error InvalidOutcome(Outcome outcome);
 
     /// @notice Update the outcome of a purchase. Called by authorized contracts (e.g. oracle/validator).
     /// @param purchaseId The purchase to update
     /// @param outcome The new outcome (must not be Pending)
     function setOutcome(uint256 purchaseId, Outcome outcome) external {
         if (!authorizedCallers[msg.sender]) revert Unauthorized();
+        if (outcome == Outcome.Pending) revert InvalidOutcome(outcome);
         if (purchaseId >= nextPurchaseId) revert PurchaseNotFound(purchaseId);
         Outcome current = _purchases[purchaseId].outcome;
         if (current != Outcome.Pending) revert OutcomeAlreadySet(purchaseId, current);

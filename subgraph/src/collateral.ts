@@ -74,7 +74,8 @@ function getOrCreateProtocolStats(): ProtocolStats {
 }
 
 function updateAvailable(position: CollateralPosition): void {
-  position.available = position.deposited.minus(position.locked);
+  let diff = position.deposited.minus(position.locked);
+  position.available = diff.gt(BigInt.zero()) ? diff : BigInt.zero();
 }
 
 export function handleCollateralDeposited(event: Deposited): void {

@@ -247,17 +247,13 @@ contract TrackRecordTest is Test {
     // ─── Edge Cases
     // ────────────────────────────────────────────────────────
 
-    function test_submit_zeroStats() public {
+    function test_submit_zeroStats_reverts() public {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(0, 0, 0, 0, 0, 0);
 
         vm.prank(genius1);
-        uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
-
-        VerifiedRecord memory rec = trackRecord.getRecord(recordId);
-        assertEq(rec.signalCount, 0);
-        assertEq(rec.totalGain, 0);
-        assertEq(rec.totalLoss, 0);
+        vm.expectRevert(abi.encodeWithSelector(TrackRecord.InvalidSignalCount.selector, 0));
+        trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
     function test_submit_maxSignals() public {
@@ -310,8 +306,8 @@ contract TrackRecordTest is Test {
         uint256 unfavCount,
         uint256 voidCount
     ) public {
-        // Bound to reasonable ranges to avoid gas issues
-        signalCount = bound(signalCount, 0, 20);
+        // Bound to reasonable ranges to avoid gas issues (signalCount >= 1 per circuit constraint)
+        signalCount = bound(signalCount, 1, 20);
         totalGain = bound(totalGain, 0, type(uint128).max);
         totalLoss = bound(totalLoss, 0, type(uint128).max);
         favCount = bound(favCount, 0, 20);

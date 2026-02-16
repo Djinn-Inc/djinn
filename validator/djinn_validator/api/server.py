@@ -164,6 +164,8 @@ def create_app(
     # Resources that need cleanup on shutdown
     _cleanup_resources: list = []
     _shutdown_event = asyncio.Event()
+    # Mutable container for last-cleanup timestamp (throttle purchase-path cleanup)
+    _last_cleanup = [0.0]
 
     async def _periodic_state_cleanup() -> None:
         """Background task to evict stale participant/OT states every 60s."""
@@ -305,10 +307,15 @@ def create_app(
         """
         _validate_signal_id_path(signal_id)
 
-        # Clean up expired MPC sessions and old purchases
-        _mpc.cleanup_expired()
-        purchase_orch.cleanup_stale()
-        purchase_orch.cleanup_completed()
+        # Throttle cleanup to at most once per 60 seconds
+        import time as _time
+
+        _now = _time.monotonic()
+        if _now - _last_cleanup[0] > 60:
+            _mpc.cleanup_expired()
+            purchase_orch.cleanup_stale()
+            purchase_orch.cleanup_completed()
+            _last_cleanup[0] = _now
 
         # Check we hold a share for this signal
         record = share_store.get(signal_id)

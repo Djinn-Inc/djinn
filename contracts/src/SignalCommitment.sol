@@ -74,6 +74,7 @@ contract SignalCommitment is Ownable {
 
     /// @notice slaMultiplierBps must be >= 10000 (100%)
     error SlaMultiplierTooLow(uint256 provided);
+    error SlaMultiplierTooHigh(uint256 provided);
 
     /// @notice maxPriceBps must be > 0 and <= 5000 (50%)
     error InvalidMaxPriceBps(uint256 provided);
@@ -168,6 +169,7 @@ contract SignalCommitment is Ownable {
         if (p.decoyLines.length != 10) revert InvalidDecoyLinesLength(p.decoyLines.length);
         if (bytes(p.sport).length > MAX_SPORT_LENGTH) revert StringTooLong("sport", bytes(p.sport).length, MAX_SPORT_LENGTH);
         if (p.slaMultiplierBps < 10_000) revert SlaMultiplierTooLow(p.slaMultiplierBps);
+        if (p.slaMultiplierBps > 100_000) revert SlaMultiplierTooHigh(p.slaMultiplierBps);
         if (p.maxPriceBps == 0 || p.maxPriceBps > 5000) revert InvalidMaxPriceBps(p.maxPriceBps);
         if (p.expiresAt <= block.timestamp) revert ExpirationInPast(p.expiresAt, block.timestamp);
 

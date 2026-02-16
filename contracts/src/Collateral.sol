@@ -77,7 +77,7 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Deposit USDC collateral. Caller must have approved this contract.
     /// @param amount Amount of USDC to deposit (6 decimals)
-    function deposit(uint256 amount) external whenNotPaused {
+    function deposit(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         deposits[msg.sender] += amount;
