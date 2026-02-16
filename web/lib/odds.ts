@@ -158,7 +158,8 @@ export function parseLine(raw: string): StructuredLine | null {
       typeof obj.home_team === "string" &&
       typeof obj.away_team === "string" &&
       typeof obj.market === "string" &&
-      typeof obj.side === "string"
+      typeof obj.side === "string" &&
+      (obj.line === null || (typeof obj.line === "number" && Number.isFinite(obj.line)))
     ) {
       return obj as StructuredLine;
     }

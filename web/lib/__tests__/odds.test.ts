@@ -154,6 +154,22 @@ describe("parseLine", () => {
   it("returns null for JSON missing required fields", () => {
     expect(parseLine(JSON.stringify({ sport: "nba" }))).toBeNull();
   });
+
+  it("returns null when line is a boolean", () => {
+    const raw = JSON.stringify({ ...LAKERS_LINE, line: true });
+    expect(parseLine(raw)).toBeNull();
+  });
+
+  it("accepts null line (h2h market)", () => {
+    const parsed = parseLine(serializeLine(ML_LINE));
+    expect(parsed).toEqual(ML_LINE);
+    expect(parsed!.line).toBeNull();
+  });
+
+  it("returns null when line is a string", () => {
+    const raw = JSON.stringify({ ...LAKERS_LINE, line: "bad" });
+    expect(parseLine(raw)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

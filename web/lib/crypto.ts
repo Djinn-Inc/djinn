@@ -62,14 +62,20 @@ function modPow(base: bigint, exp: bigint, p: bigint): bigint {
 // ---------------------------------------------------------------------------
 
 function getRandomFieldElement(prime: bigint): bigint {
-  // Generate random bytes and reduce mod prime
+  // Rejection sampling: generate 32 random bytes, accept only if < prime.
+  // Avoids modulo bias (2^256 / BN254_PRIME ≈ 4, so naive mod would make
+  // low values ~4x more likely). Expected iterations ≈ 1.13 for BN254.
   const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  let val = 0n;
-  for (const b of bytes) {
-    val = (val << 8n) | BigInt(b);
+  for (let attempt = 0; attempt < 256; attempt++) {
+    crypto.getRandomValues(bytes);
+    let val = 0n;
+    for (const b of bytes) {
+      val = (val << 8n) | BigInt(b);
+    }
+    if (val < prime) return val;
   }
-  return mod(val, prime);
+  // Astronomically unlikely (probability < 2^{-256}) — fail safe
+  throw new Error("Failed to generate unbiased random field element");
 }
 
 export function splitSecret(
@@ -138,11 +144,9 @@ function toArrayBuffer(arr: Uint8Array): ArrayBuffer {
 
 export function generateAesKey(): Uint8Array {
   // Generate a random key that fits within BN254 field (so Shamir roundtrip works).
-  // We generate random bytes, reduce mod prime, then convert back to 32 bytes.
-  const raw = new Uint8Array(32);
-  crypto.getRandomValues(raw);
-  const reduced = keyToBigInt(raw);
-  return bigIntToKey(reduced);
+  // Uses rejection sampling to avoid modulo bias.
+  const val = getRandomFieldElement(BN254_PRIME);
+  return bigIntToKey(val);
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -202,23 +206,27 @@ export async function decrypt(
   iv: string,
   key: Uint8Array,
 ): Promise<string> {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    toArrayBuffer(key),
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"],
-  );
+  try {
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      toArrayBuffer(key),
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"],
+    );
 
-  const ivBytes = fromHex(iv);
-  const ctBytes = fromHex(ciphertext);
-  const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(ivBytes) },
-    cryptoKey,
-    toArrayBuffer(ctBytes),
-  );
+    const ivBytes = fromHex(iv);
+    const ctBytes = fromHex(ciphertext);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: toArrayBuffer(ivBytes) },
+      cryptoKey,
+      toArrayBuffer(ctBytes),
+    );
 
-  return new TextDecoder().decode(decrypted);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    throw new Error("Decryption failed");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -230,8 +238,10 @@ export function keyToBigInt(key: Uint8Array): bigint {
   for (const b of key) {
     val = (val << 8n) | BigInt(b);
   }
-  // Ensure it fits in the BN254 field
-  return mod(val, BN254_PRIME);
+  if (val >= BN254_PRIME) {
+    throw new Error("Key value exceeds BN254 field — use generateAesKey() for safe key generation");
+  }
+  return val;
 }
 
 export function bigIntToKey(val: bigint): Uint8Array {

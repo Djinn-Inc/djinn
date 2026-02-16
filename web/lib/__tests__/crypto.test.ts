@@ -126,6 +126,16 @@ describe("AES-256-GCM", () => {
     expect(key).toBeInstanceOf(Uint8Array);
   });
 
+  it("generated key is always within BN254 field", () => {
+    // Run multiple times to exercise rejection sampling
+    for (let i = 0; i < 20; i++) {
+      const key = generateAesKey();
+      const val = keyToBigInt(key);
+      expect(val).toBeGreaterThanOrEqual(0n);
+      expect(val).toBeLessThan(BN254_PRIME);
+    }
+  });
+
   it("encrypts and decrypts a string roundtrip", async () => {
     const key = generateAesKey();
     const plaintext = "Lakers -3.5 (-110)";
@@ -152,7 +162,15 @@ describe("AES-256-GCM", () => {
     const key2 = generateAesKey();
     const { ciphertext, iv } = await encrypt("secret", key1);
 
-    await expect(decrypt(ciphertext, iv, key2)).rejects.toThrow();
+    await expect(decrypt(ciphertext, iv, key2)).rejects.toThrow("Decryption failed");
+  });
+
+  it("normalizes decrypt errors to generic message", async () => {
+    const key = generateAesKey();
+    // Tampered ciphertext
+    await expect(decrypt("deadbeef", "aabbccdd11223344aabbccdd", key)).rejects.toThrow(
+      "Decryption failed",
+    );
   });
 
   it("different encryptions of same plaintext produce different ciphertext", async () => {
@@ -178,17 +196,27 @@ describe("Key conversion", () => {
     expect(asInt).toBeGreaterThanOrEqual(0n);
     expect(asInt).toBeLessThan(BN254_PRIME);
 
-    // Since keyToBigInt reduces mod prime, the roundtrip may not be exact
-    // for keys >= BN254_PRIME, but should work for most random keys
     const back = bigIntToKey(asInt);
-    // Verify it decrypts correctly through the full flow
-    expect(back.length).toBe(32);
+    expect(back).toEqual(key);
   });
 
   it("bigIntToKey produces 32 bytes", () => {
     const key = bigIntToKey(42n);
     expect(key.length).toBe(32);
     expect(key[31]).toBe(42);
+  });
+
+  it("keyToBigInt throws if key value exceeds BN254 field", () => {
+    // A 32-byte key with all 0xFF bytes = 2^256 - 1, which exceeds BN254_PRIME
+    const oversizedKey = new Uint8Array(32).fill(0xff);
+    expect(() => keyToBigInt(oversizedKey)).toThrow("exceeds BN254 field");
+  });
+
+  it("keyToBigInt accepts key just below prime", () => {
+    // BN254_PRIME - 1 should be accepted
+    const val = BN254_PRIME - 1n;
+    const key = bigIntToKey(val);
+    expect(keyToBigInt(key)).toBe(val);
   });
 });
 
