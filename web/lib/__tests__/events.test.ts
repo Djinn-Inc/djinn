@@ -31,6 +31,7 @@ import {
   getSignalsByGenius,
   getPurchasesByBuyer,
   getAuditsByGenius,
+  resetEventCaches,
 } from "../events";
 
 const mockProvider = {} as any;
@@ -38,6 +39,7 @@ const mockProvider = {} as any;
 describe("getActiveSignals", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetEventCaches();
   });
 
   it("returns signals with future expiry", async () => {
@@ -112,6 +114,7 @@ describe("getActiveSignals", () => {
 describe("getSignalsByGenius", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetEventCaches();
   });
 
   it("filters by genius address and future expiry", async () => {
@@ -139,6 +142,7 @@ describe("getSignalsByGenius", () => {
 describe("getPurchasesByBuyer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetEventCaches();
   });
 
   it("returns purchase events", async () => {
@@ -176,6 +180,7 @@ describe("getPurchasesByBuyer", () => {
 describe("getAuditsByGenius", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetEventCaches();
   });
 
   it("combines audit and early exit events", async () => {

@@ -305,6 +305,9 @@ contract SignalCommitmentTest is Test {
     function test_updateStatus_emitsEvent() public {
         _commitDefault(901);
 
+        vm.prank(authorizedCaller);
+        sc.updateStatus(901, SignalStatus.Purchased);
+
         vm.expectEmit(true, false, false, true);
         emit SignalCommitment.SignalStatusUpdated(901, SignalStatus.Settled);
 
@@ -441,6 +444,8 @@ contract SignalCommitmentTest is Test {
         _commitDefault(3004);
 
         vm.prank(authorizedCaller);
+        sc.updateStatus(3004, SignalStatus.Purchased);
+        vm.prank(authorizedCaller);
         sc.updateStatus(3004, SignalStatus.Settled);
 
         assertFalse(sc.isActive(3004));
@@ -462,10 +467,122 @@ contract SignalCommitmentTest is Test {
         _commitDefault(3006);
 
         vm.prank(authorizedCaller);
+        sc.updateStatus(3006, SignalStatus.Purchased);
+        vm.prank(authorizedCaller);
         sc.updateStatus(3006, SignalStatus.Settled);
 
         vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalAlreadyPurchased.selector, 3006));
         vm.prank(genius);
         sc.voidSignal(3006);
+    }
+
+    // ─── Tests: Invalid state transitions ────────────────────────────────
+
+    function test_updateStatus_revertActiveToSettled() public {
+        _commitDefault(4000);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4000, SignalStatus.Active, SignalStatus.Settled
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4000, SignalStatus.Settled);
+    }
+
+    function test_updateStatus_revertSettledToActive() public {
+        _commitDefault(4001);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4001, SignalStatus.Purchased);
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4001, SignalStatus.Settled);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4001, SignalStatus.Settled, SignalStatus.Active
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4001, SignalStatus.Active);
+    }
+
+    function test_updateStatus_revertSettledToPurchased() public {
+        _commitDefault(4002);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4002, SignalStatus.Purchased);
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4002, SignalStatus.Settled);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4002, SignalStatus.Settled, SignalStatus.Purchased
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4002, SignalStatus.Purchased);
+    }
+
+    function test_updateStatus_revertVoidedToActive() public {
+        _commitDefault(4003);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4003, SignalStatus.Voided);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4003, SignalStatus.Voided, SignalStatus.Active
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4003, SignalStatus.Active);
+    }
+
+    function test_updateStatus_revertVoidedToPurchased() public {
+        _commitDefault(4004);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4004, SignalStatus.Voided);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4004, SignalStatus.Voided, SignalStatus.Purchased
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4004, SignalStatus.Purchased);
+    }
+
+    function test_updateStatus_revertPurchasedToActive() public {
+        _commitDefault(4005);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4005, SignalStatus.Purchased);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SignalCommitment.InvalidStatusTransition.selector,
+                4005, SignalStatus.Purchased, SignalStatus.Active
+            )
+        );
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4005, SignalStatus.Active);
+    }
+
+    function test_updateStatus_purchasedToVoided() public {
+        _commitDefault(4006);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4006, SignalStatus.Purchased);
+        vm.prank(authorizedCaller);
+        sc.updateStatus(4006, SignalStatus.Voided);
+
+        assertEq(uint8(sc.getSignal(4006).status), uint8(SignalStatus.Voided));
     }
 }

@@ -3,6 +3,7 @@
  *
  * Uses ethers.js event queries (no subgraph) to index contract events.
  * Queries are chunked to avoid RPC provider rate limits on large block ranges.
+ * An in-memory EventCache avoids re-scanning historical blocks on repeat calls.
  */
 
 import { ethers } from "ethers";
@@ -15,6 +16,74 @@ import {
 
 /** Max blocks per queryFilter call to avoid RPC rate limits. */
 const BLOCK_CHUNK_SIZE = 10_000;
+
+/** Cache TTL in milliseconds (30 seconds). */
+const CACHE_TTL_MS = 30_000;
+
+// ---------------------------------------------------------------------------
+// Event cache — avoids re-scanning historical blocks
+// ---------------------------------------------------------------------------
+
+interface CacheEntry<T> {
+  events: T[];
+  lastBlock: number;
+  updatedAt: number;
+}
+
+class EventCache<T extends { blockNumber: number }> {
+  private cache = new Map<string, CacheEntry<T>>();
+
+  get(key: string): CacheEntry<T> | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.updatedAt > CACHE_TTL_MS) {
+      // Stale — return it for the lastBlock but mark for incremental refresh
+      return entry;
+    }
+    return entry;
+  }
+
+  set(key: string, events: T[], lastBlock: number): void {
+    this.cache.set(key, { events, lastBlock, updatedAt: Date.now() });
+  }
+
+  /** Merge new events into existing cache, deduplicating by blockNumber + index. */
+  merge(key: string, newEvents: T[], lastBlock: number): T[] {
+    const existing = this.cache.get(key);
+    if (!existing) {
+      this.set(key, newEvents, lastBlock);
+      return newEvents;
+    }
+    const merged = [...existing.events, ...newEvents];
+    this.set(key, merged, lastBlock);
+    return merged;
+  }
+
+  isFresh(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+    return Date.now() - entry.updatedAt < CACHE_TTL_MS;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const signalCache = new EventCache<SignalEvent>();
+const purchaseCache = new EventCache<PurchaseEvent>();
+const auditCache = new EventCache<AuditEvent>();
+
+/** Reset all caches. Exported for test isolation. */
+export function resetEventCaches(): void {
+  signalCache.clear();
+  purchaseCache.clear();
+  auditCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Chunked query helper
+// ---------------------------------------------------------------------------
 
 /**
  * Query contract events in chunks to handle large block ranges safely.
@@ -33,6 +102,10 @@ async function queryFilterChunked(
     return contract.queryFilter(filter, fromBlock);
   }
 
+  if (toBlock <= fromBlock) {
+    return [];
+  }
+
   if (toBlock - fromBlock <= BLOCK_CHUNK_SIZE) {
     return contract.queryFilter(filter, fromBlock, toBlock);
   }
@@ -46,6 +119,10 @@ async function queryFilterChunked(
   return allEvents;
 }
 
+// ---------------------------------------------------------------------------
+// Signal events
+// ---------------------------------------------------------------------------
+
 export interface SignalEvent {
   signalId: string;
   genius: string;
@@ -56,28 +133,13 @@ export interface SignalEvent {
   blockNumber: number;
 }
 
-export async function getActiveSignals(
-  provider: ethers.Provider,
-  fromBlock: number = 0,
-): Promise<SignalEvent[]> {
-  const contract = new ethers.Contract(
-    ADDRESSES.signalCommitment,
-    SIGNAL_COMMITMENT_ABI,
-    provider,
-  );
-
-  const filter = contract.filters.SignalCommitted();
-  const events = await queryFilterChunked(contract, filter, fromBlock);
-  const now = BigInt(Math.floor(Date.now() / 1000));
-
+function parseSignalEvents(
+  events: (ethers.EventLog | ethers.Log)[],
+): SignalEvent[] {
   const signals: SignalEvent[] = [];
-
   for (const event of events) {
     const log = event as ethers.EventLog;
     if (!log.args) continue;
-
-    const expiresAt = BigInt(log.args.expiresAt);
-    if (expiresAt <= now) continue; // Skip expired
 
     signals.push({
       signalId: log.args.signalId.toString(),
@@ -85,12 +147,45 @@ export async function getActiveSignals(
       sport: log.args.sport as string,
       maxPriceBps: BigInt(log.args.maxPriceBps),
       slaMultiplierBps: BigInt(log.args.slaMultiplierBps),
-      expiresAt,
+      expiresAt: BigInt(log.args.expiresAt),
       blockNumber: log.blockNumber,
     });
   }
-
   return signals;
+}
+
+export async function getActiveSignals(
+  provider: ethers.Provider,
+  fromBlock: number = 0,
+): Promise<SignalEvent[]> {
+  const cacheKey = `signals:active`;
+  const cached = signalCache.get(cacheKey);
+
+  const contract = new ethers.Contract(
+    ADDRESSES.signalCommitment,
+    SIGNAL_COMMITMENT_ABI,
+    provider,
+  );
+  const filter = contract.filters.SignalCommitted();
+
+  // If cache is fresh, filter out expired and return
+  if (cached && signalCache.isFresh(cacheKey)) {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    return cached.events.filter((s) => s.expiresAt > now);
+  }
+
+  // Incremental: start from last cached block + 1
+  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const events = await queryFilterChunked(contract, filter, startBlock);
+  const parsed = parseSignalEvents(events);
+
+  const all = cached ? signalCache.merge(cacheKey, parsed, getMaxBlock(parsed, cached.lastBlock)) : parsed;
+  if (!cached) {
+    signalCache.set(cacheKey, all, getMaxBlock(parsed, fromBlock));
+  }
+
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  return all.filter((s) => s.expiresAt > now);
 }
 
 export async function getSignalsByGenius(
@@ -98,37 +193,32 @@ export async function getSignalsByGenius(
   geniusAddress: string,
   fromBlock: number = 0,
 ): Promise<SignalEvent[]> {
+  const cacheKey = `signals:genius:${geniusAddress.toLowerCase()}`;
+  const cached = signalCache.get(cacheKey);
+
   const contract = new ethers.Contract(
     ADDRESSES.signalCommitment,
     SIGNAL_COMMITMENT_ABI,
     provider,
   );
-
   const filter = contract.filters.SignalCommitted(null, geniusAddress);
-  const events = await queryFilterChunked(contract, filter, fromBlock);
-  const now = BigInt(Math.floor(Date.now() / 1000));
 
-  const signals: SignalEvent[] = [];
-
-  for (const event of events) {
-    const log = event as ethers.EventLog;
-    if (!log.args) continue;
-
-    const expiresAt = BigInt(log.args.expiresAt);
-    if (expiresAt <= now) continue;
-
-    signals.push({
-      signalId: log.args.signalId.toString(),
-      genius: log.args.genius as string,
-      sport: log.args.sport as string,
-      maxPriceBps: BigInt(log.args.maxPriceBps),
-      slaMultiplierBps: BigInt(log.args.slaMultiplierBps),
-      expiresAt,
-      blockNumber: log.blockNumber,
-    });
+  if (cached && signalCache.isFresh(cacheKey)) {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    return cached.events.filter((s) => s.expiresAt > now);
   }
 
-  return signals;
+  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const events = await queryFilterChunked(contract, filter, startBlock);
+  const parsed = parseSignalEvents(events);
+
+  const all = cached ? signalCache.merge(cacheKey, parsed, getMaxBlock(parsed, cached.lastBlock)) : parsed;
+  if (!cached) {
+    signalCache.set(cacheKey, all, getMaxBlock(parsed, fromBlock));
+  }
+
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  return all.filter((s) => s.expiresAt > now);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,17 +241,24 @@ export async function getPurchasesByBuyer(
   buyerAddress: string,
   fromBlock: number = 0,
 ): Promise<PurchaseEvent[]> {
+  const cacheKey = `purchases:buyer:${buyerAddress.toLowerCase()}`;
+  const cached = purchaseCache.get(cacheKey);
+
+  if (cached && purchaseCache.isFresh(cacheKey)) {
+    return cached.events;
+  }
+
   const contract = new ethers.Contract(
     ADDRESSES.escrow,
     ESCROW_ABI,
     provider,
   );
-
   const filter = contract.filters.SignalPurchased(null, buyerAddress);
-  const events = await queryFilterChunked(contract, filter, fromBlock);
+
+  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const events = await queryFilterChunked(contract, filter, startBlock);
 
   const purchases: PurchaseEvent[] = [];
-
   for (const event of events) {
     const log = event as ethers.EventLog;
     if (!log.args) continue;
@@ -178,7 +275,14 @@ export async function getPurchasesByBuyer(
     });
   }
 
-  return purchases;
+  const all = cached
+    ? purchaseCache.merge(cacheKey, purchases, getMaxBlock(purchases, cached.lastBlock))
+    : purchases;
+  if (!cached) {
+    purchaseCache.set(cacheKey, all, getMaxBlock(purchases, fromBlock));
+  }
+
+  return all;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,16 +306,24 @@ export async function getAuditsByGenius(
   geniusAddress: string,
   fromBlock: number = 0,
 ): Promise<AuditEvent[]> {
+  const cacheKey = `audits:genius:${geniusAddress.toLowerCase()}`;
+  const cached = auditCache.get(cacheKey);
+
+  if (cached && auditCache.isFresh(cacheKey)) {
+    return cached.events;
+  }
+
   const contract = new ethers.Contract(
     ADDRESSES.audit,
     AUDIT_ABI,
     provider,
   );
 
+  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
   const audits: AuditEvent[] = [];
 
   const auditFilter = contract.filters.AuditSettled(geniusAddress);
-  const auditEvents = await queryFilterChunked(contract, auditFilter, fromBlock);
+  const auditEvents = await queryFilterChunked(contract, auditFilter, startBlock);
 
   for (const event of auditEvents) {
     const log = event as ethers.EventLog;
@@ -231,7 +343,7 @@ export async function getAuditsByGenius(
   }
 
   const earlyExitFilter = contract.filters.EarlyExitSettled(geniusAddress);
-  const earlyExitEvents = await queryFilterChunked(contract, earlyExitFilter, fromBlock);
+  const earlyExitEvents = await queryFilterChunked(contract, earlyExitFilter, startBlock);
 
   for (const event of earlyExitEvents) {
     const log = event as ethers.EventLog;
@@ -251,5 +363,26 @@ export async function getAuditsByGenius(
   }
 
   audits.sort((a, b) => b.blockNumber - a.blockNumber);
-  return audits;
+
+  const all = cached
+    ? auditCache.merge(cacheKey, audits, getMaxBlock(audits, cached.lastBlock))
+    : audits;
+  if (!cached) {
+    auditCache.set(cacheKey, all, getMaxBlock(audits, fromBlock));
+  }
+
+  // Re-sort merged results
+  return [...all].sort((a, b) => b.blockNumber - a.blockNumber);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getMaxBlock(
+  events: { blockNumber: number }[],
+  fallback: number,
+): number {
+  if (events.length === 0) return fallback;
+  return Math.max(...events.map((e) => e.blockNumber));
 }

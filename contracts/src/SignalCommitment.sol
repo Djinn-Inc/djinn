@@ -86,6 +86,9 @@ contract SignalCommitment is Ownable {
     /// @notice Caller is not authorized to update signal status
     error CallerNotAuthorized(address caller);
 
+    /// @notice Invalid state transition
+    error InvalidStatusTransition(uint256 signalId, SignalStatus current, SignalStatus requested);
+
     /// @notice Encrypted blob must not be empty
     error EmptyEncryptedBlob();
 
@@ -176,10 +179,30 @@ contract SignalCommitment is Ownable {
 
     /// @notice Update the status of a signal
     /// @dev Only callable by contracts authorized by the owner (e.g. Escrow, Audit).
+    ///      Enforces a state transition matrix:
+    ///        Active   → Purchased, Voided
+    ///        Purchased → Settled, Voided
+    ///        Settled  → (terminal, no transitions)
+    ///        Voided   → (terminal, no transitions)
     /// @param signalId The signal to update
     /// @param newStatus The new status to set
     function updateStatus(uint256 signalId, SignalStatus newStatus) external onlyAuthorized {
         if (!_exists[signalId]) revert SignalNotFound(signalId);
+
+        SignalStatus current = _signals[signalId].status;
+
+        if (current == SignalStatus.Active) {
+            if (newStatus != SignalStatus.Purchased && newStatus != SignalStatus.Voided) {
+                revert InvalidStatusTransition(signalId, current, newStatus);
+            }
+        } else if (current == SignalStatus.Purchased) {
+            if (newStatus != SignalStatus.Settled && newStatus != SignalStatus.Voided) {
+                revert InvalidStatusTransition(signalId, current, newStatus);
+            }
+        } else {
+            // Settled and Voided are terminal states
+            revert InvalidStatusTransition(signalId, current, newStatus);
+        }
 
         _signals[signalId].status = newStatus;
 

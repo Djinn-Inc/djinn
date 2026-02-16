@@ -91,11 +91,15 @@ async def epoch_loop(
         except asyncio.CancelledError:
             log.info("epoch_loop_cancelled")
             return
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             consecutive_errors += 1
             base = min(12 * (2 ** consecutive_errors), 300)
             backoff = base * (0.5 + random.random())  # jitter: 50-150% of base
-            log.error("epoch_error", error=str(e), consecutive=consecutive_errors, backoff_s=round(backoff, 1), exc_info=True)
+            level = "critical" if consecutive_errors >= 10 else "error"
+            getattr(log, level)("epoch_error", err=str(e), error_type=type(e).__name__,
+                                consecutive=consecutive_errors, backoff_s=round(backoff, 1), exc_info=True)
             await asyncio.sleep(backoff)
             continue
 

@@ -403,6 +403,79 @@ contract CollateralTest is Test {
         col.setAuthorized(address(0xDEAD), true);
     }
 
+    // ─── Tests: slash when deposit is zero ───────────────────────────────
+
+    function test_slash_zeroDeposit_capsToZero() public {
+        // Genius has no deposits — slash should transfer 0 USDC
+        vm.prank(authorizedCaller);
+        col.slash(genius, 1_000e6, recipient);
+
+        assertEq(col.getDeposit(genius), 0);
+        assertEq(usdc.balanceOf(recipient), 0);
+    }
+
+    function test_slash_emitsEventWithCappedAmount() public {
+        _depositAs(genius, 1_000e6);
+
+        // Try to slash 5k from 1k deposit — should emit with capped amount
+        vm.expectEmit(true, false, true, true);
+        emit Collateral.Slashed(genius, 1_000e6, recipient);
+
+        vm.prank(authorizedCaller);
+        col.slash(genius, 5_000e6, recipient);
+    }
+
+    // ─── Fuzz: deposit >= locked invariant ───────────────────────────────
+
+    function testFuzz_depositGeLocked_afterSlash(
+        uint256 depositSeed,
+        uint256 lockSeed,
+        uint256 slashSeed
+    ) public {
+        uint256 depositAmount = bound(depositSeed, 1e6, DEPOSIT_AMOUNT);
+        uint256 lockAmount = bound(lockSeed, 1e6, depositAmount);
+        uint256 slashAmount = bound(slashSeed, 1e6, depositAmount * 2);
+
+        _depositAs(genius, depositAmount);
+
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, lockAmount);
+
+        vm.prank(authorizedCaller);
+        col.slash(genius, slashAmount, recipient);
+
+        // Invariant: deposit >= locked
+        assertGe(col.getDeposit(genius), col.getLocked(genius), "Fuzz: deposit must be >= locked after slash");
+    }
+
+    function testFuzz_depositGeLocked_afterSlashAndRelease(
+        uint256 depositSeed,
+        uint256 lockSeed,
+        uint256 slashSeed
+    ) public {
+        uint256 depositAmount = bound(depositSeed, 2e6, DEPOSIT_AMOUNT);
+        uint256 lockAmount = bound(lockSeed, 1e6, depositAmount);
+        uint256 slashAmount = bound(slashSeed, 1e6, depositAmount * 2);
+
+        _depositAs(genius, depositAmount);
+
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, lockAmount);
+
+        vm.prank(authorizedCaller);
+        col.slash(genius, slashAmount, recipient);
+
+        // Release whatever signal lock remains
+        uint256 signalLock = col.getSignalLock(genius, 1);
+        if (signalLock > 0) {
+            vm.prank(authorizedCaller);
+            col.release(1, genius, signalLock);
+        }
+
+        // Invariant: deposit >= locked
+        assertGe(col.getDeposit(genius), col.getLocked(genius), "Fuzz: deposit must be >= locked after slash+release");
+    }
+
     // ─── Invariant Tests: slash + release accounting ──────────────────────
 
     function test_slash_then_release_accounting() public {

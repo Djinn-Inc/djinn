@@ -53,12 +53,16 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
         except asyncio.CancelledError:
             log.info("bt_sync_loop_cancelled")
             return
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             consecutive_errors += 1
             health.record_bt_failure()
             base = min(60 * (2 ** consecutive_errors), 600)
             backoff = base * (0.5 + random.random())  # jitter: 50-150% of base
-            log.error("bt_sync_error", error=str(e), consecutive=consecutive_errors, backoff_s=round(backoff, 1))
+            level = "critical" if consecutive_errors >= 10 else "error"
+            getattr(log, level)("bt_sync_error", err=str(e), error_type=type(e).__name__,
+                                consecutive=consecutive_errors, backoff_s=round(backoff, 1))
             await asyncio.sleep(backoff)
             continue
 
