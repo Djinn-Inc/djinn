@@ -61,6 +61,12 @@ BT_CONNECTED = Gauge(
     "Whether connected to Bittensor (1=yes, 0=no)",
 )
 
+CIRCUIT_BREAKER_STATE = Gauge(
+    "djinn_miner_circuit_breaker_open",
+    "Whether a circuit breaker is open (1) or closed (0)",
+    ["target"],
+)
+
 
 def metrics_response() -> bytes:
     """Generate Prometheus-compatible metrics text."""

@@ -50,7 +50,9 @@ def create_app(
 ) -> FastAPI:
     """Build the FastAPI application with all routes wired."""
 
-    app = FastAPI(title="Djinn Miner", version="0.1.0")
+    from djinn_miner import __version__
+
+    app = FastAPI(title="Djinn Miner", version=__version__)
 
     # Catch unhandled exceptions — never leak stack traces to clients
     @app.exception_handler(Exception)

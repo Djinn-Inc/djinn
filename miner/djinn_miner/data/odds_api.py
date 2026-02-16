@@ -70,11 +70,23 @@ class CircuitBreaker:
                 raise CircuitOpenError("Circuit half-open — test request in flight")
             self._half_open_in_flight = True
 
+    def _update_gauge(self) -> None:
+        """Update Prometheus gauge for circuit breaker state."""
+        try:
+            from djinn_miner.api.metrics import CIRCUIT_BREAKER_STATE
+
+            CIRCUIT_BREAKER_STATE.labels(target="odds_api").set(
+                1 if self._state == CircuitState.OPEN else 0
+            )
+        except ImportError:
+            pass
+
     def record_success(self) -> None:
         """Record a successful request — reset circuit to CLOSED."""
         self._failures = 0
         self._state = CircuitState.CLOSED
         self._half_open_in_flight = False
+        self._update_gauge()
 
     def record_failure(self) -> None:
         """Record a failed request — trip to OPEN after threshold."""
@@ -88,6 +100,7 @@ class CircuitBreaker:
                 failures=self._failures,
                 recovery_timeout_s=self._recovery_timeout,
             )
+        self._update_gauge()
 
     def reset(self) -> None:
         """Reset the circuit breaker to initial state."""

@@ -92,7 +92,7 @@ class HealthResponse(BaseModel):
     """GET /health — Miner health check."""
 
     status: str
-    version: str = "0.1.0"
+    version: str = "0.1.0"  # Default; overridden by HealthTracker
     uid: int | None = None
     odds_api_connected: bool = False
     bt_connected: bool = False

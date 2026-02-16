@@ -20,7 +20,7 @@ log = structlog.get_logger()
 # ---------------------------------------------------------------------------
 
 
-API_VERSION = "0.1.0"
+from djinn_miner import __version__ as API_VERSION
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",

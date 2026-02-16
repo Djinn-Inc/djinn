@@ -719,3 +719,26 @@ class TestCircuitBreaker:
         result = await c.get_odds("basketball_nba")
         assert len(result) > 0
         assert c._circuit.state == CircuitState.CLOSED
+
+
+class TestCircuitBreakerGauge:
+    def test_gauge_set_on_open(self) -> None:
+        from djinn_miner.api.metrics import CIRCUIT_BREAKER_STATE
+
+        cb = CircuitBreaker(failure_threshold=2)
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        val = CIRCUIT_BREAKER_STATE.labels(target="odds_api")._value.get()
+        assert val == 1
+
+    def test_gauge_reset_on_success(self) -> None:
+        from djinn_miner.api.metrics import CIRCUIT_BREAKER_STATE
+
+        cb = CircuitBreaker(failure_threshold=2)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()
+        assert cb.state == CircuitState.CLOSED
+        val = CIRCUIT_BREAKER_STATE.labels(target="odds_api")._value.get()
+        assert val == 0

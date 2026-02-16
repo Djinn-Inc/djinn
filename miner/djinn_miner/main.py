@@ -15,6 +15,7 @@ import signal
 import structlog
 import uvicorn
 
+from djinn_miner import __version__
 from djinn_miner.logging import configure_logging
 
 configure_logging()
@@ -145,7 +146,7 @@ async def async_main() -> None:
 
     log.info(
         "miner_starting",
-        version="0.1.0",
+        version=__version__,
         host=config.api_host,
         port=config.api_port,
         netuid=config.bt_netuid,

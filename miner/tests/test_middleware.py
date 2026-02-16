@@ -238,3 +238,11 @@ class TestEvictOldestGuard:
         limiter = RateLimiter(capacity=5, rate=1)
         limiter._buckets.clear()
         limiter._evict_oldest()  # Should not raise
+
+
+class TestVersionConsistency:
+    def test_api_version_matches_package(self) -> None:
+        from djinn_miner import __version__
+        from djinn_miner.api.middleware import API_VERSION
+
+        assert API_VERSION == __version__

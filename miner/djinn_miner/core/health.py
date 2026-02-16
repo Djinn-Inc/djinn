@@ -6,6 +6,7 @@ import time
 
 import structlog
 
+from djinn_miner import __version__
 from djinn_miner.api.models import HealthResponse
 
 log = structlog.get_logger()
@@ -87,7 +88,7 @@ class HealthTracker:
         uptime = time.monotonic() - self._start_time
         return HealthResponse(
             status="ok",
-            version="0.1.0",
+            version=__version__,
             uid=self._uid,
             odds_api_connected=self._odds_api_connected,
             bt_connected=self._bt_connected,
