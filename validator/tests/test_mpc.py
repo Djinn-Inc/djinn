@@ -218,3 +218,24 @@ class TestSecureMPCEdgeCases:
         shares = generate_signal_index_shares(5)
         result = secure_check_availability(shares, {5}, threshold=7)
         assert result.participating_validators == len(shares)
+
+
+class TestBeaverTripleBoundsCheck:
+    """generate_beaver_triples must reject invalid n/k combinations."""
+
+    def test_k_greater_than_n_raises(self) -> None:
+        with pytest.raises(ValueError, match="threshold k=8 exceeds number of shares n=5"):
+            generate_beaver_triples(1, n=5, k=8)
+
+    def test_n_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="n and k must be >= 1"):
+            generate_beaver_triples(1, n=0, k=0)
+
+    def test_k_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="n and k must be >= 1"):
+            generate_beaver_triples(1, n=5, k=0)
+
+    def test_valid_parameters_succeeds(self) -> None:
+        triples = generate_beaver_triples(1, n=5, k=3)
+        assert len(triples) == 1
+        assert len(triples[0].a_shares) == 5

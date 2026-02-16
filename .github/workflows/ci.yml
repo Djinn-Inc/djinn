@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -x -q --tb=short
+      - run: python -m pytest -x -q --tb=short --cov=djinn_validator --cov-report=term-missing --cov-fail-under=80
 
   miner:
     name: Miner Tests
@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -x -q --tb=short
+      - run: python -m pytest -x -q --tb=short --cov=djinn_miner --cov-report=term-missing --cov-fail-under=80
 
   web:
     name: Web Tests
@@ -71,7 +71,7 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm vitest run
+      - run: pnpm vitest run --coverage
 
   docker:
     name: Docker Build (${{ matrix.service }})

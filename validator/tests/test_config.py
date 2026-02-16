@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from djinn_validator.config import Config
+from djinn_validator.config import Config, _float_env
 
 
 def _config(**overrides: object) -> Config:
@@ -225,3 +225,35 @@ class TestConfigAddressValidation:
         )
         with pytest.raises(ValueError, match="not a valid Ethereum address"):
             config.validate()
+
+
+class TestFloatEnv:
+    def test_float_env_valid(self) -> None:
+        import os
+        os.environ["_TEST_FLOAT"] = "3.14"
+        assert _float_env("_TEST_FLOAT", "1.0") == 3.14
+        del os.environ["_TEST_FLOAT"]
+
+    def test_float_env_default(self) -> None:
+        assert _float_env("_TEST_FLOAT_MISSING", "2.5") == 2.5
+
+    def test_float_env_malformed_raises(self) -> None:
+        import os
+        os.environ["_TEST_FLOAT_BAD"] = "not-a-number"
+        with pytest.raises(ValueError, match="Invalid float"):
+            _float_env("_TEST_FLOAT_BAD", "1.0")
+        del os.environ["_TEST_FLOAT_BAD"]
+
+
+class TestBaseRpcUrls:
+    def test_single_url(self) -> None:
+        config = _config(base_rpc_url="https://mainnet.base.org")
+        assert config.base_rpc_urls == ["https://mainnet.base.org"]
+
+    def test_multiple_urls(self) -> None:
+        config = _config(base_rpc_url="https://rpc1.base.org, https://rpc2.base.org")
+        assert config.base_rpc_urls == ["https://rpc1.base.org", "https://rpc2.base.org"]
+
+    def test_empty_segments_stripped(self) -> None:
+        config = _config(base_rpc_url="https://rpc1.base.org,,, https://rpc2.base.org,")
+        assert config.base_rpc_urls == ["https://rpc1.base.org", "https://rpc2.base.org"]

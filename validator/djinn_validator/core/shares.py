@@ -7,6 +7,7 @@ share store with SQLite persistence.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from pathlib import Path
 import structlog
 
 from djinn_validator.utils.crypto import Share
+
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 
 log = structlog.get_logger()
 
@@ -47,6 +50,7 @@ class ShareStore:
         else:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA wal_autocheckpoint=1000")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._create_tables()
 
@@ -64,8 +68,13 @@ class ShareStore:
                 time.sleep(delay)
         raise RuntimeError("unreachable")
 
+    SCHEMA_VERSION = 2
+
     def _create_tables(self) -> None:
         self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS shares (
                 signal_id TEXT PRIMARY KEY,
                 genius_address TEXT NOT NULL,
@@ -83,6 +92,39 @@ class ShareStore:
             );
         """)
         self._conn.commit()
+        self._migrate()
+
+    def _get_schema_version(self) -> int:
+        row = self._conn.execute(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+        ).fetchone()
+        return row[0] if row else 0
+
+    def _set_schema_version(self, version: int) -> None:
+        self._conn.execute("DELETE FROM schema_version")
+        self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+        self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Run schema migrations up to SCHEMA_VERSION."""
+        current = self._get_schema_version()
+        if current >= self.SCHEMA_VERSION:
+            return
+
+        if current < 1:
+            # v1: initial schema (tables already created above)
+            log.info("schema_migration", from_version=current, to_version=1)
+
+        if current < 2:
+            # v2: add index on releases.signal_id for faster lookups
+            log.info("schema_migration", from_version=max(current, 1), to_version=2)
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id)"
+            )
+            self._conn.commit()
+
+        self._set_schema_version(self.SCHEMA_VERSION)
+        log.info("schema_version_set", version=self.SCHEMA_VERSION)
 
     def store(
         self,
@@ -92,8 +134,8 @@ class ShareStore:
         encrypted_key_share: bytes,
     ) -> None:
         """Store a new key share for a signal."""
-        if not signal_id or not signal_id.strip():
-            raise ValueError("signal_id must not be empty")
+        if not _SAFE_ID_RE.match(signal_id):
+            raise ValueError(f"Invalid signal_id: must match [a-zA-Z0-9_-]{{1,256}}")
         if not genius_address or not genius_address.strip():
             raise ValueError("genius_address must not be empty")
         if not encrypted_key_share:
@@ -173,7 +215,7 @@ class ShareStore:
             ).fetchone()
             if existing:
                 self._conn.execute("COMMIT")
-                log.info("share_already_released", signal_id=signal_id, buyer=buyer_address)
+                log.warning("share_already_released", signal_id=signal_id, buyer=buyer_address)
                 return encrypted_key_share
 
             self._conn.execute(

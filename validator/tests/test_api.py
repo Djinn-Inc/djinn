@@ -449,7 +449,7 @@ class TestMPCInitEndpoint:
             "available_indices": [1, 2, 3],
             "coordinator_x": 1,
             "participant_xs": [2, 3, 4],
-            "threshold": 7,
+            "threshold": 3,
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -463,7 +463,7 @@ class TestMPCInitEndpoint:
             "available_indices": [1, 2],
             "coordinator_x": 1,
             "participant_xs": [2, 3],
-            "threshold": 7,
+            "threshold": 2,
         }
         client.post("/v1/mpc/init", json=body)
         resp = client.post("/v1/mpc/init", json=body)
@@ -478,7 +478,7 @@ class TestMPCInitEndpoint:
             "available_indices": [1, 2, 3],
             "coordinator_x": 1,
             "participant_xs": [2, 3],
-            "threshold": 7,
+            "threshold": 2,
         })
         resp = client.get("/v1/mpc/mpc-003/status")
         assert resp.status_code == 200
@@ -496,7 +496,7 @@ class TestMPCResultFlow:
             "available_indices": [1, 2],
             "coordinator_x": 1,
             "participant_xs": [2, 3],
-            "threshold": 7,
+            "threshold": 2,
         })
         resp = client.post("/v1/mpc/result", json={
             "session_id": "mpc-res-001",

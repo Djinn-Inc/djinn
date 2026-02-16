@@ -145,6 +145,48 @@ class TestPurchaseOrchestrator:
         assert result is None
 
 
+class TestStaleCleanup:
+    """Purchases stuck in transient states should be failed after timeout."""
+
+    def setup_method(self) -> None:
+        self.store = ShareStore()
+        self.orch = PurchaseOrchestrator(self.store)
+
+    def test_stale_checking_availability_gets_failed(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        assert req.status == PurchaseStatus.CHECKING_AVAILABILITY
+        # Simulate being stuck for a long time
+        req.created_at = 0.0
+        failed = self.orch.cleanup_stale(stale_timeout=1)
+        assert failed == 1
+        assert req.status == PurchaseStatus.FAILED
+
+    def test_stale_mpc_in_progress_gets_failed(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        req.status = PurchaseStatus.MPC_IN_PROGRESS
+        req.created_at = 0.0
+        failed = self.orch.cleanup_stale(stale_timeout=1)
+        assert failed == 1
+        assert req.status == PurchaseStatus.FAILED
+
+    def test_recent_transient_not_failed(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        self.orch.initiate("sig-1", "0xBuyer", "DK")
+        # created_at defaults to now — not stale
+        failed = self.orch.cleanup_stale(stale_timeout=300)
+        assert failed == 0
+
+    def test_terminal_state_not_touched(self) -> None:
+        self.store.store("sig-1", "0xG", Share(x=1, y=1), b"key")
+        req = self.orch.initiate("sig-1", "0xBuyer", "DK")
+        req.status = PurchaseStatus.SHARES_RELEASED
+        req.created_at = 0.0
+        failed = self.orch.cleanup_stale(stale_timeout=1)
+        assert failed == 0  # Terminal states are not affected
+
+
 class TestSignalIdValidation:
     """Signal IDs must not contain ':' or other special chars."""
 

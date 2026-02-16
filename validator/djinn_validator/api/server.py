@@ -209,6 +209,7 @@ def create_app(
 
         # Clean up expired MPC sessions and old purchases
         _mpc.cleanup_expired()
+        purchase_orch.cleanup_stale()
         purchase_orch.cleanup_completed()
 
         # Check we hold a share for this signal
@@ -420,6 +421,14 @@ def create_app(
         # Bittensor connectivity
         checks["bt_connected"] = neuron is not None and neuron.uid is not None
 
+        # Database accessibility
+        try:
+            _ = share_store.count
+            checks["database"] = True
+        except Exception as e:
+            log.warning("readiness_check_failed", check="database", error=str(e))
+            checks["database"] = False
+
         ready = all(checks.values())
         return ReadinessResponse(ready=ready, checks=checks)
 
@@ -507,6 +516,12 @@ def create_app(
             participating_validators=req.participating_validators,
         )
         if not _mpc.set_result(req.session_id, result):
+            log.warning(
+                "mpc_result_rejected",
+                session_id=req.session_id,
+                signal_id=req.signal_id,
+                reason="session not found or result already set",
+            )
             return MPCResultResponse(
                 session_id=req.session_id,
                 acknowledged=False,
@@ -527,6 +542,7 @@ def create_app(
     @app.get("/v1/mpc/{session_id}/status", response_model=MPCSessionStatusResponse)
     async def mpc_status(session_id: str) -> MPCSessionStatusResponse:
         """Check the status of an MPC session."""
+        _validate_signal_id_path(session_id)
         session = _mpc.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="MPC session not found")

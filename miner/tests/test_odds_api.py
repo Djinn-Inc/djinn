@@ -8,7 +8,15 @@ import time
 import httpx
 import pytest
 
-from djinn_miner.data.odds_api import BookmakerOdds, CachedOdds, CachedError, OddsApiClient
+from djinn_miner.data.odds_api import (
+    BookmakerOdds,
+    CachedOdds,
+    CachedError,
+    CircuitBreaker,
+    CircuitOpenError,
+    CircuitState,
+    OddsApiClient,
+)
 
 
 @pytest.fixture
@@ -585,3 +593,129 @@ class TestErrorCaching:
         with pytest.raises(Exception):
             await c.get_odds("basketball_nba")
         assert call_count == first_call_count
+
+
+class TestCircuitBreaker:
+    """Tests for the CircuitBreaker standalone and integration with OddsApiClient."""
+
+    def test_initial_state_is_closed(self) -> None:
+        cb = CircuitBreaker()
+        assert cb.state == CircuitState.CLOSED
+
+    def test_check_passes_when_closed(self) -> None:
+        cb = CircuitBreaker()
+        cb.check()  # Should not raise
+
+    def test_trips_after_threshold(self) -> None:
+        cb = CircuitBreaker(failure_threshold=3)
+        for _ in range(3):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+
+    def test_open_circuit_rejects_requests(self) -> None:
+        cb = CircuitBreaker(failure_threshold=2)
+        cb.record_failure()
+        cb.record_failure()
+        with pytest.raises(CircuitOpenError):
+            cb.check()
+
+    def test_success_resets_failure_count(self) -> None:
+        cb = CircuitBreaker(failure_threshold=3)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()
+        assert cb.state == CircuitState.CLOSED
+        cb.record_failure()  # Still needs 3 to trip
+        assert cb.state == CircuitState.CLOSED
+
+    def test_half_open_after_recovery_timeout(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01)
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        time.sleep(0.02)
+        assert cb.state == CircuitState.HALF_OPEN
+
+    def test_half_open_allows_one_request(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01)
+        cb.record_failure()
+        time.sleep(0.02)
+        cb.check()  # First request should pass
+        # Second request should fail (test request in flight)
+        with pytest.raises(CircuitOpenError):
+            cb.check()
+
+    def test_half_open_success_closes_circuit(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01)
+        cb.record_failure()
+        time.sleep(0.02)
+        cb.check()  # Allow test request
+        cb.record_success()
+        assert cb.state == CircuitState.CLOSED
+
+    def test_half_open_failure_reopens_circuit(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01)
+        cb.record_failure()
+        time.sleep(0.02)
+        cb.check()  # Allow test request
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+
+    def test_reset(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1)
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        cb.reset()
+        assert cb.state == CircuitState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_integration_trips_on_repeated_failures(self) -> None:
+        """OddsApiClient circuit breaker should trip after repeated 5xx errors."""
+        mock_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(503, json={"error": "down"})
+            )
+        )
+        c = OddsApiClient(
+            api_key="test",
+            http_client=mock_http,
+            max_retries=0,
+            circuit_failure_threshold=3,
+            circuit_recovery_timeout=60.0,
+        )
+
+        # First 3 failures should go through to API (each trips failure count)
+        for _ in range(3):
+            c._circuit.reset()  # Reset between calls since error cache would prevent retries
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.get_odds(f"basketball_nba_{_}")  # Different cache keys
+
+        # Now circuit should be open — next request rejected immediately
+        c._circuit.record_failure()
+        c._circuit.record_failure()
+        c._circuit.record_failure()
+        with pytest.raises(CircuitOpenError):
+            await c.get_odds("basketball_nba_final")
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_success_resets(self, mock_odds_response: list[dict]) -> None:
+        """Successful responses should reset the circuit breaker."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return httpx.Response(503, json={"error": "down"})
+            return httpx.Response(200, json=mock_odds_response)
+
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c = OddsApiClient(
+            api_key="test",
+            http_client=mock_http,
+            max_retries=3,
+            circuit_failure_threshold=5,
+        )
+
+        result = await c.get_odds("basketball_nba")
+        assert len(result) > 0
+        assert c._circuit.state == CircuitState.CLOSED

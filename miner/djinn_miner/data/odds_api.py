@@ -2,11 +2,13 @@
 
 Queries api.the-odds-api.com/v4/sports/{sport}/odds to fetch live odds
 from multiple bookmakers. Caches responses for a configurable TTL.
+Includes a circuit breaker to prevent retry storms during prolonged outages.
 """
 
 from __future__ import annotations
 
 import asyncio
+import enum
 import math
 import random
 import time
@@ -21,6 +23,81 @@ if TYPE_CHECKING:
     from djinn_miner.core.proof import SessionCapture
 
 log = structlog.get_logger()
+
+
+class CircuitState(enum.Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class CircuitBreaker:
+    """Simple circuit breaker to protect against prolonged external API outages.
+
+    - CLOSED: normal operation, requests pass through
+    - OPEN: requests immediately fail with CircuitOpenError
+    - HALF_OPEN: one request allowed through to test recovery
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+    ) -> None:
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._state = CircuitState.CLOSED
+        self._failures = 0
+        self._opened_at: float = 0.0
+        self._half_open_in_flight = False
+
+    @property
+    def state(self) -> CircuitState:
+        if self._state == CircuitState.OPEN:
+            if time.monotonic() - self._opened_at >= self._recovery_timeout:
+                return CircuitState.HALF_OPEN
+        return self._state
+
+    def check(self) -> None:
+        """Check if a request is allowed. Raises CircuitOpenError if OPEN."""
+        current = self.state
+        if current == CircuitState.OPEN:
+            raise CircuitOpenError(
+                f"Circuit open — {self._recovery_timeout - (time.monotonic() - self._opened_at):.0f}s until retry"
+            )
+        if current == CircuitState.HALF_OPEN:
+            if self._half_open_in_flight:
+                raise CircuitOpenError("Circuit half-open — test request in flight")
+            self._half_open_in_flight = True
+
+    def record_success(self) -> None:
+        """Record a successful request — reset circuit to CLOSED."""
+        self._failures = 0
+        self._state = CircuitState.CLOSED
+        self._half_open_in_flight = False
+
+    def record_failure(self) -> None:
+        """Record a failed request — trip to OPEN after threshold."""
+        self._half_open_in_flight = False
+        self._failures += 1
+        if self._failures >= self._failure_threshold:
+            self._state = CircuitState.OPEN
+            self._opened_at = time.monotonic()
+            log.warning(
+                "circuit_breaker_opened",
+                failures=self._failures,
+                recovery_timeout_s=self._recovery_timeout,
+            )
+
+    def reset(self) -> None:
+        """Reset the circuit breaker to initial state."""
+        self._state = CircuitState.CLOSED
+        self._failures = 0
+        self._half_open_in_flight = False
+
+
+class CircuitOpenError(Exception):
+    """Raised when the circuit breaker is open and rejecting requests."""
 
 # Supported sports mapped to The Odds API sport keys
 SUPPORTED_SPORTS: dict[str, str] = {
@@ -80,6 +157,8 @@ class OddsApiClient:
         http_client: httpx.AsyncClient | None = None,
         session_capture: SessionCapture | None = None,
         max_retries: int = MAX_RETRIES,
+        circuit_failure_threshold: int = 5,
+        circuit_recovery_timeout: float = 60.0,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -91,6 +170,10 @@ class OddsApiClient:
         self._owns_client = http_client is None
         self._session_capture = session_capture
         self._max_retries = max_retries
+        self._circuit = CircuitBreaker(
+            failure_threshold=circuit_failure_threshold,
+            recovery_timeout=circuit_recovery_timeout,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client if we own it."""
@@ -117,17 +200,21 @@ class OddsApiClient:
         params: dict[str, str],
         sport: str,
     ) -> httpx.Response:
-        """Execute an HTTP GET with exponential backoff retry.
+        """Execute an HTTP GET with exponential backoff retry and circuit breaker.
 
         Retries on network errors and 5xx responses. Does NOT retry 4xx
         (client errors like 401/429 won't fix themselves).
+        Circuit breaker trips after repeated failures to prevent retry storms.
         """
+        self._circuit.check()  # Raises CircuitOpenError if circuit is open
+
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
                 resp = await self._client.get(url, params=params)
                 if resp.status_code < 500:
                     resp.raise_for_status()
+                    self._circuit.record_success()
                     return resp
                 # 5xx: retry
                 log.warning(
@@ -142,6 +229,7 @@ class OddsApiClient:
                     response=resp,
                 )
             except httpx.HTTPStatusError:
+                self._circuit.record_failure()
                 raise  # 4xx — don't retry
             except httpx.RequestError as e:
                 log.warning(
@@ -159,14 +247,18 @@ class OddsApiClient:
                 )
                 await asyncio.sleep(delay)
 
+        self._circuit.record_failure()
         log.error(
             "odds_api_retries_exhausted",
             sport=sport,
             url=url,
             attempts=self._max_retries + 1,
             last_error=str(last_exc),
+            circuit_state=self._circuit.state.value,
         )
-        raise last_exc  # type: ignore[misc]
+        if last_exc is None:
+            raise httpx.RequestError(f"All {self._max_retries + 1} retries exhausted for {url}")
+        raise last_exc
 
     def _resolve_sport_key(self, sport: str) -> str:
         """Map an internal sport key to The Odds API sport key."""

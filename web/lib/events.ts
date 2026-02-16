@@ -20,6 +20,12 @@ const BLOCK_CHUNK_SIZE = 10_000;
 /** Cache TTL in milliseconds (30 seconds). */
 const CACHE_TTL_MS = 30_000;
 
+/** Maximum number of cache keys before evicting oldest entry. */
+const MAX_CACHE_KEYS = 100;
+
+/** Maximum events per cache entry before pruning oldest. */
+const MAX_EVENTS_PER_KEY = 5_000;
+
 // ---------------------------------------------------------------------------
 // Event cache — avoids re-scanning historical blocks
 // ---------------------------------------------------------------------------
@@ -44,7 +50,23 @@ class EventCache<T extends { blockNumber: number }> {
   }
 
   set(key: string, events: T[], lastBlock: number): void {
-    this.cache.set(key, { events, lastBlock, updatedAt: Date.now() });
+    // Evict oldest cache key if at capacity
+    if (!this.cache.has(key) && this.cache.size >= MAX_CACHE_KEYS) {
+      let oldestKey: string | null = null;
+      let oldestTime = Infinity;
+      for (const [k, v] of this.cache) {
+        if (v.updatedAt < oldestTime) {
+          oldestTime = v.updatedAt;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+    // Cap events per key to prevent unbounded growth
+    const capped = events.length > MAX_EVENTS_PER_KEY
+      ? events.slice(-MAX_EVENTS_PER_KEY)
+      : events;
+    this.cache.set(key, { events: capped, lastBlock, updatedAt: Date.now() });
   }
 
   /** Merge new events into existing cache, deduplicating by blockNumber + index. */

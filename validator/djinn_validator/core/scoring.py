@@ -181,12 +181,19 @@ class MinerScorer:
         spread = max_lat - min_lat
 
         if spread == 0:
-            return {uid: 1.0 for uid in avg_latencies}
+            return {m.uid: 1.0 for m in miners}
 
-        return {
+        # Miners with latencies get normalized scores; miners without queries
+        # get the median score so speed doesn't unfairly penalize them.
+        scores = {
             uid: 1.0 - (lat - min_lat) / spread
             for uid, lat in avg_latencies.items()
         }
+        median = sorted(scores.values())[len(scores) // 2] if scores else 1.0
+        for m in miners:
+            if m.uid not in scores:
+                scores[m.uid] = median
+        return scores
 
     @staticmethod
     def _normalize(raw: dict[int, float]) -> dict[int, float]:

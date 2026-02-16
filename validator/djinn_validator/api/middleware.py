@@ -226,16 +226,20 @@ def verify_hotkey_signature(
 _NONCE_CACHE: dict[str, float] = {}
 _NONCE_CACHE_MAX = 10_000
 _NONCE_TTL = 120  # 2x the timestamp window
+_NONCE_LAST_CLEANUP = 0.0
+_NONCE_CLEANUP_INTERVAL = 60.0  # Evict stale nonces at most once per minute
 
 
 def _check_nonce(nonce: str) -> bool:
     """Return True if nonce is fresh (not seen before), False if replayed."""
+    global _NONCE_LAST_CLEANUP
     now = time.time()
-    # Evict old nonces periodically
-    if len(_NONCE_CACHE) > _NONCE_CACHE_MAX:
+    # Evict stale nonces periodically (every 60s) or when cache overflows
+    if now - _NONCE_LAST_CLEANUP > _NONCE_CLEANUP_INTERVAL or len(_NONCE_CACHE) > _NONCE_CACHE_MAX:
         stale = [k for k, ts in _NONCE_CACHE.items() if now - ts > _NONCE_TTL]
         for k in stale:
             del _NONCE_CACHE[k]
+        _NONCE_LAST_CLEANUP = now
     if nonce in _NONCE_CACHE:
         return False
     _NONCE_CACHE[nonce] = now

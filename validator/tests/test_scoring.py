@@ -199,3 +199,29 @@ class TestMinerScorer:
         assert len(result) == 2
         for uid in range(2):
             assert result[uid] == pytest.approx(0.5)
+
+    def test_speed_scores_median_for_unqueried_miners(self) -> None:
+        """Miners without latencies get median speed score, not zero."""
+        scorer = MinerScorer()
+        # Miners 0-2 have latencies; miner 3 has none
+        for uid, lat in [(0, 0.1), (1, 0.5), (2, 1.0)]:
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_query(correct=True, latency=lat, proof_submitted=True)
+        scorer.get_or_create(3, "h3")  # No queries, no latencies
+        scores = scorer._normalize_speed(list(scorer._miners.values()))
+        assert 3 in scores, "Unqueried miner must be in speed scores"
+        assert scores[3] > 0.0, "Unqueried miner must not be penalized to zero"
+        # Median of {1.0, ~0.56, 0.0} = ~0.56
+        assert 0.0 < scores[3] < 1.0
+
+    def test_speed_scores_all_same_latency_includes_all(self) -> None:
+        """When all latencies are equal, all miners (including unqueried) get 1.0."""
+        scorer = MinerScorer()
+        for uid in range(3):
+            m = scorer.get_or_create(uid, f"h{uid}")
+            m.record_query(correct=True, latency=0.5, proof_submitted=True)
+        scorer.get_or_create(3, "h3")  # No latencies
+        scores = scorer._normalize_speed(list(scorer._miners.values()))
+        assert len(scores) == 4
+        for uid in range(4):
+            assert scores[uid] == 1.0

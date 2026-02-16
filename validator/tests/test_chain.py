@@ -241,5 +241,108 @@ class TestContractCallErrors:
         await client.close()
 
 
+class TestRpcFailover:
+    """Verify automatic RPC failover when endpoints become unreachable."""
+
+    def test_single_url_init(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url="http://localhost:8545")
+            assert c.rpc_url_count == 1
+            assert c.rpc_url == "http://localhost:8545"
+
+    def test_comma_separated_urls(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url="http://rpc1:8545 , http://rpc2:8545")
+            assert c.rpc_url_count == 2
+            assert c.rpc_url == "http://rpc1:8545"
+
+    def test_list_urls(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url=["http://rpc1:8545", "http://rpc2:8545"])
+            assert c.rpc_url_count == 2
+
+    def test_rotate_with_single_url_returns_false(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url="http://rpc1:8545")
+            assert c._rotate_rpc() is False
+
+    def test_rotate_switches_url(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url=["http://rpc1:8545", "http://rpc2:8545"])
+            assert c.rpc_url == "http://rpc1:8545"
+            assert c._rotate_rpc() is True
+            assert c.rpc_url == "http://rpc2:8545"
+
+    @pytest.mark.asyncio
+    async def test_failover_on_connection_error(self) -> None:
+        """Contract call should failover to next RPC on ConnectionError."""
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            mock_w3.to_checksum_address = lambda x: x
+            mock_contract = MagicMock()
+            mock_w3.eth.contract.return_value = mock_contract
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+
+            c = ChainClient(
+                rpc_url=["http://rpc1:8545", "http://rpc2:8545"],
+                signal_address="0x2222222222222222222222222222222222222222",
+            )
+
+            call_count = 0
+            async def _failing_then_ok():
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise ConnectionError("rpc1 down")
+                return True
+
+            c._signal.functions.isActive.return_value.call = _failing_then_ok
+            result = await c.is_signal_active(1)
+            assert result is True
+            assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_is_connected_tries_all_endpoints(self) -> None:
+        """is_connected should try all endpoints before returning False."""
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+
+            c = ChainClient(rpc_url=["http://rpc1:8545", "http://rpc2:8545"])
+
+            async def _raise():
+                raise ConnectionError("down")
+
+            type(c._w3.eth).block_number = property(lambda self: _raise())
+            result = await c.is_connected()
+            assert result is False
+
+    def test_empty_url_fallback(self) -> None:
+        with patch("djinn_validator.chain.contracts.AsyncWeb3") as MockW3:
+            mock_w3 = MagicMock()
+            MockW3.return_value = mock_w3
+            MockW3.AsyncHTTPProvider = MagicMock()
+            c = ChainClient(rpc_url="")
+            assert c.rpc_url_count == 1
+            assert "base.org" in c.rpc_url
+
+
 async def _async_value(val: int) -> int:
     return val

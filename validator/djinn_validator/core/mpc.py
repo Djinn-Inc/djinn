@@ -106,6 +106,10 @@ def generate_beaver_triples(
         k: Reconstruction threshold.
         x_coords: Specific x-coordinates for shares. If None, uses 1..n.
     """
+    if k > n:
+        raise ValueError(f"threshold k={k} exceeds number of shares n={n}")
+    if n < 1 or k < 1:
+        raise ValueError(f"n and k must be >= 1, got n={n}, k={k}")
     if x_coords is None:
         x_coords = list(range(1, n + 1))
 

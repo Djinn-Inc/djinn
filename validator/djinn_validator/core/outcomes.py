@@ -391,7 +391,7 @@ class OutcomeAttestor:
             "eventIds": event_id,
         }
 
-        last_error: Exception | None = None
+        last_error: Exception = Exception("all retries exhausted")
         for attempt in range(3):
             try:
                 resp = await self._client.get(url, params=params)

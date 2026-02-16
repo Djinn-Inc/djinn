@@ -4,11 +4,13 @@ Provides typed wrappers around contract calls used by the validator:
 - Escrow.purchase() — gate share release on payment
 - SignalCommitment.getSignal() — read signal metadata
 - Account.recordOutcome() — write attested outcomes
+
+Supports multiple RPC URLs with automatic failover on connection errors.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import structlog
 from web3 import AsyncWeb3
@@ -84,29 +86,52 @@ ACCOUNT_ABI = [
     },
 ]
 
+# Connection-type errors that indicate the RPC endpoint is unreachable
+_FAILOVER_ERRORS = (ConnectionError, OSError, TimeoutError)
+
 
 class ChainClient:
-    """Async client for interacting with Djinn contracts on Base."""
+    """Async client for interacting with Djinn contracts on Base.
+
+    Supports multiple RPC URLs with automatic failover. Pass a comma-separated
+    string or a list of URLs. On connection failure, the client rotates to the
+    next available RPC endpoint and retries.
+    """
 
     def __init__(
         self,
-        rpc_url: str,
+        rpc_url: str | list[str],
         escrow_address: str = "",
         signal_address: str = "",
         account_address: str = "",
     ) -> None:
-        self._w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(
-            rpc_url,
+        if isinstance(rpc_url, str):
+            self._rpc_urls = [u.strip() for u in rpc_url.split(",") if u.strip()]
+        else:
+            self._rpc_urls = list(rpc_url)
+        if not self._rpc_urls:
+            self._rpc_urls = ["https://mainnet.base.org"]
+        self._rpc_index = 0
+        self._escrow_address = escrow_address
+        self._signal_address = signal_address
+        self._account_address = account_address
+        self._w3 = self._create_provider(self._rpc_urls[0])
+        self._setup_contracts()
+
+    def _create_provider(self, url: str) -> AsyncWeb3:
+        return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(
+            url,
             request_kwargs={"timeout": 30},
         ))
+
+    def _setup_contracts(self) -> None:
         self._escrow: AsyncContract | None = None
         self._signal: AsyncContract | None = None
         self._account: AsyncContract | None = None
-
         for label, addr, abi, attr in [
-            ("escrow", escrow_address, ESCROW_ABI, "_escrow"),
-            ("signal", signal_address, SIGNAL_COMMITMENT_ABI, "_signal"),
-            ("account", account_address, ACCOUNT_ABI, "_account"),
+            ("escrow", self._escrow_address, ESCROW_ABI, "_escrow"),
+            ("signal", self._signal_address, SIGNAL_COMMITMENT_ABI, "_signal"),
+            ("account", self._account_address, ACCOUNT_ABI, "_account"),
         ]:
             if addr:
                 try:
@@ -116,6 +141,41 @@ class ChainClient:
                     ))
                 except ValueError:
                     log.error("invalid_contract_address", contract=label, address=addr)
+
+    def _rotate_rpc(self) -> bool:
+        """Switch to the next RPC URL. Returns True if a different URL was selected."""
+        if len(self._rpc_urls) <= 1:
+            return False
+        old_index = self._rpc_index
+        self._rpc_index = (self._rpc_index + 1) % len(self._rpc_urls)
+        if self._rpc_index == old_index:
+            return False
+        new_url = self._rpc_urls[self._rpc_index]
+        log.warning("rpc_failover", new_url=new_url, old_index=old_index, new_index=self._rpc_index)
+        self._w3 = self._create_provider(new_url)
+        self._setup_contracts()
+        return True
+
+    async def _with_failover(self, make_call: Callable[[], Awaitable[Any]]) -> Any:
+        """Execute a contract call with RPC failover.
+
+        The make_call callable is re-invoked after each rotation so it picks up
+        the freshly-created contract references.
+        """
+        tried = 0
+        total = len(self._rpc_urls)
+        last_exc: Exception | None = None
+        while tried < total:
+            try:
+                return await make_call()
+            except _FAILOVER_ERRORS as e:
+                last_exc = e
+                tried += 1
+                if tried < total and self._rotate_rpc():
+                    log.warning("rpc_call_failed_retrying", err=str(e), tried=tried)
+                    continue
+                raise
+        raise last_exc or ConnectionError("All RPC endpoints exhausted")
 
     async def is_signal_active(self, signal_id: int) -> bool:
         """Check if a signal is still active on-chain.
@@ -127,9 +187,11 @@ class ChainClient:
             log.warning("signal_contract_not_configured")
             return True  # Permissive in dev mode (no contract)
         try:
-            return await self._signal.functions.isActive(signal_id).call()
+            return await self._with_failover(
+                lambda: self._signal.functions.isActive(signal_id).call()  # type: ignore[union-attr]
+            )
         except Exception as e:
-            log.error("is_signal_active_failed", signal_id=signal_id, error=str(e))
+            log.error("is_signal_active_failed", signal_id=signal_id, err=str(e))
             return False  # Fail-safe: don't release shares when chain is unreachable
 
     async def get_signal(self, signal_id: int) -> dict[str, Any]:
@@ -137,7 +199,9 @@ class ChainClient:
         if self._signal is None:
             return {}
         try:
-            result = await self._signal.functions.getSignal(signal_id).call()
+            result = await self._with_failover(
+                lambda: self._signal.functions.getSignal(signal_id).call()  # type: ignore[union-attr]
+            )
             return {
                 "genius": result[0],
                 "commitHash": result[1],
@@ -148,7 +212,7 @@ class ChainClient:
                 "timestamp": result[6],
             }
         except Exception as e:
-            log.error("get_signal_failed", signal_id=signal_id, error=str(e))
+            log.error("get_signal_failed", signal_id=signal_id, err=str(e))
             return {}
 
     async def verify_purchase(self, signal_id: int, buyer: str) -> dict[str, Any]:
@@ -162,16 +226,18 @@ class ChainClient:
             log.error("invalid_buyer_address", buyer=buyer)
             return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
         try:
-            result = await self._escrow.functions.purchases(
-                signal_id, buyer_addr,
-            ).call()
+            result = await self._with_failover(
+                lambda: self._escrow.functions.purchases(  # type: ignore[union-attr]
+                    signal_id, buyer_addr,
+                ).call()
+            )
             return {
                 "notional": result[0],
                 "pricePaid": result[1],
                 "sportsbook": result[2],
             }
         except Exception as e:
-            log.error("verify_purchase_failed", signal_id=signal_id, buyer=buyer, error=str(e))
+            log.error("verify_purchase_failed", signal_id=signal_id, buyer=buyer, err=str(e))
             return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
 
     async def is_audit_ready(self, genius: str, idiot: str) -> bool:
@@ -185,11 +251,13 @@ class ChainClient:
             log.error("invalid_address_for_audit", genius=genius, idiot=idiot)
             return False
         try:
-            return await self._account.functions.isAuditReady(
-                genius_addr, idiot_addr,
-            ).call()
+            return await self._with_failover(
+                lambda: self._account.functions.isAuditReady(  # type: ignore[union-attr]
+                    genius_addr, idiot_addr,
+                ).call()
+            )
         except Exception as e:
-            log.error("is_audit_ready_failed", genius=genius, idiot=idiot, error=str(e))
+            log.error("is_audit_ready_failed", genius=genius, idiot=idiot, err=str(e))
             return False
 
     async def close(self) -> None:
@@ -205,13 +273,28 @@ class ChainClient:
             except asyncio.TimeoutError:
                 log.warning("chain_client_close_timeout")
             except Exception as e:
-                log.warning("chain_client_close_error", error=str(e))
+                log.warning("chain_client_close_error", err=str(e))
 
     async def is_connected(self) -> bool:
-        """Check Base chain RPC connectivity."""
-        try:
-            await self._w3.eth.block_number
-            return True
-        except Exception as e:
-            log.warning("rpc_connection_failed", error=str(e))
-            return False
+        """Check Base chain RPC connectivity (tries all endpoints)."""
+        for _ in range(len(self._rpc_urls)):
+            try:
+                await self._w3.eth.block_number
+                return True
+            except _FAILOVER_ERRORS:
+                if not self._rotate_rpc():
+                    break
+            except Exception as e:
+                log.warning("rpc_connection_failed", err=str(e))
+                return False
+        return False
+
+    @property
+    def rpc_url(self) -> str:
+        """Current active RPC URL."""
+        return self._rpc_urls[self._rpc_index]
+
+    @property
+    def rpc_url_count(self) -> int:
+        """Number of configured RPC endpoints."""
+        return len(self._rpc_urls)

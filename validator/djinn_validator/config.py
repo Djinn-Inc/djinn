@@ -18,6 +18,14 @@ def _int_env(key: str, default: str) -> int:
         raise ValueError(f"Invalid integer for {key}: {val!r}")
 
 
+def _float_env(key: str, default: str) -> float:
+    val = os.getenv(key, default)
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid float for {key}: {val!r}")
+
+
 @dataclass(frozen=True)
 class Config:
     # Bittensor
@@ -26,9 +34,14 @@ class Config:
     bt_wallet_name: str = os.getenv("BT_WALLET_NAME", "default")
     bt_wallet_hotkey: str = os.getenv("BT_WALLET_HOTKEY", "default")
 
-    # Base chain
+    # Base chain (comma-separated URLs for failover)
     base_rpc_url: str = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
     base_chain_id: int = _int_env("BASE_CHAIN_ID", "8453")
+
+    @property
+    def base_rpc_urls(self) -> list[str]:
+        """Parse comma-separated RPC URLs for failover support."""
+        return [u.strip() for u in self.base_rpc_url.split(",") if u.strip()]
 
     # Contract addresses
     escrow_address: str = os.getenv("ESCROW_ADDRESS", "")
@@ -52,7 +65,7 @@ class Config:
     rate_limit_rate: int = _int_env("RATE_LIMIT_RATE", "10")
 
     # MPC
-    mpc_peer_timeout: float = float(os.getenv("MPC_PEER_TIMEOUT", "10.0"))
+    mpc_peer_timeout: float = _float_env("MPC_PEER_TIMEOUT", "10.0")
 
     # Protocol constants
     signals_per_cycle: int = 10

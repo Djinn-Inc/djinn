@@ -157,6 +157,29 @@ class PurchaseOrchestrator:
         """Get status of a purchase."""
         return self._active.get(self._key(signal_id, buyer_address))
 
+    def cleanup_stale(self, stale_timeout: float = 300) -> int:
+        """Fail purchases stuck in transient states for longer than stale_timeout seconds.
+
+        Purchases in CHECKING_AVAILABILITY or MPC_IN_PROGRESS that exceed
+        the timeout are moved to FAILED so they don't block the key indefinitely.
+        """
+        now = time.monotonic()
+        transient = (PurchaseStatus.CHECKING_AVAILABILITY, PurchaseStatus.MPC_IN_PROGRESS, PurchaseStatus.PENDING)
+        failed = 0
+        for req in self._active.values():
+            if req.status in transient and now - req.created_at > stale_timeout:
+                log.warning(
+                    "purchase_stale_timeout",
+                    signal_id=req.signal_id,
+                    buyer=req.buyer_address,
+                    status=req.status.name,
+                    age_s=round(now - req.created_at, 1),
+                )
+                req.status = PurchaseStatus.FAILED
+                req.completed_at = time.time()
+                failed += 1
+        return failed
+
     def cleanup_completed(self, max_age_seconds: float = 86400) -> int:
         """Remove completed/failed/voided purchases older than max_age_seconds.
 

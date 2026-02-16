@@ -221,3 +221,30 @@ class TestShareStoreReleaseAtomicity:
         record = store.get("sig-1")
         assert record is not None
         assert record.released_to == set()
+
+
+class TestShareStoreSignalIdValidation:
+    """ShareStore.store() must reject invalid signal IDs."""
+
+    def setup_method(self) -> None:
+        self.store = ShareStore()
+
+    def test_valid_id_accepted(self) -> None:
+        self.store.store("valid-signal_123", "0xG", Share(x=1, y=1), b"key")
+        assert self.store.has("valid-signal_123")
+
+    def test_colon_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.store.store("sig:evil", "0xG", Share(x=1, y=1), b"key")
+
+    def test_slash_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.store.store("sig/path", "0xG", Share(x=1, y=1), b"key")
+
+    def test_empty_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.store.store("", "0xG", Share(x=1, y=1), b"key")
+
+    def test_spaces_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid signal_id"):
+            self.store.store("sig id", "0xG", Share(x=1, y=1), b"key")

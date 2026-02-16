@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
+import djinn_validator.api.middleware as mw_module
 from djinn_validator.api.middleware import (
     RateLimitMiddleware,
     RateLimiter,
@@ -347,6 +348,18 @@ class TestNonceReplay:
         assert _check_nonce("a") is True
         assert _check_nonce("b") is True
         assert _check_nonce("c") is True
+
+    def test_nonce_periodic_cleanup(self) -> None:
+        """Stale nonces are evicted after cleanup interval elapses."""
+        # Insert a nonce with an old timestamp
+        _NONCE_CACHE["old-nonce"] = time.time() - 300  # 5 minutes ago
+        _NONCE_CACHE["fresh-nonce"] = time.time()
+        # Force cleanup by setting last cleanup time far in the past
+        mw_module._NONCE_LAST_CLEANUP = 0.0
+        # Calling _check_nonce triggers periodic cleanup
+        _check_nonce("trigger-cleanup")
+        assert "old-nonce" not in _NONCE_CACHE, "Stale nonce should be evicted"
+        assert "fresh-nonce" in _NONCE_CACHE, "Fresh nonce should be kept"
 
     def test_nonce_replay_in_auth_flow(self) -> None:
         """Full auth flow rejects replayed nonces."""

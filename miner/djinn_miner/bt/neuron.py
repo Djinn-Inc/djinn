@@ -157,6 +157,6 @@ class DjinnMiner:
             return 0
         try:
             return int(self.subtensor.block)
-        except Exception:
-            log.warning("block_access_failed")
+        except Exception as e:
+            log.warning("block_access_failed", error_type=type(e).__name__, error=str(e))
             return 0

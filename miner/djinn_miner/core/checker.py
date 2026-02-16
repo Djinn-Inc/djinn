@@ -69,6 +69,9 @@ class LineChecker:
                 odds_by_sport[sport] = []
             else:
                 odds_by_sport[sport] = result
+                if not result:
+                    log.warning("sport_odds_empty", sport=sport,
+                                msg="API returned no odds — all lines for this sport will be unavailable")
                 any_success = True
 
         if self._health:
