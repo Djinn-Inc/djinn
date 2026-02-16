@@ -1,5 +1,17 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "About | Djinn",
+  description:
+    "Learn how Djinn unbundles information from execution in sports betting. Encrypted predictions, ZK-verified track records, and USDC settlement on Base.",
+  openGraph: {
+    title: "About Djinn",
+    description:
+      "Encrypted predictions, ZK-verified track records, and USDC settlement on Base.",
+  },
+};
 
 export default function About() {
   return (

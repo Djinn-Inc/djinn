@@ -15,11 +15,9 @@ Falls back to single-validator prototype mode when:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import secrets
-import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -48,8 +46,6 @@ from djinn_validator.core.ot_network import (
 from djinn_validator.core.spdz import (
     AuthenticatedParticipantState,
     AuthenticatedShare,
-    MACKeyShare,
-    MACVerificationError,
     authenticate_value,
     verify_mac_opening,
 )
@@ -78,7 +74,7 @@ class MPCOrchestrator:
     def __init__(
         self,
         coordinator: MPCCoordinator,
-        neuron: "DjinnValidator | None" = None,
+        neuron: DjinnValidator | None = None,
         threshold: int = 7,
         ot_dh_group: Any | None = None,
         ot_field_prime: int | None = None,
@@ -119,7 +115,7 @@ class MPCOrchestrator:
             except httpx.HTTPError as e:
                 last_exc = e
             if attempt < self._PEER_RETRIES:
-                await asyncio.sleep(self._RETRY_BACKOFF * (2 ** attempt))
+                await asyncio.sleep(self._RETRY_BACKOFF * (2**attempt))
         raise last_exc  # type: ignore[misc]
 
     def _get_peer_validators(self) -> list[dict[str, Any]]:
@@ -142,13 +138,15 @@ class MPCOrchestrator:
             if not axon.ip or axon.ip == "0.0.0.0":
                 continue
 
-            peers.append({
-                "uid": uid,
-                "hotkey": metagraph.hotkeys[uid],
-                "ip": axon.ip,
-                "port": axon.port,
-                "url": f"http://{axon.ip}:{axon.port}",
-            })
+            peers.append(
+                {
+                    "uid": uid,
+                    "hotkey": metagraph.hotkeys[uid],
+                    "ip": axon.ip,
+                    "port": axon.port,
+                    "url": f"http://{axon.ip}:{axon.port}",
+                }
+            )
 
         return peers
 
@@ -171,10 +169,12 @@ class MPCOrchestrator:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    shares.append(Share(
-                        x=data["share_x"],
-                        y=int(data["share_y"], 16),
-                    ))
+                    shares.append(
+                        Share(
+                            x=data["share_x"],
+                            y=int(data["share_y"], 16),
+                        )
+                    )
             except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
                 log.warning(
                     "peer_share_request_failed",
@@ -231,7 +231,10 @@ class MPCOrchestrator:
 
         # Not enough peers — try distributed protocol via HTTP
         result = await self._distributed_mpc(
-            signal_id, local_share, available_indices, peers,
+            signal_id,
+            local_share,
+            available_indices,
+            peers,
         )
         if result is not None:
             return result
@@ -344,17 +347,17 @@ class MPCOrchestrator:
                 )
                 return None
             actual_secret = reconstruct_at_zero(
-                {s.x: s.y for s in all_secret_shares}, p,
+                {s.x: s.y for s in all_secret_shares},
+                p,
             )
-            secret_auth = authenticate_value(
-                actual_secret, alpha, participant_xs, self._threshold, p
-            )
+            secret_auth = authenticate_value(actual_secret, alpha, participant_xs, self._threshold, p)
             auth_secret_map = {s.x: s for s in secret_auth}
 
         # Build our own participant state
         if is_auth:
             my_auth_triples = self._coordinator.get_authenticated_triple_shares(
-                session.session_id, my_x,
+                session.session_id,
+                my_x,
             )
             my_mac_key = self._coordinator.get_mac_key_share(session.session_id, my_x)
             if my_auth_triples is None or my_mac_key is None:
@@ -371,7 +374,8 @@ class MPCOrchestrator:
             )
         else:
             my_triples = self._coordinator.get_triple_shares_for_participant(
-                session.session_id, my_x,
+                session.session_id,
+                my_x,
             )
             if my_triples is None:
                 return None
@@ -404,7 +408,8 @@ class MPCOrchestrator:
 
             if is_auth:
                 auth_ts = self._coordinator.get_authenticated_triple_shares(
-                    session.session_id, peer_x,
+                    session.session_id,
+                    peer_x,
                 )
                 mac_key = self._coordinator.get_mac_key_share(session.session_id, peer_x)
                 peer_r_auth = auth_r_map.get(peer_x)
@@ -412,8 +417,7 @@ class MPCOrchestrator:
                 if auth_ts is None or mac_key is None or peer_r_auth is None or peer_secret_auth is None:
                     return None
                 init_payload["auth_triple_shares"] = [
-                    {comp: {k: hex(v) for k, v in share.items()} for comp, share in ts.items()}
-                    for ts in auth_ts
+                    {comp: {k: hex(v) for k, v in share.items()} for comp, share in ts.items()} for ts in auth_ts
                 ]
                 init_payload["alpha_share"] = hex(mac_key.alpha_share)
                 init_payload["auth_r_share"] = {"y": hex(peer_r_auth.y), "mac": hex(peer_r_auth.mac)}
@@ -422,20 +426,20 @@ class MPCOrchestrator:
                 init_payload["triple_shares"] = []  # Empty for auth mode
             else:
                 triple_shares = self._coordinator.get_triple_shares_for_participant(
-                    session.session_id, peer_x,
+                    session.session_id,
+                    peer_x,
                 )
                 peer_r = r_share_map.get(peer_x)
                 if triple_shares is None or peer_r is None:
                     return None
-                init_payload["triple_shares"] = [
-                    {k: hex(v) for k, v in ts.items()} for ts in triple_shares
-                ]
+                init_payload["triple_shares"] = [{k: hex(v) for k, v in ts.items()} for ts in triple_shares]
                 init_payload["r_share_y"] = hex(peer_r)
 
             try:
                 resp = await self._peer_request(
                     "post",
-                    f"{peer['url']}/v1/mpc/init", json=init_payload,
+                    f"{peer['url']}/v1/mpc/init",
+                    json=init_payload,
                 )
                 if resp.status_code == 200 and resp.json().get("accepted"):
                     return peer
@@ -452,10 +456,7 @@ class MPCOrchestrator:
             *(_init_peer(peer) for peer in peers),
             return_exceptions=True,
         )
-        accepted_peers = [
-            r for r in results
-            if r is not None and not isinstance(r, BaseException)
-        ]
+        accepted_peers = [r for r in results if r is not None and not isinstance(r, BaseException)]
 
         if len(accepted_peers) + 1 < self._threshold:
             log.warning(
@@ -532,8 +533,7 @@ class MPCOrchestrator:
                 return None
 
             results = await asyncio.gather(
-                *(_collect_gate(peer, gate_idx, prev_d, prev_e)
-                  for peer in active_peers),
+                *(_collect_gate(peer, gate_idx, prev_d, prev_e) for peer in active_peers),
                 return_exceptions=True,
             )
 
@@ -569,29 +569,32 @@ class MPCOrchestrator:
             # SPDZ MAC verification on opened d and e
             if is_auth and d_mac_vals and e_mac_vals:
                 mac_key_shares = [
-                    self._coordinator.get_mac_key_share(session.session_id, vx)
-                    for vx in sorted(d_mac_vals.keys())
+                    self._coordinator.get_mac_key_share(session.session_id, vx) for vx in sorted(d_mac_vals.keys())
                 ]
                 # Verify d
                 d_auth_shares = [
-                    AuthenticatedShare(x=vx, y=d_vals[vx], mac=d_mac_vals[vx])
-                    for vx in sorted(d_mac_vals.keys())
+                    AuthenticatedShare(x=vx, y=d_vals[vx], mac=d_mac_vals[vx]) for vx in sorted(d_mac_vals.keys())
                 ]
                 if not verify_mac_opening(prev_d, d_auth_shares, [m for m in mac_key_shares if m], p):
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="d")
                     await self._broadcast_abort(
-                        session.session_id, active_peers, gate_idx, "d_mac_check_failed",
+                        session.session_id,
+                        active_peers,
+                        gate_idx,
+                        "d_mac_check_failed",
                     )
                     return None
                 # Verify e
                 e_auth_shares = [
-                    AuthenticatedShare(x=vx, y=e_vals[vx], mac=e_mac_vals[vx])
-                    for vx in sorted(e_mac_vals.keys())
+                    AuthenticatedShare(x=vx, y=e_vals[vx], mac=e_mac_vals[vx]) for vx in sorted(e_mac_vals.keys())
                 ]
                 if not verify_mac_opening(prev_e, e_auth_shares, [m for m in mac_key_shares if m], p):
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="e")
                     await self._broadcast_abort(
-                        session.session_id, active_peers, gate_idx, "e_mac_check_failed",
+                        session.session_id,
+                        active_peers,
+                        gate_idx,
+                        "e_mac_check_failed",
                     )
                     return None
                 log.debug("mac_verified", gate_idx=gate_idx)
@@ -615,7 +618,8 @@ class MPCOrchestrator:
                 if vx == my_x:
                     continue
                 auth_ts = self._coordinator.get_authenticated_triple_shares(
-                    session.session_id, vx,
+                    session.session_id,
+                    vx,
                 )
                 if auth_ts is None:
                     continue
@@ -629,16 +633,12 @@ class MPCOrchestrator:
         else:
             for vx in d_vals:
                 ts = self._coordinator.get_triple_shares_for_participant(
-                    session.session_id, vx,
+                    session.session_id,
+                    vx,
                 )
                 if ts is None:
                     continue
-                z_i = (
-                    prev_d * prev_e
-                    + prev_d * ts[last]["b"]
-                    + prev_e * ts[last]["a"]
-                    + ts[last]["c"]
-                ) % p
+                z_i = (prev_d * prev_e + prev_d * ts[last]["b"] + prev_e * ts[last]["a"] + ts[last]["c"]) % p
                 z_vals[vx] = z_i
 
         # Reconstruct the final result: r * P(s) — zero iff s ∈ available set
@@ -791,7 +791,9 @@ class MPCOrchestrator:
                 setup_payload["dh_prime"] = hex(dh_group.prime)
 
             setup_resp = await self._peer_request(
-                "post", f"{peer['url']}/v1/mpc/ot/setup", json=setup_payload,
+                "post",
+                f"{peer['url']}/v1/mpc/ot/setup",
+                json=setup_payload,
             )
             if setup_resp.status_code != 200 or not setup_resp.json().get("accepted"):
                 log.warning("ot_setup_failed", peer_uid=peer.get("uid"), status=setup_resp.status_code)
@@ -805,21 +807,18 @@ class MPCOrchestrator:
             # Phase 2: Exchange choices (bidirectional)
             # Direction A: coordinator is sender → get peer's receiver choices
             coord_sender_pks_ser = {
-                str(t): serialize_dh_public_key(pk, dh_group)
-                for t, pk in coord_state.get_sender_public_keys().items()
+                str(t): serialize_dh_public_key(pk, dh_group) for t, pk in coord_state.get_sender_public_keys().items()
             }
             choices_resp = await self._peer_request(
-                "post", f"{peer['url']}/v1/mpc/ot/choices",
+                "post",
+                f"{peer['url']}/v1/mpc/ot/choices",
                 json={"session_id": session_id, "peer_sender_pks": coord_sender_pks_ser},
             )
             if choices_resp.status_code != 200:
                 log.warning("ot_choices_failed", peer_uid=peer.get("uid"), status=choices_resp.status_code)
                 return None
 
-            peer_choices = {
-                int(t): deserialize_choices(c)
-                for t, c in choices_resp.json()["choices"].items()
-            }
+            peer_choices = {int(t): deserialize_choices(c) for t, c in choices_resp.json()["choices"].items()}
 
             # Direction B: peer is sender → coordinator generates receiver choices
             coord_choices = coord_state.generate_receiver_choices(peer_sender_pks)
@@ -829,12 +828,10 @@ class MPCOrchestrator:
             coord_transfers, coord_sender_shares = coord_state.process_sender_choices(peer_choices)
 
             # Direction B: send coordinator's choices to peer's sender
-            coord_choices_ser = {
-                str(t): serialize_choices(c, dh_group)
-                for t, c in coord_choices.items()
-            }
+            coord_choices_ser = {str(t): serialize_choices(c, dh_group) for t, c in coord_choices.items()}
             transfers_resp = await self._peer_request(
-                "post", f"{peer['url']}/v1/mpc/ot/transfers",
+                "post",
+                f"{peer['url']}/v1/mpc/ot/transfers",
                 json={"session_id": session_id, "peer_choices": coord_choices_ser},
             )
             if transfers_resp.status_code != 200:
@@ -842,10 +839,7 @@ class MPCOrchestrator:
                 return None
 
             transfer_data = transfers_resp.json()
-            peer_transfers = {
-                int(t): deserialize_transfers(pairs)
-                for t, pairs in transfer_data["transfers"].items()
-            }
+            peer_transfers = {int(t): deserialize_transfers(pairs) for t, pairs in transfer_data["transfers"].items()}
             peer_sender_shares_hex = transfer_data["sender_shares"]
 
             # Phase 4: Decrypt & accumulate (both directions)
@@ -855,12 +849,10 @@ class MPCOrchestrator:
             coord_state.compute_shamir_evaluations()
 
             # Send coordinator's transfers to peer for decryption (direction A)
-            coord_transfers_ser = {
-                str(t): serialize_transfers(pairs)
-                for t, pairs in coord_transfers.items()
-            }
+            coord_transfers_ser = {str(t): serialize_transfers(pairs) for t, pairs in coord_transfers.items()}
             complete_resp = await self._peer_request(
-                "post", f"{peer['url']}/v1/mpc/ot/complete",
+                "post",
+                f"{peer['url']}/v1/mpc/ot/complete",
                 json={
                     "session_id": session_id,
                     "peer_transfers": coord_transfers_ser,
@@ -876,7 +868,8 @@ class MPCOrchestrator:
             peer_evals: dict[int, list[dict[str, int]]] = {}
             for x in participant_xs:
                 shares_resp = await self._peer_request(
-                    "post", f"{peer['url']}/v1/mpc/ot/shares",
+                    "post",
+                    f"{peer['url']}/v1/mpc/ot/shares",
                     json={"session_id": session_id, "party_x": x},
                 )
                 if shares_resp.status_code != 200:
@@ -913,11 +906,13 @@ class MPCOrchestrator:
                 a_shares.append(Share(x=x, y=a_val))
                 b_shares.append(Share(x=x, y=b_val))
                 c_shares.append(Share(x=x, y=c_val))
-            triples.append(BeaverTriple(
-                a_shares=tuple(a_shares),
-                b_shares=tuple(b_shares),
-                c_shares=tuple(c_shares),
-            ))
+            triples.append(
+                BeaverTriple(
+                    a_shares=tuple(a_shares),
+                    b_shares=tuple(b_shares),
+                    c_shares=tuple(c_shares),
+                )
+            )
 
         log.info(
             "ot_triples_generated_via_network",

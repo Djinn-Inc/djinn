@@ -69,7 +69,7 @@ class PurchaseOrchestrator:
     ) -> PurchaseRequest:
         """Start a new purchase flow."""
         if not self._SAFE_ID_RE.match(signal_id):
-            raise ValueError(f"Invalid signal_id: must match [a-zA-Z0-9_-]{{1,256}}")
+            raise ValueError("Invalid signal_id: must match [a-zA-Z0-9_-]{1,256}")
         key = self._key(signal_id, buyer_address)
 
         if key in self._active:
@@ -187,11 +187,13 @@ class PurchaseOrchestrator:
         Returns count of removed entries.
         """
         now = time.monotonic()
-        terminal = (PurchaseStatus.SHARES_RELEASED, PurchaseStatus.FAILED, PurchaseStatus.VOIDED, PurchaseStatus.UNAVAILABLE)
-        stale = [
-            k for k, p in self._active.items()
-            if p.status in terminal and now - p.created_at > max_age_seconds
-        ]
+        terminal = (
+            PurchaseStatus.SHARES_RELEASED,
+            PurchaseStatus.FAILED,
+            PurchaseStatus.VOIDED,
+            PurchaseStatus.UNAVAILABLE,
+        )
+        stale = [k for k, p in self._active.items() if p.status in terminal and now - p.created_at > max_age_seconds]
         for k in stale:
             del self._active[k]
         if stale:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import structlog
 from fastapi import Request
@@ -53,8 +53,11 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             path = request.url.path
             if path not in ("/health", "/health/ready", "/metrics"):
                 from djinn_miner.api.metrics import REQUEST_COUNT, REQUEST_LATENCY
+
                 REQUEST_COUNT.labels(
-                    method=request.method, endpoint=path, status=response.status_code,
+                    method=request.method,
+                    endpoint=path,
+                    status=response.status_code,
                 ).inc()
                 REQUEST_LATENCY.labels(endpoint=path).observe(duration_s)
                 log.info(
@@ -111,7 +114,8 @@ class RateLimiter:
             if len(self._buckets) >= self._MAX_BUCKETS:
                 self._evict_oldest()
             self._buckets[client_ip] = TokenBucket(
-                capacity=self._capacity, refill_rate=self._rate,
+                capacity=self._capacity,
+                refill_rate=self._rate,
             )
         return self._buckets[client_ip].consume()
 
@@ -120,10 +124,7 @@ class RateLimiter:
         if now - self._last_cleanup < self._CLEANUP_INTERVAL:
             return
         self._last_cleanup = now
-        stale = [
-            k for k, b in self._buckets.items()
-            if now - b.last_refill > self._CLEANUP_INTERVAL
-        ]
+        stale = [k for k, b in self._buckets.items() if now - b.last_refill > self._CLEANUP_INTERVAL]
         for k in stale:
             del self._buckets[k]
 
@@ -149,6 +150,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not self._limiter.allow(client_ip):
             from djinn_miner.api.metrics import RATE_LIMIT_REJECTIONS
+
             RATE_LIMIT_REJECTIONS.inc()
             log.warning("rate_limited", client_ip=client_ip, path=request.url.path)
             return JSONResponse(

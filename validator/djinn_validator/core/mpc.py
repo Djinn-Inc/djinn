@@ -22,16 +22,14 @@ Two implementations:
 
 from __future__ import annotations
 
-import math
 import secrets
 from dataclasses import dataclass, field
 
 import structlog
 
-from djinn_validator.utils.crypto import BN254_PRIME, Share, _mod_inv, split_secret
-
 # Import OT-based triple generation (used when distributed mode is available)
 from djinn_validator.core.ot import generate_ot_beaver_triples as _generate_ot_triples
+from djinn_validator.utils.crypto import BN254_PRIME, Share, _mod_inv
 
 log = structlog.get_logger()
 
@@ -337,9 +335,7 @@ class SecureMPCSession:
         # In production, r is generated via joint randomness (each validator
         # contributes randomness). Here we simulate by sharing a random value.
         r = secrets.randbelow(p - 1) + 1  # r ∈ [1, p-1]
-        r_shares_list = _split_secret_at_points(
-            r, self._validator_xs, self._threshold, p
-        )
+        r_shares_list = _split_secret_at_points(r, self._validator_xs, self._threshold, p)
         r_by_validator = {s.x: s.y for s in r_shares_list}
 
         # Step 3: Multiply all factors together using Beaver triples.
@@ -354,9 +350,7 @@ class SecureMPCSession:
         #   Tree: 6 rounds (r*f0, then 5 factors => ceil(log2(5))+1 = 4 tree rounds)
 
         # Start: r * factor[0]
-        layer = [
-            self._multiply_shares(r_by_validator, factors[0], self._next_triple())
-        ]
+        layer = [self._multiply_shares(r_by_validator, factors[0], self._next_triple())]
 
         # Add remaining factors as leaves
         for i in range(1, len(factors)):
@@ -368,9 +362,7 @@ class SecureMPCSession:
             i = 0
             while i < len(layer):
                 if i + 1 < len(layer):
-                    product = self._multiply_shares(
-                        layer[i], layer[i + 1], self._next_triple()
-                    )
+                    product = self._multiply_shares(layer[i], layer[i + 1], self._next_triple())
                     next_layer.append(product)
                     i += 2
                 else:
@@ -425,7 +417,11 @@ def secure_check_availability(
     # So total = 1 + max(d - 1, 0) = max(d, 1) — same count, different order.
     n_mults = max(len(available_indices), 1)
     triples = generate_beaver_triples(
-        n_mults, n=len(shares), k=threshold, prime=prime, x_coords=x_coords,
+        n_mults,
+        n=len(shares),
+        k=threshold,
+        prime=prime,
+        x_coords=x_coords,
     )
 
     session = SecureMPCSession(

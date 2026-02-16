@@ -21,9 +21,9 @@ from djinn_validator.api.server import create_app
 from djinn_validator.bt.neuron import DjinnValidator
 from djinn_validator.chain.contracts import ChainClient
 from djinn_validator.config import Config
+from djinn_validator.core.mpc_coordinator import MPCCoordinator
 from djinn_validator.core.outcomes import OutcomeAttestor
 from djinn_validator.core.purchase import PurchaseOrchestrator
-from djinn_validator.core.mpc_coordinator import MPCCoordinator
 from djinn_validator.core.scoring import MinerScorer
 from djinn_validator.core.shares import ShareStore
 
@@ -95,11 +95,17 @@ async def epoch_loop(
             raise
         except Exception as e:
             consecutive_errors += 1
-            base = min(12 * (2 ** consecutive_errors), 300)
+            base = min(12 * (2**consecutive_errors), 300)
             backoff = base * (0.5 + random.random())  # jitter: 50-150% of base
             level = "critical" if consecutive_errors >= 10 else "error"
-            getattr(log, level)("epoch_error", err=str(e), error_type=type(e).__name__,
-                                consecutive=consecutive_errors, backoff_s=round(backoff, 1), exc_info=True)
+            getattr(log, level)(
+                "epoch_error",
+                err=str(e),
+                error_type=type(e).__name__,
+                consecutive=consecutive_errors,
+                backoff_s=round(backoff, 1),
+                exc_info=True,
+            )
             await asyncio.sleep(backoff)
             continue
 
@@ -126,7 +132,10 @@ async def mpc_cleanup_loop(mpc_coordinator: MPCCoordinator) -> None:
 async def run_server(app: object, host: str, port: int) -> None:
     """Run uvicorn as an async task."""
     config = uvicorn.Config(
-        app, host=host, port=port, log_level="info",
+        app,
+        host=host,
+        port=port,
+        log_level="info",
         timeout_graceful_shutdown=10,
     )
     server = uvicorn.Server(config)
@@ -201,9 +210,7 @@ async def async_main() -> None:
         asyncio.create_task(mpc_cleanup_loop(mpc_coordinator)),
     ]
     if bt_ok:
-        running_tasks.append(
-            asyncio.create_task(epoch_loop(neuron, scorer, share_store, outcome_attestor))
-        )
+        running_tasks.append(asyncio.create_task(epoch_loop(neuron, scorer, share_store, outcome_attestor)))
 
     shutdown_event = asyncio.Event()
 
@@ -224,7 +231,7 @@ async def async_main() -> None:
             asyncio.gather(*running_tasks, return_exceptions=True),
             timeout=15.0,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning("shutdown_timeout", msg="Tasks did not finish within 15s")
     try:
         await outcome_attestor.close()

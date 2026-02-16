@@ -269,9 +269,7 @@ def additive_to_shamir(
 
     for additive_share in additive_shares:
         # Random polynomial with additive_share.value as constant term
-        coeffs = [additive_share.value] + [
-            secrets.randbelow(prime) for _ in range(threshold - 1)
-        ]
+        coeffs = [additive_share.value] + [secrets.randbelow(prime) for _ in range(threshold - 1)]
 
         for x in x_coords:
             y = 0

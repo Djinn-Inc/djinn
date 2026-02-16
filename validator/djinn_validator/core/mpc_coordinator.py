@@ -24,21 +24,17 @@ from djinn_validator.core.mpc import (
     BeaverTriple,
     MPCResult,
     Round1Message,
-    SecureMPCSession,
-    _split_secret_at_points,
     generate_beaver_triples,
     generate_ot_beaver_triples,
     secure_check_availability,
 )
 from djinn_validator.core.spdz import (
     AuthenticatedBeaverTriple,
-    AuthenticatedShare,
     MACKeyShare,
     generate_authenticated_triples,
     generate_mac_key,
-    verify_mac_opening,
 )
-from djinn_validator.utils.crypto import BN254_PRIME, Share
+from djinn_validator.utils.crypto import Share
 
 log = structlog.get_logger()
 
@@ -296,11 +292,13 @@ class MPCCoordinator:
                     participant_x=participant_x,
                 )
                 return None
-            shares_out.append({
-                "a": {"y": a_s.y, "mac": a_s.mac},
-                "b": {"y": b_s.y, "mac": b_s.mac},
-                "c": {"y": c_s.y, "mac": c_s.mac},
-            })
+            shares_out.append(
+                {
+                    "a": {"y": a_s.y, "mac": a_s.mac},
+                    "b": {"y": b_s.y, "mac": b_s.mac},
+                    "c": {"y": c_s.y, "mac": c_s.mac},
+                }
+            )
         return shares_out
 
     def get_mac_key_share(
@@ -436,10 +434,7 @@ class MPCCoordinator:
         """Remove expired sessions. Returns count of removed sessions."""
         now = time.monotonic()
         with self._lock:
-            expired = [
-                sid for sid, s in self._sessions.items()
-                if now - s.created_at > self.SESSION_TTL
-            ]
+            expired = [sid for sid, s in self._sessions.items() if now - s.created_at > self.SESSION_TTL]
             for sid in expired:
                 del self._sessions[sid]
         return len(expired)
@@ -448,6 +443,7 @@ class MPCCoordinator:
     def active_session_count(self) -> int:
         with self._lock:
             return sum(
-                1 for s in self._sessions.values()
+                1
+                for s in self._sessions.values()
                 if s.status not in (SessionStatus.COMPLETE, SessionStatus.EXPIRED, SessionStatus.FAILED)
             )

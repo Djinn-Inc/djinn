@@ -10,12 +10,10 @@ Provides:
 from __future__ import annotations
 
 import hashlib
-import hmac
 import time
 import uuid
-from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import structlog
 from fastapi import HTTPException, Request
@@ -65,8 +63,11 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             path = request.url.path
             if path not in ("/health", "/health/ready", "/metrics"):
                 from djinn_validator.api.metrics import REQUEST_COUNT, REQUEST_LATENCY
+
                 REQUEST_COUNT.labels(
-                    method=request.method, endpoint=path, status=response.status_code,
+                    method=request.method,
+                    endpoint=path,
+                    status=response.status_code,
                 ).inc()
                 REQUEST_LATENCY.labels(endpoint=path).observe(duration_s)
                 log.info(
@@ -158,10 +159,7 @@ class RateLimiter:
         if not force and now - self._last_cleanup < self._cleanup_interval:
             return
         self._last_cleanup = now
-        stale = [
-            k for k, b in self._buckets.items()
-            if now - b.last_refill > self._cleanup_interval
-        ]
+        stale = [k for k, b in self._buckets.items() if now - b.last_refill > self._cleanup_interval]
         for k in stale:
             del self._buckets[k]
         if force and len(self._buckets) > self._MAX_BUCKETS:
@@ -189,6 +187,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not self._limiter.allow(client_ip, path):
             from djinn_validator.api.metrics import RATE_LIMIT_REJECTIONS
+
             RATE_LIMIT_REJECTIONS.inc()
             log.warning("rate_limited", client_ip=client_ip, path=path)
             return JSONResponse(
@@ -223,9 +222,12 @@ def verify_hotkey_signature(
     except ImportError:
         # Bittensor not available — accept in dev, reject if BT_NETWORK is set to production
         import os
+
         network = os.getenv("BT_NETWORK", "")
         if network in ("finney", "mainnet"):
-            log.error("signature_verification_impossible", reason="bittensor not installed but production network configured")
+            log.error(
+                "signature_verification_impossible", reason="bittensor not installed but production network configured"
+            )
             return False
         log.warning("signature_verification_skipped", reason="bittensor not installed (dev mode)")
         return True
@@ -325,7 +327,10 @@ async def validate_signed_request(
 
     # Verify signature
     message = create_signature_message(
-        request.url.path, body_hash, timestamp, nonce,  # type: ignore[arg-type]
+        request.url.path,
+        body_hash,
+        timestamp,
+        nonce,  # type: ignore[arg-type]
     )
     if not verify_hotkey_signature(message, signature, hotkey):  # type: ignore[arg-type]
         raise HTTPException(status_code=401, detail="Invalid signature")

@@ -63,7 +63,7 @@ class ShareStore:
             except sqlite3.OperationalError:
                 if attempt == ShareStore._MAX_CONNECT_RETRIES - 1:
                     raise
-                delay = 2 ** attempt
+                delay = 2**attempt
                 log.warning("db_connect_retry", attempt=attempt + 1, delay_s=delay, path=path)
                 time.sleep(delay)
         raise RuntimeError("unreachable")
@@ -118,9 +118,7 @@ class ShareStore:
         if current < 2:
             # v2: add index on releases.signal_id for faster lookups
             log.info("schema_migration", from_version=max(current, 1), to_version=2)
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id)"
-            )
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id)")
             self._conn.commit()
 
         self._set_schema_version(self.SCHEMA_VERSION)
@@ -135,7 +133,7 @@ class ShareStore:
     ) -> None:
         """Store a new key share for a signal."""
         if not _SAFE_ID_RE.match(signal_id):
-            raise ValueError(f"Invalid signal_id: must match [a-zA-Z0-9_-]{{1,256}}")
+            raise ValueError("Invalid signal_id: must match [a-zA-Z0-9_-]{1,256}")
         if not genius_address or not genius_address.strip():
             raise ValueError("genius_address must not be empty")
         if not encrypted_key_share:
@@ -162,7 +160,8 @@ class ShareStore:
             return None
 
         released = {
-            r[0] for r in self._conn.execute(
+            r[0]
+            for r in self._conn.execute(
                 "SELECT buyer_address FROM releases WHERE signal_id = ?",
                 (signal_id,),
             ).fetchall()

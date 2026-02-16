@@ -31,9 +31,7 @@ NOTARY_HOST = os.getenv("TLSN_NOTARY_HOST", "notary.pse.dev")
 NOTARY_PORT = int(os.getenv("TLSN_NOTARY_PORT", "443"))
 
 # Headers whose values should be redacted from the proof
-REDACT_HEADERS = os.getenv(
-    "TLSN_REDACT_HEADERS", "authorization,apikey,x-api-key"
-)
+REDACT_HEADERS = os.getenv("TLSN_REDACT_HEADERS", "authorization,apikey,x-api-key")
 
 
 @dataclass
@@ -89,11 +87,16 @@ async def generate_proof(
 
     cmd = [
         PROVER_BINARY,
-        "--url", url,
-        "--notary-host", host,
-        "--notary-port", str(port),
-        "--output", output_path,
-        "--redact-headers", REDACT_HEADERS,
+        "--url",
+        url,
+        "--notary-host",
+        host,
+        "--notary-port",
+        str(port),
+        "--output",
+        output_path,
+        "--redact-headers",
+        REDACT_HEADERS,
     ]
 
     log.info(
@@ -108,10 +111,8 @@ async def generate_proof(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
         log.error("tlsn_proof_timeout", timeout=timeout)
         try:
             proc.kill()
@@ -119,7 +120,7 @@ async def generate_proof(
             log.debug("tlsn_process_kill_failed", error=str(kill_err))
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except (asyncio.TimeoutError, OSError) as wait_err:
+        except (TimeoutError, OSError) as wait_err:
             log.warning("tlsn_process_wait_failed", error=str(wait_err), pid=proc.pid)
         _cleanup_dir(output_path)
         return TLSNProofResult(

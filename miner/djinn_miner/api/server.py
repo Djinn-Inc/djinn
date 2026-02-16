@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import TYPE_CHECKING
-
-import os
 
 import structlog
 from fastapi import FastAPI, Request
@@ -20,12 +19,11 @@ from djinn_miner.api.metrics import (
     metrics_response,
 )
 from djinn_miner.api.middleware import (
-    RateLimitMiddleware,
     RateLimiter,
+    RateLimitMiddleware,
     RequestIdMiddleware,
     get_cors_origins,
 )
-
 from djinn_miner.api.models import (
     CheckRequest,
     CheckResponse,
@@ -109,7 +107,7 @@ def create_app(
                 checker.check(request.lines),
                 timeout=10.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.error("check_lines_timeout", lines=len(request.lines))
             return JSONResponse(
                 status_code=504,
@@ -154,7 +152,7 @@ def create_app(
                 proof_gen.generate(request.query_id, request.session_data),
                 timeout=30.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.error("proof_generation_timeout", query_id=request.query_id)
             return JSONResponse(
                 status_code=504,
@@ -179,6 +177,7 @@ def create_app(
 
     # Cache Config for readiness checks (avoid re-loading dotenv on every probe)
     from djinn_miner.config import Config as _ConfigCls
+
     _readiness_config = _ConfigCls()
 
     @app.get("/health/ready", response_model=ReadinessResponse)
@@ -200,6 +199,7 @@ def create_app(
     async def metrics() -> bytes:
         """Prometheus metrics endpoint."""
         from fastapi.responses import Response
+
         return Response(
             content=metrics_response(),
             media_type="text/plain; version=0.0.4; charset=utf-8",

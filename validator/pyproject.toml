@@ -21,10 +21,19 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-httpx>=0.35.0",
     "coverage>=7.0.0",
+    "ruff>=0.8.0",
 ]
 
 [project.scripts]
 djinn-validator = "djinn_validator.main:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501", "E402", "N806"]
 
 [build-system]
 requires = ["hatchling"]

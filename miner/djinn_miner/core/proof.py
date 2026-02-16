@@ -18,15 +18,13 @@ HTTP attestation when the Rust binary is not installed.
 
 from __future__ import annotations
 
-import asyncio
+import base64
 import hashlib
 import json
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
-
-import base64
 
 import structlog
 
@@ -104,10 +102,7 @@ class SessionCapture:
 
     def _evict_expired(self) -> None:
         now = time.monotonic()
-        expired = [
-            k for k, ts in self._timestamps.items()
-            if now - ts > self._SESSION_TTL
-        ]
+        expired = [k for k, ts in self._timestamps.items() if now - ts > self._SESSION_TTL]
         for k in expired:
             self._sessions.pop(k, None)
             self._timestamps.pop(k, None)
@@ -176,14 +171,16 @@ class ProofGenerator:
                 query_id=query_id,
                 proof_hash=proof.proof_hash,
                 status="submitted",
-                message=json.dumps({
-                    "type": "http_attestation",
-                    "request_url": proof.request_url,
-                    "response_hash": proof.response_hash,
-                    "captured_at": proof.captured_at,
-                    "events_found": proof.events_found,
-                    "bookmakers_found": proof.bookmakers_found,
-                }),
+                message=json.dumps(
+                    {
+                        "type": "http_attestation",
+                        "request_url": proof.request_url,
+                        "response_hash": proof.response_hash,
+                        "captured_at": proof.captured_at,
+                        "events_found": proof.events_found,
+                        "bookmakers_found": proof.bookmakers_found,
+                    }
+                ),
             )
 
         # Fallback: basic hash proof (no captured session)
@@ -204,9 +201,7 @@ class ProofGenerator:
             message="basic hash proof (no captured session)",
         )
 
-    async def _try_tlsn_proof(
-        self, session: CapturedSession
-    ) -> ProofResponse | None:
+    async def _try_tlsn_proof(self, session: CapturedSession) -> ProofResponse | None:
         """Attempt to generate a TLSNotary proof for the session."""
         # Reconstruct the original URL with API key for TLSNotary
         # The session stores URL without key, but we need the full URL for TLS
@@ -241,12 +236,14 @@ class ProofGenerator:
             query_id=session.query_id,
             proof_hash=proof_hash,
             status="submitted",
-            message=json.dumps({
-                "type": "tlsnotary",
-                "server": result.server,
-                "presentation": presentation_b64,
-                "size": len(result.presentation_bytes),
-            }),
+            message=json.dumps(
+                {
+                    "type": "tlsnotary",
+                    "server": result.server,
+                    "presentation": presentation_b64,
+                    "size": len(result.presentation_bytes),
+                }
+            ),
         )
 
     def _create_attestation(self, session: CapturedSession) -> AttestationProof:

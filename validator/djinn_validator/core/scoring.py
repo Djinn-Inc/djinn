@@ -14,7 +14,6 @@ Empty epoch weights (no active signals):
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import dataclass, field
 
 import structlog
@@ -149,15 +148,8 @@ class MinerScorer:
         raw: dict[int, float] = {}
         for m in miners:
             # Log-scaled history: log(1 + epochs) / log(1 + max_epochs)
-            history = (
-                math.log1p(m.consecutive_epochs) / math.log1p(max_history)
-                if max_history > 0
-                else 0.0
-            )
-            score = (
-                self.W_EMPTY_UPTIME * m.uptime_score()
-                + self.W_EMPTY_HISTORY * history
-            )
+            history = math.log1p(m.consecutive_epochs) / math.log1p(max_history) if max_history > 0 else 0.0
+            score = self.W_EMPTY_UPTIME * m.uptime_score() + self.W_EMPTY_HISTORY * history
             raw[m.uid] = score
 
         return self._normalize(raw)
@@ -185,10 +177,7 @@ class MinerScorer:
 
         # Miners with latencies get normalized scores; miners without queries
         # get the median score so speed doesn't unfairly penalize them.
-        scores = {
-            uid: 1.0 - (lat - min_lat) / spread
-            for uid, lat in avg_latencies.items()
-        }
+        scores = {uid: 1.0 - (lat - min_lat) / spread for uid, lat in avg_latencies.items()}
         median = sorted(scores.values())[len(scores) // 2] if scores else 1.0
         for m in miners:
             if m.uid not in scores:

@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 
 import structlog
 
@@ -157,7 +158,8 @@ class GilboaSenderSetup:
         return self.dh_public
 
     def process_choices(
-        self, t_values: list[int],
+        self,
+        t_values: list[int],
     ) -> tuple[list[tuple[bytes, bytes]], int]:
         """Process receiver's choice commitments.
 
@@ -226,7 +228,8 @@ class GilboaReceiverSetup:
         return t_values
 
     def decrypt_transfers(
-        self, encrypted_pairs: list[tuple[bytes, bytes]],
+        self,
+        encrypted_pairs: list[tuple[bytes, bytes]],
     ) -> int:
         """Decrypt OT messages and return receiver's accumulated share."""
         receiver_share = 0
@@ -423,17 +426,18 @@ class OTTripleGenState:
         """Generate private random (a_i, b_i) values for all triples."""
         self.a_values = [secrets.randbelow(self.prime) for _ in range(self.n_triples)]
         self.b_values = [secrets.randbelow(self.prime) for _ in range(self.n_triples)]
-        self.c_values = [
-            (self.a_values[t] * self.b_values[t]) % self.prime
-            for t in range(self.n_triples)
-        ]
+        self.c_values = [(self.a_values[t] * self.b_values[t]) % self.prime for t in range(self.n_triples)]
         for t in range(self.n_triples):
             self.senders[t] = GilboaSenderSetup(
-                x=self.a_values[t], prime=self.prime, dh_group=self.dh_group,
+                x=self.a_values[t],
+                prime=self.prime,
+                dh_group=self.dh_group,
             )
         for t in range(self.n_triples):
             self.receivers[t] = GilboaReceiverSetup(
-                y=self.b_values[t], prime=self.prime, dh_group=self.dh_group,
+                y=self.b_values[t],
+                prime=self.prime,
+                dh_group=self.dh_group,
             )
 
     def get_sender_public_keys(self) -> dict[int, int]:
@@ -441,7 +445,8 @@ class OTTripleGenState:
         return {t: self.senders[t].get_public_key() for t in range(self.n_triples)}
 
     def generate_receiver_choices(
-        self, peer_sender_pks: dict[int, int],
+        self,
+        peer_sender_pks: dict[int, int],
     ) -> dict[int, list[int]]:
         """Generate choice commitments for all triples where this party is receiver."""
         choices: dict[int, list[int]] = {}
@@ -450,7 +455,8 @@ class OTTripleGenState:
         return choices
 
     def process_sender_choices(
-        self, peer_choices: dict[int, list[int]],
+        self,
+        peer_choices: dict[int, list[int]],
     ) -> tuple[dict[int, list[tuple[bytes, bytes]]], dict[int, int]]:
         """Process peer's choices and return encrypted transfers + sender shares."""
         transfers: dict[int, list[tuple[bytes, bytes]]] = {}
@@ -462,7 +468,8 @@ class OTTripleGenState:
         return transfers, sender_shares
 
     def decrypt_receiver_transfers(
-        self, peer_transfers: dict[int, list[tuple[bytes, bytes]]],
+        self,
+        peer_transfers: dict[int, list[tuple[bytes, bytes]]],
     ) -> dict[int, int]:
         """Decrypt encrypted OT messages and return receiver shares."""
         receiver_shares: dict[int, int] = {}
@@ -477,9 +484,7 @@ class OTTripleGenState:
     ) -> None:
         """Add OT cross-term shares to c values."""
         for t in range(self.n_triples):
-            self.c_values[t] = (
-                self.c_values[t] + sender_shares[t] + receiver_shares[t]
-            ) % self.prime
+            self.c_values[t] = (self.c_values[t] + sender_shares[t] + receiver_shares[t]) % self.prime
 
     def compute_shamir_evaluations(self) -> None:
         """Create Shamir polynomials and evaluate at all x-coordinates."""
@@ -489,19 +494,14 @@ class OTTripleGenState:
             poly_b = create_shamir_polynomial(self.b_values[t], degree, self.prime)
             poly_c = create_shamir_polynomial(self.c_values[t], degree, self.prime)
 
-            self.shamir_evals_a[t] = {
-                x: evaluate_polynomial(poly_a, x, self.prime) for x in self.x_coords
-            }
-            self.shamir_evals_b[t] = {
-                x: evaluate_polynomial(poly_b, x, self.prime) for x in self.x_coords
-            }
-            self.shamir_evals_c[t] = {
-                x: evaluate_polynomial(poly_c, x, self.prime) for x in self.x_coords
-            }
+            self.shamir_evals_a[t] = {x: evaluate_polynomial(poly_a, x, self.prime) for x in self.x_coords}
+            self.shamir_evals_b[t] = {x: evaluate_polynomial(poly_b, x, self.prime) for x in self.x_coords}
+            self.shamir_evals_c[t] = {x: evaluate_polynomial(poly_c, x, self.prime) for x in self.x_coords}
         self.completed = True
 
     def get_shamir_shares_for_party(
-        self, party_x: int,
+        self,
+        party_x: int,
     ) -> list[dict[str, int]] | None:
         """Return this party's Shamir polynomial evaluations at party_x.
 

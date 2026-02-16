@@ -58,11 +58,16 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
         except Exception as e:
             consecutive_errors += 1
             health.record_bt_failure()
-            base = min(60 * (2 ** consecutive_errors), 600)
+            base = min(60 * (2**consecutive_errors), 600)
             backoff = base * (0.5 + random.random())  # jitter: 50-150% of base
             level = "critical" if consecutive_errors >= 10 else "error"
-            getattr(log, level)("bt_sync_error", err=str(e), error_type=type(e).__name__,
-                                consecutive=consecutive_errors, backoff_s=round(backoff, 1))
+            getattr(log, level)(
+                "bt_sync_error",
+                err=str(e),
+                error_type=type(e).__name__,
+                consecutive=consecutive_errors,
+                backoff_s=round(backoff, 1),
+            )
             await asyncio.sleep(backoff)
             continue
 
@@ -72,7 +77,10 @@ async def bt_sync_loop(neuron: DjinnMiner, health: HealthTracker) -> None:
 async def run_server(app: object, host: str, port: int) -> None:
     """Run uvicorn as an async task."""
     config = uvicorn.Config(
-        app, host=host, port=port, log_level="info",
+        app,
+        host=host,
+        port=port,
+        log_level="info",
         timeout_graceful_shutdown=10,
     )
     server = uvicorn.Server(config)
@@ -170,7 +178,7 @@ async def async_main() -> None:
             asyncio.gather(*running_tasks, return_exceptions=True),
             timeout=15.0,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning("shutdown_timeout", msg="Tasks did not finish within 15s")
     try:
         await odds_client.close()

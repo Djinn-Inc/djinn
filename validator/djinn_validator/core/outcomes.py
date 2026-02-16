@@ -98,37 +98,33 @@ _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]{1,256}$")
 
 # Supported sport keys from The Odds API.
 # Prevents arbitrary path injection into the API URL.
-SUPPORTED_SPORTS: frozenset[str] = frozenset({
-    "americanfootball_nfl",
-    "americanfootball_ncaaf",
-    "basketball_nba",
-    "basketball_ncaab",
-    "baseball_mlb",
-    "icehockey_nhl",
-    "soccer_epl",
-    "soccer_usa_mls",
-    "soccer_spain_la_liga",
-    "soccer_germany_bundesliga",
-    "soccer_italy_serie_a",
-    "soccer_france_ligue_one",
-    "soccer_uefa_champs_league",
-    "mma_mixed_martial_arts",
-    "tennis_atp_aus_open",
-    "tennis_atp_us_open",
-    "tennis_atp_wimbledon",
-    "tennis_atp_french_open",
-})
+SUPPORTED_SPORTS: frozenset[str] = frozenset(
+    {
+        "americanfootball_nfl",
+        "americanfootball_ncaaf",
+        "basketball_nba",
+        "basketball_ncaab",
+        "baseball_mlb",
+        "icehockey_nhl",
+        "soccer_epl",
+        "soccer_usa_mls",
+        "soccer_spain_la_liga",
+        "soccer_germany_bundesliga",
+        "soccer_italy_serie_a",
+        "soccer_france_ligue_one",
+        "soccer_uefa_champs_league",
+        "mma_mixed_martial_arts",
+        "tennis_atp_aus_open",
+        "tennis_atp_us_open",
+        "tennis_atp_wimbledon",
+        "tennis_atp_french_open",
+    }
+)
 
 # Regex patterns for different pick formats
-_SPREAD_RE = re.compile(
-    r"^(.+?)\s+([+-]?\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$"
-)
-_TOTAL_RE = re.compile(
-    r"^(Over|Under)\s+(\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$", re.IGNORECASE
-)
-_ML_RE = re.compile(
-    r"^(.+?)\s+ML\s*\(([+-]?\d+)\)$", re.IGNORECASE
-)
+_SPREAD_RE = re.compile(r"^(.+?)\s+([+-]?\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$")
+_TOTAL_RE = re.compile(r"^(Over|Under)\s+(\d+(?:\.\d+)?)\s*\(([+-]?\d+)\)$", re.IGNORECASE)
+_ML_RE = re.compile(r"^(.+?)\s+ML\s*\(([+-]?\d+)\)$", re.IGNORECASE)
 
 
 def parse_pick(pick_str: str) -> ParsedPick:
@@ -610,7 +606,8 @@ class OutcomeAttestor:
         # Clean resolved signals older than max_age
         # Use list() copy to avoid RuntimeError from concurrent modification
         stale_ids = [
-            sid for sid, meta in list(self._pending_signals.items())
+            sid
+            for sid, meta in list(self._pending_signals.items())
             if meta.resolved and now - meta.purchased_at > max_age_seconds
         ]
         for sid in stale_ids:
@@ -626,7 +623,7 @@ class OutcomeAttestor:
     async def close(self) -> None:
         try:
             await asyncio.wait_for(self._client.aclose(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning("outcome_attestor_close_timeout")
         except Exception as e:
             log.warning("outcome_attestor_close_error", error=str(e))

@@ -10,7 +10,8 @@ Supports multiple RPC URLs with automatic failover on connection errors.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import structlog
 from web3 import AsyncWeb3
@@ -119,10 +120,12 @@ class ChainClient:
         self._setup_contracts()
 
     def _create_provider(self, url: str) -> AsyncWeb3:
-        return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(
-            url,
-            request_kwargs={"timeout": 30},
-        ))
+        return AsyncWeb3(
+            AsyncWeb3.AsyncHTTPProvider(
+                url,
+                request_kwargs={"timeout": 30},
+            )
+        )
 
     def _setup_contracts(self) -> None:
         self._escrow: AsyncContract | None = None
@@ -135,10 +138,14 @@ class ChainClient:
         ]:
             if addr:
                 try:
-                    setattr(self, attr, self._w3.eth.contract(
-                        address=self._w3.to_checksum_address(addr),
-                        abi=abi,
-                    ))
+                    setattr(
+                        self,
+                        attr,
+                        self._w3.eth.contract(
+                            address=self._w3.to_checksum_address(addr),
+                            abi=abi,
+                        ),
+                    )
                 except ValueError:
                     log.error("invalid_contract_address", contract=label, address=addr)
 
@@ -228,7 +235,8 @@ class ChainClient:
         try:
             result = await self._with_failover(
                 lambda: self._escrow.functions.purchases(  # type: ignore[union-attr]
-                    signal_id, buyer_addr,
+                    signal_id,
+                    buyer_addr,
                 ).call()
             )
             return {
@@ -253,7 +261,8 @@ class ChainClient:
         try:
             return await self._with_failover(
                 lambda: self._account.functions.isAuditReady(  # type: ignore[union-attr]
-                    genius_addr, idiot_addr,
+                    genius_addr,
+                    idiot_addr,
                 ).call()
             )
         except Exception as e:
@@ -270,7 +279,7 @@ class ChainClient:
             try:
                 close_coro = session.aclose() if hasattr(session, "aclose") else session.close()
                 await asyncio.wait_for(close_coro, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning("chain_client_close_timeout")
             except Exception as e:
                 log.warning("chain_client_close_error", err=str(e))

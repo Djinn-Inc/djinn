@@ -37,6 +37,37 @@ const CACHE_TTL_SECONDS = 60;
 
 let cachedData: Map<string, { data: unknown; expiresAt: number }> = new Map();
 
+// Simple sliding-window rate limiter per IP
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 30; // 30 requests per minute per IP
+const rateLimitMap: Map<string, number[]> = new Map();
+
+function getRateLimitKey(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimitMap.get(ip) || [];
+  const recent = timestamps.filter((t) => t > now - RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) return true;
+  recent.push(now);
+  rateLimitMap.set(ip, recent);
+  // Evict stale IPs periodically
+  if (rateLimitMap.size > 1000) {
+    for (const [key, ts] of rateLimitMap) {
+      if (ts.every((t) => t <= now - RATE_LIMIT_WINDOW_MS)) {
+        rateLimitMap.delete(key);
+      }
+    }
+  }
+  return false;
+}
+
 function evictStale() {
   const now = Date.now();
   for (const [key, entry] of cachedData) {
@@ -49,6 +80,13 @@ function evictStale() {
 }
 
 export async function GET(request: NextRequest) {
+  if (isRateLimited(getRateLimitKey(request))) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429 },
+    );
+  }
+
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

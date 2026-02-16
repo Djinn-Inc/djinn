@@ -70,15 +70,10 @@ class Config:
         if not (1 <= self.bt_netuid <= 65535):
             raise ValueError(f"BT_NETUID must be 1-65535, got {self.bt_netuid}")
         if not self.odds_api_base_url.startswith(("http://", "https://")):
-            raise ValueError(
-                f"ODDS_API_BASE_URL must start with http:// or https://, got {self.odds_api_base_url!r}"
-            )
+            raise ValueError(f"ODDS_API_BASE_URL must start with http:// or https://, got {self.odds_api_base_url!r}")
         known_networks = ("finney", "mainnet", "test", "local", "mock")
         if self.bt_network not in known_networks:
-            warnings.append(
-                f"BT_NETWORK={self.bt_network!r} is not a recognized network "
-                f"({', '.join(known_networks)})"
-            )
+            warnings.append(f"BT_NETWORK={self.bt_network!r} is not a recognized network ({', '.join(known_networks)})")
         if self.api_port < 1 or self.api_port > 65535:
             raise ValueError(f"API_PORT must be 1-65535, got {self.api_port}")
         if self.odds_cache_ttl < 0:
@@ -92,7 +87,5 @@ class Config:
         if self.rate_limit_rate < 1:
             raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
         if strict and warnings:
-            raise ValueError(
-                f"Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings)
-            )
+            raise ValueError("Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings))
         return warnings

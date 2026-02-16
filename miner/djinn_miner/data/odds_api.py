@@ -13,7 +13,7 @@ import math
 import random
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -98,6 +98,7 @@ class CircuitBreaker:
 
 class CircuitOpenError(Exception):
     """Raised when the circuit breaker is open and rejecting requests."""
+
 
 # Supported sports mapped to The Odds API sport keys
 SUPPORTED_SPORTS: dict[str, str] = {
@@ -242,7 +243,7 @@ class OddsApiClient:
 
             if attempt < self._max_retries:
                 delay = min(
-                    self.RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5),
+                    self.RETRY_BASE_DELAY * (2**attempt) + random.uniform(0, 0.5),
                     self.RETRY_MAX_DELAY,
                 )
                 await asyncio.sleep(delay)

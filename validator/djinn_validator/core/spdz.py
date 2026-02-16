@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 
 import structlog
 
-from djinn_validator.utils.crypto import BN254_PRIME, Share, _mod_inv
+from djinn_validator.utils.crypto import BN254_PRIME, _mod_inv
 
 log = structlog.get_logger()
 
@@ -129,9 +129,7 @@ def generate_mac_key(
     """
     alpha = secrets.randbelow(prime - 1) + 1  # α ∈ [1, p-1]
     alpha_values = _split_secret_at_points(alpha, x_coords, threshold, prime)
-    shares = [
-        MACKeyShare(x=x, alpha_share=v) for x, v in zip(x_coords, alpha_values)
-    ]
+    shares = [MACKeyShare(x=x, alpha_share=v) for x, v in zip(x_coords, alpha_values)]
     return alpha, shares
 
 
@@ -151,10 +149,7 @@ def authenticate_value(
     mac_secret = (alpha * secret) % prime
     mac_shares = _split_secret_at_points(mac_secret, x_coords, threshold, prime)
 
-    return [
-        AuthenticatedShare(x=x, y=v, mac=m)
-        for x, v, m in zip(x_coords, value_shares, mac_shares)
-    ]
+    return [AuthenticatedShare(x=x, y=v, mac=m) for x, v, m in zip(x_coords, value_shares, mac_shares)]
 
 
 def generate_authenticated_triples(
@@ -366,9 +361,7 @@ class AuthenticatedMPCSession:
         """Verify a MAC on an opened value. Raises MACVerificationError on failure."""
         alpha_list = [self._alpha_shares[s.x] for s in auth_shares]
         if not verify_mac_opening(opened_value, auth_shares, alpha_list, self._prime):
-            raise MACVerificationError(
-                f"MAC verification failed for opened value {opened_value}"
-            )
+            raise MACVerificationError(f"MAC verification failed for opened value {opened_value}")
 
     def _authenticated_subtract_constant(
         self,
@@ -513,9 +506,7 @@ class AuthenticatedMPCSession:
             i = 0
             while i < len(layer):
                 if i + 1 < len(layer):
-                    product = self._multiply_shares(
-                        layer[i], layer[i + 1], self._next_triple()
-                    )
+                    product = self._multiply_shares(layer[i], layer[i + 1], self._next_triple())
                     next_layer.append(product)
                     i += 2
                 else:
@@ -634,18 +625,10 @@ class AuthenticatedParticipantState:
         p = self.prime
         alpha_j = self.alpha_share.alpha_share
 
-        z_val = (
-            opened_d * opened_e
-            + opened_d * self._gate_b.y
-            + opened_e * self._gate_a.y
-            + self._gate_c.y
-        ) % p
+        z_val = (opened_d * opened_e + opened_d * self._gate_b.y + opened_e * self._gate_a.y + self._gate_c.y) % p
 
         z_mac = (
-            opened_d * opened_e * alpha_j
-            + opened_d * self._gate_b.mac
-            + opened_e * self._gate_a.mac
-            + self._gate_c.mac
+            opened_d * opened_e * alpha_j + opened_d * self._gate_b.mac + opened_e * self._gate_a.mac + self._gate_c.mac
         ) % p
 
         self._prev_z = AuthenticatedShare(x=self.validator_x, y=z_val, mac=z_mac)
@@ -656,6 +639,4 @@ class AuthenticatedParticipantState:
 
     def compute_mac_sigma(self, opened_value: int, mac_share: int) -> int:
         """Compute σ = γ - α_j * opened_value for MAC verification."""
-        return compute_mac_check(
-            opened_value, mac_share, self.alpha_share.alpha_share, self.prime
-        )
+        return compute_mac_check(opened_value, mac_share, self.alpha_share.alpha_share, self.prime)

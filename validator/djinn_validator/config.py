@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
@@ -86,6 +86,7 @@ class Config:
         if strict is None:
             strict = self.bt_network in ("finney", "mainnet")
         import re
+
         warnings = []
         if not (1 <= self.bt_netuid <= 65535):
             raise ValueError(f"BT_NETUID must be 1-65535, got {self.bt_netuid}")
@@ -110,10 +111,7 @@ class Config:
                     raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
         known_networks = ("finney", "mainnet", "test", "local", "mock")
         if self.bt_network not in known_networks:
-            warnings.append(
-                f"BT_NETWORK={self.bt_network!r} is not a recognized network "
-                f"({', '.join(known_networks)})"
-            )
+            warnings.append(f"BT_NETWORK={self.bt_network!r} is not a recognized network ({', '.join(known_networks)})")
         if self.http_timeout < 1:
             raise ValueError(f"HTTP_TIMEOUT must be >= 1, got {self.http_timeout}")
         if self.rpc_timeout < 1:
@@ -130,7 +128,5 @@ class Config:
         if self.mpc_peer_timeout < 1.0:
             raise ValueError(f"MPC_PEER_TIMEOUT must be >= 1.0, got {self.mpc_peer_timeout}")
         if strict and warnings:
-            raise ValueError(
-                f"Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings)
-            )
+            raise ValueError("Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings))
         return warnings

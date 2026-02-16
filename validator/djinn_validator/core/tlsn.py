@@ -28,9 +28,7 @@ VERIFIER_BINARY = os.getenv(
 
 # Trusted notary public keys (hex-encoded secp256k1). If empty, any key is
 # accepted (dev mode). In production, configure via TLSN_TRUSTED_NOTARY_KEYS.
-TRUSTED_NOTARY_KEYS: set[str] = set(
-    filter(None, os.getenv("TLSN_TRUSTED_NOTARY_KEYS", "").split(","))
-)
+TRUSTED_NOTARY_KEYS: set[str] = set(filter(None, os.getenv("TLSN_TRUSTED_NOTARY_KEYS", "").split(",")))
 
 
 @dataclass
@@ -70,9 +68,7 @@ async def verify_proof(
         TLSNVerifyResult with the verified response body on success.
     """
     # Write presentation to a temp file
-    with tempfile.NamedTemporaryFile(
-        suffix=".bin", prefix="djinn-verify-", delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".bin", prefix="djinn-verify-", delete=False) as f:
         f.write(presentation_bytes)
         presentation_path = f.name
 
@@ -89,14 +85,10 @@ async def verify_proof(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
         _cleanup(presentation_path)
-        return TLSNVerifyResult(
-            verified=False, error=f"verification timed out after {timeout}s"
-        )
+        return TLSNVerifyResult(verified=False, error=f"verification timed out after {timeout}s")
     except FileNotFoundError:
         _cleanup(presentation_path)
         return TLSNVerifyResult(
@@ -120,14 +112,10 @@ async def verify_proof(
     try:
         result = json.loads(stdout.decode().strip())
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return TLSNVerifyResult(
-            verified=False, error="failed to parse verifier output"
-        )
+        return TLSNVerifyResult(verified=False, error="failed to parse verifier output")
 
     if result.get("status") != "verified":
-        return TLSNVerifyResult(
-            verified=False, error=result.get("error", "verification failed")
-        )
+        return TLSNVerifyResult(verified=False, error=result.get("error", "verification failed"))
 
     server_name = result.get("server_name", "")
 

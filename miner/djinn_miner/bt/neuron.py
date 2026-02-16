@@ -95,12 +95,10 @@ class DjinnMiner:
             return True
 
         except FileNotFoundError as e:
-            log.error("setup_failed_wallet_not_found", error=str(e),
-                      wallet=self._wallet_name, hotkey=self._hotkey_name)
+            log.error("setup_failed_wallet_not_found", error=str(e), wallet=self._wallet_name, hotkey=self._hotkey_name)
             return False
         except Exception as e:
-            log.error("setup_failed", error=str(e), error_type=type(e).__name__,
-                      exc_info=True)
+            log.error("setup_failed", error=str(e), error_type=type(e).__name__, exc_info=True)
             return False
 
     def _setup_axon(self) -> None:

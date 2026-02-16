@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -37,8 +38,8 @@ from djinn_validator.api.metrics import (
     metrics_response,
 )
 from djinn_validator.api.middleware import (
-    RateLimitMiddleware,
     RateLimiter,
+    RateLimitMiddleware,
     RequestIdMiddleware,
     get_cors_origins,
     validate_signed_request,
@@ -83,8 +84,6 @@ from djinn_validator.core.mpc import (
     DistributedParticipantState,
     MPCResult,
     Round1Message,
-    check_availability,
-    compute_local_contribution,
 )
 from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
 from djinn_validator.core.mpc_orchestrator import MPCOrchestrator
@@ -98,9 +97,6 @@ from djinn_validator.core.outcomes import (
 from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import BN254_PRIME, Share
-
-import hashlib
-import re
 
 _SIGNAL_ID_PATH_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 
@@ -132,6 +128,7 @@ def _signal_id_to_uint256(signal_id: str) -> int:
     to the uint256 space expected by Solidity contracts.
     """
     from web3 import Web3
+
     return int.from_bytes(Web3.solidity_keccak(["string"], [signal_id]), "big")
 
 
@@ -146,9 +143,9 @@ def create_app(
     share_store: ShareStore,
     purchase_orch: PurchaseOrchestrator,
     outcome_attestor: OutcomeAttestor,
-    chain_client: "ChainClient | None" = None,
-    neuron: "DjinnValidator | None" = None,
-    mpc_coordinator: "MPCCoordinator | None" = None,
+    chain_client: ChainClient | None = None,
+    neuron: DjinnValidator | None = None,
+    mpc_coordinator: MPCCoordinator | None = None,
     rate_limit_capacity: int = 60,
     rate_limit_rate: int = 10,
 ) -> FastAPI:
@@ -231,9 +228,13 @@ def create_app(
             try:
                 if int(content_length) > max_size:
                     from starlette.responses import JSONResponse
-                    return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {max_size // 1048576}MB)"})
+
+                    return JSONResponse(
+                        status_code=413, content={"detail": f"Request body too large (max {max_size // 1048576}MB)"}
+                    )
             except (ValueError, OverflowError):
                 from starlette.responses import JSONResponse
+
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
         return await call_next(request)
 
@@ -313,7 +314,7 @@ def create_app(
                 ),
                 timeout=15.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             PURCHASES_PROCESSED.labels(result="error").inc()
             raise HTTPException(status_code=504, detail="MPC availability check timed out")
 
@@ -345,15 +346,17 @@ def create_app(
                         message="On-chain payment not found. Call Escrow.purchase() first.",
                     )
                 tx_hash = f"verified-{on_chain_id}"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.error("payment_verification_timeout", signal_id=signal_id)
                 raise HTTPException(
-                    status_code=504, detail="Payment verification timed out",
+                    status_code=504,
+                    detail="Payment verification timed out",
                 )
             except Exception as e:
                 log.error("payment_verification_error", signal_id=signal_id, err=str(e))
                 raise HTTPException(
-                    status_code=502, detail="Payment verification failed",
+                    status_code=502,
+                    detail="Payment verification failed",
                 )
         else:
             # Dev mode: no chain client configured — skip payment check
@@ -415,7 +418,7 @@ def create_app(
                 outcome_attestor.resolve_all_pending(hotkey),
                 timeout=30.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.error("resolve_all_pending_timeout")
             raise HTTPException(status_code=504, detail="Signal resolution timed out")
         results = [
@@ -439,7 +442,7 @@ def create_app(
                 outcome_attestor.fetch_event_result(req.event_id),
                 timeout=10.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.error("fetch_event_result_timeout", event_id=req.event_id)
             raise HTTPException(status_code=504, detail="Event result fetch timed out")
         outcome = Outcome(req.outcome)
@@ -455,8 +458,7 @@ def create_app(
         # Check if consensus is reached
         if neuron and neuron.metagraph:
             total_validators = sum(
-                1 for uid in range(neuron.metagraph.n.item())
-                if neuron.metagraph.validator_permit[uid].item()
+                1 for uid in range(neuron.metagraph.n.item()) if neuron.metagraph.validator_permit[uid].item()
             )
         else:
             total_validators = 1  # Single-validator dev mode
@@ -498,6 +500,7 @@ def create_app(
 
     # Cache Config for readiness checks (avoid re-loading dotenv on every probe)
     from djinn_validator.config import Config as _ConfigCls
+
     _readiness_config = _ConfigCls()
 
     @app.get("/health/ready", response_model=ReadinessResponse)
@@ -520,7 +523,9 @@ def create_app(
             cfg = _readiness_config
             zero = "0" * 40
             checks["escrow_configured"] = bool(cfg.escrow_address) and zero not in cfg.escrow_address
-            checks["signal_configured"] = bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address
+            checks["signal_configured"] = (
+                bool(cfg.signal_commitment_address) and zero not in cfg.signal_commitment_address
+            )
             checks["account_configured"] = bool(cfg.account_address) and zero not in cfg.account_address
             checks["collateral_configured"] = bool(cfg.collateral_address) and zero not in cfg.collateral_address
             checks["sports_api_key"] = bool(cfg.sports_api_key)
@@ -562,7 +567,9 @@ def create_app(
     # or AuthenticatedParticipantState (SPDZ malicious security).
     import threading as _threading
     import time as _time
+
     from djinn_validator.core.spdz import AuthenticatedParticipantState, AuthenticatedShare, MACKeyShare
+
     _participant_states: dict[str, DistributedParticipantState | AuthenticatedParticipantState] = {}
     _participant_created: dict[str, float] = {}  # session_id -> monotonic timestamp
     _participant_lock = _threading.Lock()
@@ -573,10 +580,7 @@ def create_app(
     def _cleanup_stale_participants_locked() -> int:
         """Remove participant states older than _PARTICIPANT_TTL. Caller holds _participant_lock."""
         now = _time.monotonic()
-        stale = [
-            sid for sid, ts in _participant_created.items()
-            if now - ts > _PARTICIPANT_TTL
-        ]
+        stale = [sid for sid, ts in _participant_created.items() if now - ts > _PARTICIPANT_TTL]
         for sid in stale:
             _participant_states.pop(sid, None)
             _participant_created.pop(sid, None)
@@ -658,21 +662,27 @@ def create_app(
                     auth_tb = []
                     auth_tc = []
                     for i, ts in enumerate(req.auth_triple_shares):
-                        auth_ta.append(AuthenticatedShare(
-                            x=record.share.x,
-                            y=_parse_field_hex(ts["a"]["y"], f"triple[{i}].a.y"),
-                            mac=_parse_field_hex(ts["a"]["mac"], f"triple[{i}].a.mac"),
-                        ))
-                        auth_tb.append(AuthenticatedShare(
-                            x=record.share.x,
-                            y=_parse_field_hex(ts["b"]["y"], f"triple[{i}].b.y"),
-                            mac=_parse_field_hex(ts["b"]["mac"], f"triple[{i}].b.mac"),
-                        ))
-                        auth_tc.append(AuthenticatedShare(
-                            x=record.share.x,
-                            y=_parse_field_hex(ts["c"]["y"], f"triple[{i}].c.y"),
-                            mac=_parse_field_hex(ts["c"]["mac"], f"triple[{i}].c.mac"),
-                        ))
+                        auth_ta.append(
+                            AuthenticatedShare(
+                                x=record.share.x,
+                                y=_parse_field_hex(ts["a"]["y"], f"triple[{i}].a.y"),
+                                mac=_parse_field_hex(ts["a"]["mac"], f"triple[{i}].a.mac"),
+                            )
+                        )
+                        auth_tb.append(
+                            AuthenticatedShare(
+                                x=record.share.x,
+                                y=_parse_field_hex(ts["b"]["y"], f"triple[{i}].b.y"),
+                                mac=_parse_field_hex(ts["b"]["mac"], f"triple[{i}].b.mac"),
+                            )
+                        )
+                        auth_tc.append(
+                            AuthenticatedShare(
+                                x=record.share.x,
+                                y=_parse_field_hex(ts["c"]["y"], f"triple[{i}].c.y"),
+                                mac=_parse_field_hex(ts["c"]["mac"], f"triple[{i}].c.mac"),
+                            )
+                        )
 
                     state: DistributedParticipantState | AuthenticatedParticipantState = AuthenticatedParticipantState(
                         validator_x=record.share.x,
@@ -687,9 +697,15 @@ def create_app(
                 else:
                     # Semi-honest mode — validate all field elements
                     r_share = _parse_field_hex(req.r_share_y, "r_share_y")
-                    triple_a = [_parse_field_hex(ts.get("a", "0"), f"triple[{i}].a") for i, ts in enumerate(req.triple_shares)]
-                    triple_b = [_parse_field_hex(ts.get("b", "0"), f"triple[{i}].b") for i, ts in enumerate(req.triple_shares)]
-                    triple_c = [_parse_field_hex(ts.get("c", "0"), f"triple[{i}].c") for i, ts in enumerate(req.triple_shares)]
+                    triple_a = [
+                        _parse_field_hex(ts.get("a", "0"), f"triple[{i}].a") for i, ts in enumerate(req.triple_shares)
+                    ]
+                    triple_b = [
+                        _parse_field_hex(ts.get("b", "0"), f"triple[{i}].b") for i, ts in enumerate(req.triple_shares)
+                    ]
+                    triple_c = [
+                        _parse_field_hex(ts.get("c", "0"), f"triple[{i}].c") for i, ts in enumerate(req.triple_shares)
+                    ]
 
                     state = DistributedParticipantState(
                         validator_x=record.share.x,
@@ -905,10 +921,7 @@ def create_app(
     def _cleanup_stale_ot_states_locked() -> int:
         """Remove OT states older than _OT_TTL. Caller holds _ot_lock."""
         now = _time.monotonic()
-        stale = [
-            sid for sid, ts in _ot_created.items()
-            if now - ts > _OT_TTL
-        ]
+        stale = [sid for sid, ts in _ot_created.items() if now - ts > _OT_TTL]
         for sid in stale:
             _ot_states.pop(sid, None)
             _ot_created.pop(sid, None)
@@ -920,7 +933,8 @@ def create_app(
     _MAX_DH_PRIME_BITS = 4096
 
     def _resolve_ot_params(
-        field_prime_hex: str | None, dh_prime_hex: str | None,
+        field_prime_hex: str | None,
+        dh_prime_hex: str | None,
     ) -> tuple[int, DHGroup]:
         """Resolve OT parameters from request, falling back to defaults."""
         if field_prime_hex:
@@ -985,8 +999,7 @@ def create_app(
             session_id=req.session_id,
             accepted=True,
             sender_public_keys={
-                str(t): serialize_dh_public_key(pk, state.dh_group)
-                for t, pk in state.get_sender_public_keys().items()
+                str(t): serialize_dh_public_key(pk, state.dh_group) for t, pk in state.get_sender_public_keys().items()
             },
         )
 
@@ -1001,26 +1014,19 @@ def create_app(
             raise HTTPException(status_code=404, detail="OT session not found")
 
         from djinn_validator.core.ot_network import (
-            deserialize_choices,
             deserialize_dh_public_key,
             serialize_choices,
         )
 
         # Deserialize peer's sender public keys
-        peer_pks = {
-            int(t): deserialize_dh_public_key(pk_hex)
-            for t, pk_hex in req.peer_sender_pks.items()
-        }
+        peer_pks = {int(t): deserialize_dh_public_key(pk_hex) for t, pk_hex in req.peer_sender_pks.items()}
 
         # Generate this party's receiver choices
         our_choices = state.generate_receiver_choices(peer_pks)
 
         return OTChoicesResponse(
             session_id=req.session_id,
-            choices={
-                str(t): serialize_choices(c)
-                for t, c in our_choices.items()
-            },
+            choices={str(t): serialize_choices(c) for t, c in our_choices.items()},
         )
 
     @app.post("/v1/mpc/ot/transfers", response_model=OTTransfersResponse)
@@ -1039,24 +1045,15 @@ def create_app(
         )
 
         # Deserialize peer's choices for our sender instances
-        peer_choices_deserialized = {
-            int(t): deserialize_choices(c)
-            for t, c in req.peer_choices.items()
-        }
+        peer_choices_deserialized = {int(t): deserialize_choices(c) for t, c in req.peer_choices.items()}
 
         # Process: encrypt OT messages using our sender states
         transfers, sender_shares = state.process_sender_choices(peer_choices_deserialized)
 
         return OTTransfersResponse(
             session_id=req.session_id,
-            transfers={
-                str(t): serialize_transfers(pairs)
-                for t, pairs in transfers.items()
-            },
-            sender_shares={
-                str(t): hex(s)
-                for t, s in sender_shares.items()
-            },
+            transfers={str(t): serialize_transfers(pairs) for t, pairs in transfers.items()},
+            sender_shares={str(t): hex(s) for t, s in sender_shares.items()},
         )
 
     @app.post("/v1/mpc/ot/complete", response_model=OTCompleteResponse)
@@ -1072,17 +1069,11 @@ def create_app(
         from djinn_validator.core.ot_network import deserialize_transfers
 
         # Decrypt the peer's encrypted transfers (where this party is receiver)
-        peer_transfers_deserialized = {
-            int(t): deserialize_transfers(pairs)
-            for t, pairs in req.peer_transfers.items()
-        }
+        peer_transfers_deserialized = {int(t): deserialize_transfers(pairs) for t, pairs in req.peer_transfers.items()}
         receiver_shares = state.decrypt_receiver_transfers(peer_transfers_deserialized)
 
         # Parse this party's own sender shares
-        own_sender_shares = {
-            int(t): int(s, 16)
-            for t, s in req.own_sender_shares.items()
-        }
+        own_sender_shares = {int(t): int(s, 16) for t, s in req.own_sender_shares.items()}
 
         # Accumulate cross-term shares into c values
         state.accumulate_ot_shares(own_sender_shares, receiver_shares)
@@ -1119,16 +1110,14 @@ def create_app(
 
         return OTSharesResponse(
             session_id=req.session_id,
-            triple_shares=[
-                {k: hex(v) for k, v in ts.items()}
-                for ts in shares
-            ],
+            triple_shares=[{k: hex(v) for k, v in ts.items()} for ts in shares],
         )
 
     @app.get("/metrics")
     async def metrics() -> bytes:
         """Prometheus metrics endpoint."""
         from fastapi.responses import Response
+
         return Response(
             content=metrics_response(),
             media_type="text/plain; version=0.0.4; charset=utf-8",

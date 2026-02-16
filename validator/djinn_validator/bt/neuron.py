@@ -9,8 +9,6 @@ Handles:
 
 from __future__ import annotations
 
-import asyncio
-import time
 from typing import Any
 
 import structlog
@@ -87,12 +85,10 @@ class DjinnValidator:
             return True
 
         except FileNotFoundError as e:
-            log.error("setup_failed_wallet_not_found", error=str(e),
-                      wallet=self._wallet_name, hotkey=self._hotkey_name)
+            log.error("setup_failed_wallet_not_found", error=str(e), wallet=self._wallet_name, hotkey=self._hotkey_name)
             return False
         except Exception as e:
-            log.error("setup_failed", error=str(e), error_type=type(e).__name__,
-                      exc_info=True)
+            log.error("setup_failed", error=str(e), error_type=type(e).__name__, exc_info=True)
             return False
 
     @staticmethod

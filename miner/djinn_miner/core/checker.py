@@ -53,9 +53,7 @@ class LineChecker:
 
         # Fetch odds for all relevant sports concurrently
         odds_by_sport: dict[str, list[BookmakerOdds]] = {}
-        fetch_tasks = {
-            sport: self._fetch_sport_odds(sport, lines) for sport in sports
-        }
+        fetch_tasks = {sport: self._fetch_sport_odds(sport, lines) for sport in sports}
 
         results_map = await asyncio.gather(
             *fetch_tasks.values(),
@@ -70,8 +68,11 @@ class LineChecker:
             else:
                 odds_by_sport[sport] = result
                 if not result:
-                    log.warning("sport_odds_empty", sport=sport,
-                                msg="API returned no odds — all lines for this sport will be unavailable")
+                    log.warning(
+                        "sport_odds_empty",
+                        sport=sport,
+                        msg="API returned no odds — all lines for this sport will be unavailable",
+                    )
                 any_success = True
 
         if self._health:
