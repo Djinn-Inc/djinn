@@ -194,6 +194,12 @@ class OddsApiClient:
         if self._owns_client:
             await self._client.aclose()
 
+    async def __aenter__(self) -> "OddsApiClient":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.close()
+
     def _evict_stale_cache(self) -> None:
         """Remove expired entries and enforce max cache size."""
         now = time.monotonic()

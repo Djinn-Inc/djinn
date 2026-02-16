@@ -225,3 +225,19 @@ class TestMinerScorer:
         assert len(scores) == 4
         for uid in range(4):
             assert scores[uid] == 1.0
+
+    def test_normalize_guards_non_finite_values(self) -> None:
+        """If division somehow produces inf/nan, falls back to uniform."""
+        # Simulate by injecting inf values in raw dict
+        raw = {0: float("inf"), 1: 1.0}
+        result = MinerScorer._normalize(raw)
+        # inf / (inf + 1) = nan, so should fall back to uniform
+        assert len(result) == 2
+        assert all(math.isfinite(v) for v in result.values())
+
+    def test_normalize_all_finite(self) -> None:
+        """Normal case produces all finite weights summing to ~1.0."""
+        raw = {0: 3.0, 1: 2.0, 2: 5.0}
+        result = MinerScorer._normalize(raw)
+        assert sum(result.values()) == pytest.approx(1.0)
+        assert all(math.isfinite(v) for v in result.values())

@@ -189,13 +189,19 @@ class MinerScorer:
         """Normalize weights to sum to 1.0.
 
         Uses epsilon comparison to avoid division by near-zero floating point sums
-        that could produce Infinity or extremely large weights.
+        that could produce Infinity or extremely large weights. Validates all
+        outputs are finite to prevent inf/nan propagation to on-chain weight setting.
         """
         total = sum(raw.values())
         if total < 1e-12:
             n = len(raw)
             return {uid: 1.0 / n for uid in raw} if n > 0 else {}
-        return {uid: score / total for uid, score in raw.items()}
+        result = {uid: score / total for uid, score in raw.items()}
+        # Guard against floating-point edge cases producing inf or nan
+        if not all(math.isfinite(v) for v in result.values()):
+            n = len(result)
+            return {uid: 1.0 / n for uid in result} if n > 0 else {}
+        return result
 
     def reset_epoch(self) -> None:
         """Reset per-epoch metrics while preserving history."""

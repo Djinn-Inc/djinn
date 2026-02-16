@@ -347,6 +347,14 @@ async def test_close_releases_owned_client() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_context_manager_closes_client() -> None:
+    """async with OddsApiClient should close client on exit."""
+    async with OddsApiClient(api_key="test") as c:
+        assert not c._client.is_closed
+    assert c._client.is_closed
+
+
+@pytest.mark.asyncio
 async def test_close_does_not_close_injected_client() -> None:
     """close() should NOT close an injected HTTP client."""
     mock_http = httpx.AsyncClient(transport=httpx.MockTransport(

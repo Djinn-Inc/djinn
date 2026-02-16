@@ -35,7 +35,10 @@ export function useTrackRecordProofs(geniusAddress?: string) {
     try {
       const contract = getTrackRecordContract(provider);
       const filter = contract.filters.TrackRecordSubmitted(null, geniusAddress);
-      const events = await contract.queryFilter(filter, 0, "latest");
+      // Limit scan to last ~6 months on Base (~43,200 blocks/day × 180 days)
+      const latestBlock = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, latestBlock - 7_776_000);
+      const events = await contract.queryFilter(filter, fromBlock, "latest");
 
       const entries: TrackRecordProofEntry[] = events.map((e) => {
         const log = e as ethers.EventLog;

@@ -25,6 +25,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlencode
 
 import structlog
 
@@ -207,9 +208,8 @@ class ProofGenerator:
         # The session stores URL without key, but we need the full URL for TLS
         url = session.request_url
         if session.request_params:
-            params = "&".join(f"{k}={v}" for k, v in session.request_params.items())
             sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}{params}"
+            url = f"{url}{sep}{urlencode(session.request_params)}"
 
         result = await tlsn_module.generate_proof(url)
 
