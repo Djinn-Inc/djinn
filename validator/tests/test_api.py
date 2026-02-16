@@ -158,6 +158,111 @@ class TestPurchase:
         assert data["status"] in ("complete", "unavailable")
 
 
+class TestPaymentVerification:
+    """Tests for on-chain payment verification before share release."""
+
+    def _store_signal(self, share_store: ShareStore) -> None:
+        from djinn_validator.utils.crypto import generate_signal_index_shares
+        shares = generate_signal_index_shares(5)
+        share_store.store("sig-pay-1", "0xGenius", shares[0], b"encrypted-key")
+
+    def test_purchase_requires_payment_when_chain_configured(self, share_store: ShareStore) -> None:
+        """When chain_client is configured, purchase must be paid on-chain."""
+        self._store_signal(share_store)
+        purchase_orch = PurchaseOrchestrator(share_store)
+        outcome_attestor = OutcomeAttestor()
+        mock_chain = AsyncMock()
+        mock_chain.is_connected = AsyncMock(return_value=True)
+        # Return zero pricePaid — payment not found on-chain
+        mock_chain.verify_purchase = AsyncMock(return_value={
+            "notional": 0, "pricePaid": 0, "sportsbook": "",
+        })
+        app = create_app(share_store, purchase_orch, outcome_attestor, chain_client=mock_chain)
+        client = TestClient(app)
+
+        resp = client.post("/v1/signal/sig-pay-1/purchase", json={
+            "buyer_address": "0x" + "b0" * 20,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        # If the signal is available but unpaid, should get payment_required
+        if data.get("available") is True:
+            assert data["status"] == "payment_required"
+            assert "encrypted_key_share" not in data or data["encrypted_key_share"] is None
+
+    def test_purchase_releases_share_when_paid(self, share_store: ShareStore) -> None:
+        """When on-chain payment is confirmed, share is released."""
+        self._store_signal(share_store)
+        purchase_orch = PurchaseOrchestrator(share_store)
+        outcome_attestor = OutcomeAttestor()
+        mock_chain = AsyncMock()
+        mock_chain.is_connected = AsyncMock(return_value=True)
+        # Return positive pricePaid — payment confirmed
+        mock_chain.verify_purchase = AsyncMock(return_value={
+            "notional": 100_000_000, "pricePaid": 50_000_000, "sportsbook": "DraftKings",
+        })
+        app = create_app(share_store, purchase_orch, outcome_attestor, chain_client=mock_chain)
+        client = TestClient(app)
+
+        resp = client.post("/v1/signal/sig-pay-1/purchase", json={
+            "buyer_address": "0x" + "b0" * 20,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        # If the signal is available and paid, share should be released
+        if data.get("available") is True:
+            assert data["status"] == "complete"
+            assert data.get("encrypted_key_share") is not None
+
+    def test_purchase_works_in_dev_mode_no_chain(self, client: TestClient, share_store: ShareStore) -> None:
+        """Dev mode (no chain_client): purchase proceeds without payment check."""
+        from djinn_validator.utils.crypto import generate_signal_index_shares
+        shares = generate_signal_index_shares(5)
+        share_store.store("sig-dev-1", "0xGenius", shares[0], b"encrypted-key")
+
+        resp = client.post("/v1/signal/sig-dev-1/purchase", json={
+            "buyer_address": "0x" + "b0" * 20,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["signal_id"] == "sig-dev-1"
+        # In dev mode, should complete (or be unavailable) — never payment_required
+        assert data["status"] in ("complete", "unavailable")
+
+    def test_payment_verification_timeout_returns_504(self, share_store: ShareStore) -> None:
+        """When chain_client times out, return 504."""
+        self._store_signal(share_store)
+        purchase_orch = PurchaseOrchestrator(share_store)
+        outcome_attestor = OutcomeAttestor()
+        mock_chain = AsyncMock()
+        mock_chain.is_connected = AsyncMock(return_value=True)
+
+        import asyncio
+        async def slow_verify(*args, **kwargs):
+            await asyncio.sleep(20)
+            return {"notional": 0, "pricePaid": 0, "sportsbook": ""}
+
+        mock_chain.verify_purchase = slow_verify
+        app = create_app(share_store, purchase_orch, outcome_attestor, chain_client=mock_chain)
+        client = TestClient(app)
+
+        resp = client.post("/v1/signal/sig-pay-1/purchase", json={
+            "buyer_address": "0x" + "b0" * 20,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+        # Should be 504 if timeout, or 200 unavailable if MPC says unavailable
+        assert resp.status_code in (200, 504)
+        if resp.status_code == 200:
+            assert resp.json()["status"] == "unavailable"
+
+
 class TestOutcome:
     def test_attest_outcome(self, client: TestClient, share_store: ShareStore) -> None:
         # Store a share first

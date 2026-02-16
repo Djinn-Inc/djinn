@@ -95,6 +95,7 @@ from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
 from djinn_validator.core.shares import ShareStore
 from djinn_validator.utils.crypto import Share
 
+import hashlib
 import re
 
 _SIGNAL_ID_PATH_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
@@ -104,6 +105,16 @@ def _validate_signal_id_path(signal_id: str) -> None:
     """Validate signal_id path parameter format."""
     if not _SIGNAL_ID_PATH_RE.match(signal_id):
         raise HTTPException(status_code=400, detail="Invalid signal_id format")
+
+
+def _signal_id_to_uint256(signal_id: str) -> int:
+    """Convert a string signal ID to a uint256 for on-chain lookups.
+
+    Uses keccak256 to deterministically map arbitrary-length string IDs
+    to the uint256 space expected by Solidity contracts.
+    """
+    from web3 import Web3
+    return int.from_bytes(Web3.solidity_keccak(["string"], [signal_id]), "big")
 
 
 if TYPE_CHECKING:
@@ -264,9 +275,43 @@ def create_app(
                 message="Signal not available at this sportsbook",
             )
 
-        # In production: wait for on-chain payment verification.
-        # For now, release share directly (payment check would be async).
-        purchase_orch.confirm_payment(signal_id, req.buyer_address, "pending")
+        # Verify on-chain payment before releasing share
+        if chain_client is not None:
+            try:
+                on_chain_id = _signal_id_to_uint256(signal_id)
+                purchase_record = await asyncio.wait_for(
+                    chain_client.verify_purchase(on_chain_id, req.buyer_address),
+                    timeout=10.0,
+                )
+                if purchase_record.get("pricePaid", 0) == 0:
+                    PURCHASES_PROCESSED.labels(result="payment_required").inc()
+                    return PurchaseResponse(
+                        signal_id=signal_id,
+                        status="payment_required",
+                        available=True,
+                        message="On-chain payment not found. Call Escrow.purchase() first.",
+                    )
+                tx_hash = f"verified-{on_chain_id}"
+            except asyncio.TimeoutError:
+                log.error("payment_verification_timeout", signal_id=signal_id)
+                raise HTTPException(
+                    status_code=504, detail="Payment verification timed out",
+                )
+            except Exception as e:
+                log.error("payment_verification_error", signal_id=signal_id, err=str(e))
+                raise HTTPException(
+                    status_code=502, detail="Payment verification failed",
+                )
+        else:
+            # Dev mode: no chain client configured — skip payment check
+            log.warning(
+                "payment_check_skipped",
+                signal_id=signal_id,
+                reason="no chain client configured",
+            )
+            tx_hash = "dev-mode-no-verification"
+
+        purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
 
         share_data = share_store.release(signal_id, req.buyer_address)
         if share_data is None:
