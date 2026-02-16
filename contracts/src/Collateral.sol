@@ -106,7 +106,9 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     /// @param amount Amount of USDC to lock (6 decimals)
     function lock(uint256 signalId, address genius, uint256 amount) external onlyAuthorized {
         if (amount == 0) revert ZeroAmount();
-        uint256 available = deposits[genius] - locked[genius];
+        uint256 dep = deposits[genius];
+        uint256 loc = locked[genius];
+        uint256 available = dep > loc ? dep - loc : 0;
         if (amount > available) {
             revert InsufficientFreeCollateral(available, amount);
         }

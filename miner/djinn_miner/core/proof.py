@@ -198,8 +198,8 @@ class ProofGenerator:
         return ProofResponse(
             query_id=query_id,
             proof_hash=proof_hash,
-            status="submitted",
-            message="basic hash proof (no captured session)",
+            status="unverified",
+            message="basic hash proof — not cryptographically verified (no captured session or TLSNotary)",
         )
 
     async def _try_tlsn_proof(self, session: CapturedSession) -> ProofResponse | None:

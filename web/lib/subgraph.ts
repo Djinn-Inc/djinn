@@ -51,13 +51,13 @@ interface GraphQLResponse<T> {
   errors?: { message: string }[];
 }
 
-async function querySubgraph<T>(query: string): Promise<T | null> {
+async function querySubgraph<T>(query: string, variables?: Record<string, unknown>): Promise<T | null> {
   if (!SUBGRAPH_URL) return null;
 
   const resp = await fetch(SUBGRAPH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, variables }),
   });
 
   if (!resp.ok) {
@@ -116,24 +116,27 @@ export async function fetchTrackRecordProofs(
 
   const result = await querySubgraph<{
     trackRecordProofs: SubgraphTrackRecordProof[];
-  }>(`{
-    trackRecordProofs(
-      where: { genius: "${geniusAddress.toLowerCase()}" }
-      orderBy: submittedAt
-      orderDirection: desc
-      first: 50
-    ) {
-      id
-      signalCount
-      totalGain
-      totalLoss
-      favCount
-      unfavCount
-      voidCount
-      proofHash
-      submittedAt
-    }
-  }`);
+  }>(
+    `query($genius: String!) {
+      trackRecordProofs(
+        where: { genius: $genius }
+        orderBy: submittedAt
+        orderDirection: desc
+        first: 50
+      ) {
+        id
+        signalCount
+        totalGain
+        totalLoss
+        favCount
+        unfavCount
+        voidCount
+        proofHash
+        submittedAt
+      }
+    }`,
+    { genius: geniusAddress.toLowerCase() },
+  );
 
   return result?.trackRecordProofs ?? [];
 }
@@ -169,29 +172,32 @@ export async function fetchGeniusSignals(
   if (!ETH_ADDRESS_RE.test(geniusAddress)) return [];
 
   const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
-  const result = await querySubgraph<{ signals: SubgraphSignal[] }>(`{
-    signals(
-      where: { genius: "${geniusAddress.toLowerCase()}" }
-      orderBy: createdAt
-      orderDirection: desc
-      first: ${safeLimit}
-    ) {
-      id
-      sport
-      maxPriceBps
-      slaMultiplierBps
-      status
-      createdAt
-      purchases(first: 10) {
+  const result = await querySubgraph<{ signals: SubgraphSignal[] }>(
+    `query($genius: String!, $limit: Int!) {
+      signals(
+        where: { genius: $genius }
+        orderBy: createdAt
+        orderDirection: desc
+        first: $limit
+      ) {
         id
-        onChainPurchaseId
-        notional
-        feePaid
-        outcome
-        purchasedAt
+        sport
+        maxPriceBps
+        slaMultiplierBps
+        status
+        createdAt
+        purchases(first: 10) {
+          id
+          onChainPurchaseId
+          notional
+          feePaid
+          outcome
+          purchasedAt
+        }
       }
-    }
-  }`);
+    }`,
+    { genius: geniusAddress.toLowerCase(), limit: safeLimit },
+  );
 
   return result?.signals ?? [];
 }

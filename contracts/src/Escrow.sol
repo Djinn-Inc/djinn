@@ -391,6 +391,22 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         return _purchasesBySignal[signalId];
     }
 
+    /// @notice Check if a signal can be purchased (sufficient collateral available)
+    /// @param signalId The signal to check
+    /// @param notional The intended notional amount
+    /// @return canBuy True if the Genius has sufficient free collateral
+    /// @return reason Human-readable reason if canBuy is false
+    function canPurchase(uint256 signalId, uint256 notional) external view returns (bool canBuy, string memory reason) {
+        if (address(signalCommitment) == address(0)) return (false, "SignalCommitment not set");
+        Signal memory sig = signalCommitment.getSignal(signalId);
+        if (sig.status != SignalStatus.Active) return (false, "Signal not active");
+        if (block.timestamp >= sig.expiresAt) return (false, "Signal expired");
+        if (sig.maxNotional > 0 && notional > sig.maxNotional) return (false, "Notional exceeds signal max");
+        if (notional < MIN_NOTIONAL) return (false, "Notional too small");
+        if (notional > MAX_NOTIONAL) return (false, "Notional too large");
+        return (true, "");
+    }
+
     // -------------------------------------------------------------------------
     // Emergency pause
     // -------------------------------------------------------------------------

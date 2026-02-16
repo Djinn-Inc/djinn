@@ -540,6 +540,18 @@ class OutcomeAttestor:
         event_result: EventResult,
     ) -> OutcomeAttestation:
         """Record this validator's outcome attestation."""
+        # Check for duplicate attestation from same validator
+        existing = self._attestations.get(signal_id, [])
+        for att in existing:
+            if att.validator_hotkey == validator_hotkey:
+                log.warning(
+                    "duplicate_attestation_skipped",
+                    signal_id=signal_id,
+                    validator_hotkey=validator_hotkey,
+                    existing_outcome=att.outcome.name,
+                )
+                return att
+
         attestation = OutcomeAttestation(
             signal_id=signal_id,
             validator_hotkey=validator_hotkey,

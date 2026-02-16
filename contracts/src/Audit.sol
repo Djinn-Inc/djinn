@@ -124,6 +124,7 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     error NotPartyToAudit(address caller, address genius, address idiot);
     error NoPurchasesInCycle(address genius, address idiot, uint256 cycle);
     error AuditAlreadyReady(address genius, address idiot);
+    error OutcomesNotFinalized(address genius, address idiot);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -290,6 +291,14 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
             revert NoPurchasesInCycle(genius, idiot, cycle);
         }
 
+        // All outcomes must be finalized before early exit to prevent timing manipulation
+        for (uint256 i; i < state.purchaseIds.length; ++i) {
+            Outcome outcome = account.getOutcome(genius, idiot, state.purchaseIds[i]);
+            if (outcome == Outcome.Pending) {
+                revert OutcomesNotFinalized(genius, idiot);
+            }
+        }
+
         int256 score = computeScore(genius, idiot);
         _settle(genius, idiot, cycle, score, true);
     }
@@ -398,6 +407,11 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         }
         // If score >= 0 and not early exit: Genius keeps all fees, no damages
 
+        // Release signal locks FIRST so freed collateral covers the slashes below.
+        // The locks belong to this cycle's settled signals and should be released
+        // before any slashing to avoid undercollateralizing other active signal locks.
+        _releaseSignalLocks(genius, purchaseIds);
+
         // Protocol fee -- slash from genius collateral to treasury
         // Early exits use credits only, no USDC movement
         if (isEarlyExit) {
@@ -405,9 +419,6 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         } else if (protocolFee > 0) {
             collateral.slash(genius, protocolFee, protocolTreasury);
         }
-
-        // Release remaining signal locks from Collateral
-        _releaseSignalLocks(genius, purchaseIds);
 
         // Store audit result
         auditResults[genius][idiot][cycle] = AuditResult({

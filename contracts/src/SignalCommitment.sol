@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Signal, SignalStatus} from "./interfaces/IDjinn.sol";
 
 /// @title SignalCommitment
@@ -9,7 +10,7 @@ import {Signal, SignalStatus} from "./interfaces/IDjinn.sol";
 ///         A Genius commits an encrypted signal with 10 decoy lines (9 decoys + 1 real).
 ///         The real signal content remains hidden inside the AES-256-GCM encrypted blob.
 /// @dev Signal IDs are externally generated and must be globally unique.
-contract SignalCommitment is Ownable {
+contract SignalCommitment is Ownable, Pausable {
     // ─── Types
     // ──────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ contract SignalCommitment is Ownable {
     ///      The 10 decoy lines obscure which line is the real signal.
     ///      Uses a struct parameter to avoid stack-too-deep with 9 inputs.
     /// @param p CommitParams struct containing all signal data
-    function commit(CommitParams calldata p) external {
+    function commit(CommitParams calldata p) external whenNotPaused {
         if (_exists[p.signalId]) revert SignalAlreadyExists(p.signalId);
         if (p.encryptedBlob.length == 0) revert EmptyEncryptedBlob();
         if (p.encryptedBlob.length > MAX_BLOB_SIZE) revert BlobTooLarge(p.encryptedBlob.length, MAX_BLOB_SIZE);
@@ -301,5 +302,18 @@ contract SignalCommitment is Ownable {
     /// @return True if a signal with this ID has been committed
     function signalExists(uint256 signalId) external view returns (bool) {
         return _exists[signalId];
+    }
+
+    // ─── Emergency pause
+    // ─────────────────────────────────────────────
+
+    /// @notice Pause signal commitment
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpause signal commitment
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 from dataclasses import dataclass, field
 
@@ -319,6 +320,8 @@ class AuthenticatedMPCSession:
     protocol aborts.
     """
 
+    _SIMULATION_MODE: bool = os.environ.get("DJINN_SPDZ_SIMULATION") == "1"
+
     def __init__(
         self,
         available_indices: set[int],
@@ -481,12 +484,16 @@ class AuthenticatedMPCSession:
             factors.append(factor_shares)
 
         # Step 2: Generate authenticated shared random mask r
+        #
+        # SIMULATION ONLY (R25-07): The block below reconstructs alpha to
+        # authenticate a fresh random r.  This is acceptable in test /
+        # simulation mode (DJINN_SPDZ_SIMULATION=1) but MUST NOT run in
+        # production — the coordinator learning alpha breaks SPDZ malicious
+        # security.  Production must supply pre-distributed r_auth shares
+        # from an offline preprocessing phase so alpha is never revealed.
         r = secrets.randbelow(p - 1) + 1
         r_auth = authenticate_value(
             r,
-            # We need the actual alpha for r authentication — in production
-            # this comes from the preprocessing phase. Here we reconstruct it
-            # since this is a simulation.
             self._reconstruct_alpha(),
             self._validator_xs,
             self._threshold,
@@ -537,7 +544,18 @@ class AuthenticatedMPCSession:
         return available, self._n_validators
 
     def _reconstruct_alpha(self) -> int:
-        """Reconstruct the MAC key (only valid in simulation/trusted dealer mode)."""
+        """Reconstruct the MAC key (only valid in simulation/trusted dealer mode).
+
+        R25-07: Reconstructing alpha in production defeats SPDZ malicious
+        security because the coordinator learns the global MAC key and can
+        forge MACs. This method is gated behind DJINN_SPDZ_SIMULATION=1.
+        Production must use pre-distributed authenticated r shares from the
+        preprocessing phase so that alpha is never reconstructed.
+        """
+        if not self._SIMULATION_MODE:
+            raise RuntimeError(
+                "Cannot reconstruct alpha in production — use pre-distributed authenticated shares"
+            )
         values = {x: s.alpha_share for x, s in self._alpha_shares.items()}
         return self._reconstruct_from_values(values)
 

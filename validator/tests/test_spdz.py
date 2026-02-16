@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import random
 import secrets
+from unittest.mock import patch
 
 import pytest
 
@@ -470,6 +472,21 @@ class TestAuthenticatedMPCSession:
             )
             available, _ = session.run()
             assert available == (secret in indices)
+
+    def test_reconstruct_alpha_blocked_outside_simulation(self) -> None:
+        """R25-07: _reconstruct_alpha raises RuntimeError when DJINN_SPDZ_SIMULATION != 1."""
+        session = self._setup_session(secret=3, available_indices={1, 2, 3})
+        # Temporarily disable simulation mode on this instance
+        session._SIMULATION_MODE = False
+        with pytest.raises(RuntimeError, match="Cannot reconstruct alpha in production"):
+            session._reconstruct_alpha()
+
+    def test_run_blocked_outside_simulation(self) -> None:
+        """R25-07: run() fails when simulation mode is off because alpha reconstruction is blocked."""
+        session = self._setup_session(secret=3, available_indices={1, 2, 3})
+        session._SIMULATION_MODE = False
+        with pytest.raises(RuntimeError, match="Cannot reconstruct alpha in production"):
+            session.run()
 
 
 class TestAuthenticatedParticipantState:

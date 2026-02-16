@@ -74,6 +74,20 @@ contract TrackRecordTest is Test {
         pC = [uint256(7), 8];
     }
 
+    /// @dev Commit a proof hash for sender and advance one block (commit-reveal pattern)
+    function _commitProof(
+        address sender,
+        uint256[2] memory pA,
+        uint256[2][2] memory pB,
+        uint256[2] memory pC,
+        uint256[106] memory pubSignals
+    ) internal {
+        bytes32 proofHash = keccak256(abi.encodePacked(pA, pB, pC, pubSignals));
+        vm.prank(sender);
+        trackRecord.commitProof(proofHash);
+        vm.roll(block.number + 1);
+    }
+
     // ─── Admin Tests
     // ───────────────────────────────────────────────────────
 
@@ -108,6 +122,7 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(5, 500e6, 200e6, 3, 1, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
 
@@ -130,6 +145,8 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(10, 1000e6, 300e6, 7, 2, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
+
         vm.expectEmit(true, true, false, true);
         emit TrackRecord.TrackRecordSubmitted(
             0, genius1, 10, 1000e6, 300e6, 7, 2, 1, keccak256(abi.encodePacked(pA, pB, pC, pubSignals))
@@ -144,10 +161,11 @@ contract TrackRecordTest is Test {
         uint256[106] memory pubSignals1 = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
         uint256[106] memory pubSignals2 = _buildPubSignals(10, 500e6, 200e6, 7, 2, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals1);
+        _commitProof(genius1, pA, pB, pC, pubSignals2);
+
         vm.startPrank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals1);
-
-        // Different signals = different proof hash
         trackRecord.submit(pA, pB, pC, pubSignals2);
         vm.stopPrank();
 
@@ -164,6 +182,9 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals1 = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
         uint256[106] memory pubSignals2 = _buildPubSignals(10, 500e6, 200e6, 7, 2, 1);
+
+        _commitProof(genius1, pA, pB, pC, pubSignals1);
+        _commitProof(genius2, pA, pB, pC, pubSignals2);
 
         vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals1);
@@ -197,7 +218,9 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.expectRevert(TrackRecord.ProofVerificationFailed.selector);
+        vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
@@ -205,11 +228,35 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
 
+        // DuplicateProof checked before ProofNotCommitted, so genius2 hits DuplicateProof
         vm.expectRevert(TrackRecord.DuplicateProof.selector);
-        vm.prank(genius2); // Even different sender can't reuse same proof
+        vm.prank(genius2);
+        trackRecord.submit(pA, pB, pC, pubSignals);
+    }
+
+    function test_submit_reverts_proofNotCommitted() public {
+        (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
+        uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
+
+        vm.expectRevert(TrackRecord.ProofNotCommitted.selector);
+        vm.prank(genius1);
+        trackRecord.submit(pA, pB, pC, pubSignals);
+    }
+
+    function test_submit_reverts_commitTooRecent() public {
+        (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
+        uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
+
+        bytes32 proofHash = keccak256(abi.encodePacked(pA, pB, pC, pubSignals));
+        vm.prank(genius1);
+        trackRecord.commitProof(proofHash);
+        // Don't advance block — commit is in the same block
+        vm.expectRevert(abi.encodeWithSelector(TrackRecord.CommitTooRecent.selector, block.number, block.number));
+        vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
@@ -238,6 +285,7 @@ contract TrackRecordTest is Test {
 
         assertFalse(trackRecord.usedProofHashes(proofHash));
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
 
@@ -251,8 +299,9 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(0, 0, 0, 0, 0, 0);
 
-        vm.prank(genius1);
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.expectRevert(abi.encodeWithSelector(TrackRecord.InvalidSignalCount.selector, 0));
+        vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
@@ -260,6 +309,7 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(20, 5000e6, 1000e6, 15, 3, 2);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
 
@@ -275,6 +325,7 @@ contract TrackRecordTest is Test {
 
         for (uint256 i = 0; i < 5; i++) {
             uint256[106] memory pubSignals = _buildPubSignals(i + 1, (i + 1) * 100e6, i * 50e6, i + 1, 0, 0);
+            _commitProof(genius1, pA, pB, pC, pubSignals);
             vm.prank(genius1);
             uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
             assertEq(recordId, i);
@@ -288,6 +339,7 @@ contract TrackRecordTest is Test {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
         uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals);
 
@@ -321,6 +373,7 @@ contract TrackRecordTest is Test {
         uint256[2][2] memory pB = [[totalLoss, favCount], [unfavCount, voidCount]];
         uint256[2] memory pC = [uint256(7), 8];
 
+        _commitProof(genius1, pA, pB, pC, pubSignals);
         vm.prank(genius1);
         uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
 
@@ -347,6 +400,9 @@ contract TrackRecordTest is Test {
 
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
 
+        _commitProof(genius1, pA, pB, pC, pubSignals1);
+        _commitProof(genius1, pA, pB, pC, pubSignals2);
+
         vm.prank(genius1);
         trackRecord.submit(pA, pB, pC, pubSignals1);
 
@@ -364,6 +420,7 @@ contract TrackRecordTest is Test {
         // Vary pubSignals to avoid duplicate proof hash across fuzz runs
         pubSignals[0] = uint256(uint160(sender));
 
+        _commitProof(sender, pA, pB, pC, pubSignals);
         vm.prank(sender);
         uint256 recordId = trackRecord.submit(pA, pB, pC, pubSignals);
 

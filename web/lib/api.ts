@@ -195,6 +195,8 @@ async function get<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
 // ValidatorClient
 // ---------------------------------------------------------------------------
 
+const SIGNAL_ID_RE = /^[a-zA-Z0-9_\-]{1,256}$/;
+
 export class ValidatorClient {
   constructor(private baseUrl: string) {}
 
@@ -206,8 +208,11 @@ export class ValidatorClient {
     signalId: string,
     req: PurchaseRequest,
   ): Promise<PurchaseResponse> {
+    if (!SIGNAL_ID_RE.test(signalId)) {
+      throw new Error("Invalid signal ID format");
+    }
     return post<PurchaseResponse>(
-      `${this.baseUrl}/v1/signal/${signalId}/purchase`,
+      `${this.baseUrl}/v1/signal/${encodeURIComponent(signalId)}/purchase`,
       req,
     );
   }

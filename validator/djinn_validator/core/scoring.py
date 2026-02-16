@@ -68,10 +68,22 @@ class MinerMetrics:
         correct: bool,
         latency: float,
         proof_submitted: bool,
+        proof_status: str = "",
     ) -> None:
-        """Record a single query result."""
+        """Record a single query result.
+
+        If proof_status is "unverified", the query is never counted as
+        correct regardless of the ``correct`` flag — unverified proofs
+        cannot be trusted for accuracy scoring (R25-18).
+        """
         self.queries_total += 1
-        if correct:
+        if proof_status == "unverified":
+            log.warning(
+                "unverified_proof_zero_accuracy",
+                uid=self.uid,
+                hotkey=self.hotkey,
+            )
+        elif correct:
             self.queries_correct += 1
         self.latencies.append(latency)
         if proof_submitted:

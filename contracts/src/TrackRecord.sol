@@ -51,6 +51,11 @@ contract TrackRecord is Ownable {
     /// @notice Tracks proof hashes to prevent duplicate submissions
     mapping(bytes32 => bool) public usedProofHashes;
 
+    /// @notice Commit-reveal: genius -> proof commitment hash -> block number
+    ///         Prevents front-running by requiring the genius to commit
+    ///         a hash of their proof in an earlier block before revealing.
+    mapping(address => mapping(bytes32 => uint256)) public proofCommitments;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -68,6 +73,9 @@ contract TrackRecord is Ownable {
         bytes32 proofHash
     );
 
+    /// @notice Emitted when a genius commits a proof hash for future submission
+    event ProofCommitted(address indexed genius, bytes32 commitHash, uint256 blockNumber);
+
     event ZKVerifierUpdated(address indexed verifier);
 
     // -------------------------------------------------------------------------
@@ -79,6 +87,8 @@ contract TrackRecord is Ownable {
     error ProofVerificationFailed();
     error DuplicateProof();
     error InvalidSignalCount(uint256 count);
+    error ProofNotCommitted();
+    error CommitTooRecent(uint256 commitBlock, uint256 currentBlock);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -102,6 +112,15 @@ contract TrackRecord is Ownable {
     // -------------------------------------------------------------------------
     // Core
     // -------------------------------------------------------------------------
+
+    /// @notice Commit a proof hash before submission (commit-reveal anti-front-running)
+    /// @dev The genius must call this at least 1 block before submit().
+    ///      commitHash = keccak256(abi.encodePacked(_pA, _pB, _pC, _pubSignals))
+    /// @param commitHash Hash of the proof to be submitted
+    function commitProof(bytes32 commitHash) external {
+        proofCommitments[msg.sender][commitHash] = block.number;
+        emit ProofCommitted(msg.sender, commitHash, block.number);
+    }
 
     /// @notice Submit a verified track record proof on-chain
     /// @dev Public signals layout (106 elements):
@@ -132,6 +151,14 @@ contract TrackRecord is Ownable {
         // Compute proof hash for deduplication
         bytes32 proofHash = keccak256(abi.encodePacked(_pA, _pB, _pC, _pubSignals));
         if (usedProofHashes[proofHash]) revert DuplicateProof();
+
+        // Commit-reveal: submitter must have committed this proof in an earlier block
+        uint256 commitBlock = proofCommitments[msg.sender][proofHash];
+        if (commitBlock == 0) revert ProofNotCommitted();
+        if (commitBlock >= block.number) revert CommitTooRecent(commitBlock, block.number);
+
+        // Clear commitment to prevent reuse
+        delete proofCommitments[msg.sender][proofHash];
 
         // Validate signalCount is within circuit bounds (1..20)
         uint256 sc = _pubSignals[100];

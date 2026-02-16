@@ -390,7 +390,8 @@ export function useCommitSignal() {
         const gas = await estimateGas(contract, "commit", [params]);
         const tx = await contract.commit(params, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
         setTxHash(tx.hash);
-        await tx.wait();
+        const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return tx.hash as string;
       } catch (err) {
         setError(humanizeError(err));
@@ -423,6 +424,7 @@ export function usePurchaseSignal() {
         const tx = await contract.purchase(signalId, notional, odds, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
         setTxHash(tx.hash);
         const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return receipt;
       } catch (err) {
         setError(humanizeError(err));
@@ -464,7 +466,8 @@ export function useDepositEscrow() {
 
         const escrow = getEscrowContract(signer);
         const tx = await escrow.deposit(amount);
-        await tx.wait();
+        const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return tx.hash as string;
       } catch (err) {
         setError(humanizeError(err, "Deposit failed"));
@@ -502,7 +505,8 @@ export function useDepositCollateral() {
 
         const collateral = getCollateralContract(signer);
         const tx = await collateral.deposit(amount);
-        await tx.wait();
+        const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return tx.hash as string;
       } catch (err) {
         setError(humanizeError(err, "Deposit failed"));
@@ -534,7 +538,8 @@ export function useWithdrawEscrow() {
       try {
         const escrow = getEscrowContract(signer);
         const tx = await escrow.withdraw(amount);
-        await tx.wait();
+        const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return tx.hash as string;
       } catch (err) {
         setError(humanizeError(err, "Withdraw failed"));
@@ -562,7 +567,8 @@ export function useWithdrawCollateral() {
       try {
         const collateral = getCollateralContract(signer);
         const tx = await collateral.withdraw(amount);
-        await tx.wait();
+        const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return tx.hash as string;
       } catch (err) {
         setError(humanizeError(err, "Withdraw failed"));
@@ -636,6 +642,7 @@ export function useSubmitTrackRecord() {
         const tx = await contract.submit(pA, pB, pC, pubSignals, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
         setTxHash(tx.hash);
         const receipt = await tx.wait();
+        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
         return receipt;
       } catch (err) {
         setError(humanizeError(err, "Track record submission failed"));

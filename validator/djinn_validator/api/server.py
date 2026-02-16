@@ -100,6 +100,10 @@ from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 _SIGNAL_ID_PATH_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 
+# Per-signal asyncio locks for purchase endpoint race-condition prevention (R25-15)
+_purchase_locks: dict[str, asyncio.Lock] = {}
+_purchase_locks_guard = asyncio.Lock()
+
 
 def _validate_signal_id_path(signal_id: str) -> None:
     """Validate signal_id path parameter format."""
@@ -323,128 +327,138 @@ def create_app(
         1. Verify signal exists and is active
         2. Run MPC to check if real index ∈ available indices
         3. If available, release encrypted key share
+
+        Uses per-signal locking to prevent concurrent purchases for the
+        same signal from racing through payment verification and share release.
         """
         _validate_signal_id_path(signal_id)
 
-        # Throttle cleanup to at most once per 60 seconds
-        import time as _time
+        # Acquire per-signal lock to prevent concurrent purchase races (R25-15)
+        async with _purchase_locks_guard:
+            if signal_id not in _purchase_locks:
+                _purchase_locks[signal_id] = asyncio.Lock()
+            signal_lock = _purchase_locks[signal_id]
 
-        _now = _time.monotonic()
-        if _now - _last_cleanup[0] > 60:
-            _mpc.cleanup_expired()
-            purchase_orch.cleanup_stale()
-            purchase_orch.cleanup_completed()
-            _last_cleanup[0] = _now
+        async with signal_lock:
+            # Throttle cleanup to at most once per 60 seconds
+            import time as _time
 
-        # Check we hold a share for this signal
-        record = share_store.get(signal_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="Signal not found on this validator")
+            _now = _time.monotonic()
+            if _now - _last_cleanup[0] > 60:
+                _mpc.cleanup_expired()
+                purchase_orch.cleanup_stale()
+                purchase_orch.cleanup_completed()
+                _last_cleanup[0] = _now
 
-        # Initiate purchase
-        purchase = purchase_orch.initiate(signal_id, req.buyer_address, req.sportsbook)
-        if purchase.status == PurchaseStatus.FAILED:
-            raise HTTPException(status_code=500, detail="Purchase initiation failed")
+            # Check we hold a share for this signal
+            record = share_store.get(signal_id)
+            if record is None:
+                raise HTTPException(status_code=404, detail="Signal not found on this validator")
 
-        # Run MPC availability check (multi-validator or single-validator fallback)
-        available_set = set(req.available_indices)
-        try:
-            mpc_result = await asyncio.wait_for(
-                _orchestrator.check_availability(
+            # Initiate purchase
+            purchase = purchase_orch.initiate(signal_id, req.buyer_address, req.sportsbook)
+            if purchase.status == PurchaseStatus.FAILED:
+                raise HTTPException(status_code=500, detail="Purchase initiation failed")
+
+            # Run MPC availability check (multi-validator or single-validator fallback)
+            available_set = set(req.available_indices)
+            try:
+                mpc_result = await asyncio.wait_for(
+                    _orchestrator.check_availability(
+                        signal_id=signal_id,
+                        local_share=record.share,
+                        available_indices=available_set,
+                    ),
+                    timeout=mpc_availability_timeout,
+                )
+            except TimeoutError:
+                from djinn_validator.api.metrics import MPC_ERRORS
+
+                MPC_ERRORS.labels(reason="timeout").inc()
+                PURCHASES_PROCESSED.labels(result="error").inc()
+                raise HTTPException(status_code=504, detail="MPC availability check timed out")
+
+            purchase_orch.set_mpc_result(signal_id, req.buyer_address, mpc_result)
+
+            if not mpc_result.available:
+                PURCHASES_PROCESSED.labels(result="unavailable").inc()
+                return PurchaseResponse(
                     signal_id=signal_id,
-                    local_share=record.share,
-                    available_indices=available_set,
-                ),
-                timeout=mpc_availability_timeout,
-            )
-        except TimeoutError:
-            from djinn_validator.api.metrics import MPC_ERRORS
+                    status="unavailable",
+                    available=False,
+                    message="Signal not available at this sportsbook",
+                )
 
-            MPC_ERRORS.labels(reason="timeout").inc()
-            PURCHASES_PROCESSED.labels(result="error").inc()
-            raise HTTPException(status_code=504, detail="MPC availability check timed out")
+            # Verify on-chain payment before releasing share
+            if chain_client is not None:
+                try:
+                    on_chain_id = _signal_id_to_uint256(signal_id)
+                    purchase_record = await asyncio.wait_for(
+                        chain_client.verify_purchase(on_chain_id, req.buyer_address),
+                        timeout=10.0,
+                    )
+                    if purchase_record.get("pricePaid", 0) == 0:
+                        PURCHASES_PROCESSED.labels(result="payment_required").inc()
+                        return PurchaseResponse(
+                            signal_id=signal_id,
+                            status="payment_required",
+                            available=True,
+                            message="On-chain payment not found. Call Escrow.purchase() first.",
+                        )
+                    tx_hash = f"verified-{on_chain_id}"
+                except TimeoutError:
+                    log.error("payment_verification_timeout", signal_id=signal_id)
+                    raise HTTPException(
+                        status_code=504,
+                        detail="Payment verification timed out",
+                    )
+                except Exception as e:
+                    log.error("payment_verification_error", signal_id=signal_id, err=str(e))
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Payment verification failed",
+                    )
+            else:
+                # In production, refuse to release shares without payment verification
+                if _is_production:
+                    log.error(
+                        "share_release_blocked",
+                        signal_id=signal_id,
+                        reason="No chain client in production — cannot verify payment",
+                    )
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Payment verification unavailable. Validator misconfigured.",
+                    )
+                # Dev mode: no chain client configured — skip payment check
+                log.warning(
+                    "payment_check_skipped",
+                    signal_id=signal_id,
+                    reason="no chain client configured",
+                )
+                tx_hash = "dev-mode-no-verification"
 
-        purchase_orch.set_mpc_result(signal_id, req.buyer_address, mpc_result)
+            result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
+            if result is None or result.status == PurchaseStatus.FAILED:
+                raise HTTPException(status_code=500, detail="Share release failed")
 
-        if not mpc_result.available:
-            PURCHASES_PROCESSED.labels(result="unavailable").inc()
+            # confirm_payment already released the share; read the encrypted key share
+            record = share_store.get(signal_id)
+            if record is None or record.encrypted_key_share is None:
+                raise HTTPException(status_code=500, detail="Share release failed")
+            share_data = record.encrypted_key_share
+
+            PURCHASES_PROCESSED.labels(result="available").inc()
+            ACTIVE_SHARES.set(share_store.count)
+
             return PurchaseResponse(
                 signal_id=signal_id,
-                status="unavailable",
-                available=False,
-                message="Signal not available at this sportsbook",
+                status="complete",
+                available=True,
+                encrypted_key_share=share_data.hex(),
+                share_x=record.share.x,
+                message="Key share released",
             )
-
-        # Verify on-chain payment before releasing share
-        if chain_client is not None:
-            try:
-                on_chain_id = _signal_id_to_uint256(signal_id)
-                purchase_record = await asyncio.wait_for(
-                    chain_client.verify_purchase(on_chain_id, req.buyer_address),
-                    timeout=10.0,
-                )
-                if purchase_record.get("pricePaid", 0) == 0:
-                    PURCHASES_PROCESSED.labels(result="payment_required").inc()
-                    return PurchaseResponse(
-                        signal_id=signal_id,
-                        status="payment_required",
-                        available=True,
-                        message="On-chain payment not found. Call Escrow.purchase() first.",
-                    )
-                tx_hash = f"verified-{on_chain_id}"
-            except TimeoutError:
-                log.error("payment_verification_timeout", signal_id=signal_id)
-                raise HTTPException(
-                    status_code=504,
-                    detail="Payment verification timed out",
-                )
-            except Exception as e:
-                log.error("payment_verification_error", signal_id=signal_id, err=str(e))
-                raise HTTPException(
-                    status_code=502,
-                    detail="Payment verification failed",
-                )
-        else:
-            # In production, refuse to release shares without payment verification
-            if _is_production:
-                log.error(
-                    "share_release_blocked",
-                    signal_id=signal_id,
-                    reason="No chain client in production — cannot verify payment",
-                )
-                raise HTTPException(
-                    status_code=503,
-                    detail="Payment verification unavailable. Validator misconfigured.",
-                )
-            # Dev mode: no chain client configured — skip payment check
-            log.warning(
-                "payment_check_skipped",
-                signal_id=signal_id,
-                reason="no chain client configured",
-            )
-            tx_hash = "dev-mode-no-verification"
-
-        result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
-        if result is None or result.status == PurchaseStatus.FAILED:
-            raise HTTPException(status_code=500, detail="Share release failed")
-
-        # confirm_payment already released the share; read the encrypted key share
-        record = share_store.get(signal_id)
-        if record is None or record.encrypted_key_share is None:
-            raise HTTPException(status_code=500, detail="Share release failed")
-        share_data = record.encrypted_key_share
-
-        PURCHASES_PROCESSED.labels(result="available").inc()
-        ACTIVE_SHARES.set(share_store.count)
-
-        return PurchaseResponse(
-            signal_id=signal_id,
-            status="complete",
-            available=True,
-            encrypted_key_share=share_data.hex(),
-            share_x=record.share.x,
-            message="Key share released",
-        )
 
     @app.post("/v1/signal/{signal_id}/register", response_model=RegisterSignalResponse)
     async def register_signal(signal_id: str, req: RegisterSignalRequest) -> RegisterSignalResponse:
