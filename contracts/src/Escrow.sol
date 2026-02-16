@@ -118,6 +118,10 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     error ContractNotSet(string name);
     error Unauthorized();
     error ZeroAddress();
+    error NotionalTooLarge(uint256 provided, uint256 max);
+
+    /// @notice Maximum notional per purchase (1 billion USDC in 6 decimals)
+    uint256 public constant MAX_NOTIONAL = 1e15;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -245,6 +249,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     {
         // --- Validate inputs ---
         if (notional == 0) revert ZeroAmount();
+        if (notional > MAX_NOTIONAL) revert NotionalTooLarge(notional, MAX_NOTIONAL);
 
         // --- Validate dependencies are wired up ---
         if (address(signalCommitment) == address(0)) revert ContractNotSet("SignalCommitment");

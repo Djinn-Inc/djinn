@@ -575,4 +575,40 @@ contract EdgeCaseIntegrationTest is Test {
         vm.expectRevert(Collateral.ZeroAddress.selector);
         new Collateral(address(0), owner);
     }
+
+    // ─── Early Exit: Protocol Fee Must Be Zero
+    // ──────────────────────
+
+    function test_earlyExit_noProtocolFeeSlashed() public {
+        // Create only 3 signals (< 10 = early exit)
+        for (uint256 i; i < 3; i++) {
+            uint256 sid = _createSignal();
+            uint256 pid = _purchaseSignal(sid);
+            _recordOutcome(pid, Outcome.Unfavorable);
+        }
+
+        // Trigger early exit (must be called by genius or idiot, not triggerAudit)
+        vm.prank(idiot);
+        audit.earlyExit(genius, idiot);
+
+        // Early exit should not slash any protocol fee from collateral.
+        // Only SLA damages (trancheB as credits) should apply — no USDC movement.
+        AuditResult memory result = audit.getAuditResult(genius, idiot, 1);
+        assertEq(result.protocolFee, 0, "Protocol fee must be zero on early exit");
+    }
+
+    // ─── Escrow: MAX_NOTIONAL limit
+    // ──────────────────────────────
+
+    function test_purchase_revertOnExcessiveNotional() public {
+        uint256 sid = _createSignal();
+        uint256 excessiveNotional = escrow.MAX_NOTIONAL() + 1;
+
+        // Don't need actual deposits — revert happens before balance checks
+        vm.expectRevert(
+            abi.encodeWithSelector(Escrow.NotionalTooLarge.selector, excessiveNotional, escrow.MAX_NOTIONAL())
+        );
+        vm.prank(idiot);
+        escrow.purchase(sid, excessiveNotional, ODDS);
+    }
 }

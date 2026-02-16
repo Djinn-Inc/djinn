@@ -373,11 +373,15 @@ def create_app(
             )
             tx_hash = "dev-mode-no-verification"
 
-        purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
-
-        share_data = share_store.release(signal_id, req.buyer_address)
-        if share_data is None:
+        result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
+        if result is None or result.status == PurchaseStatus.FAILED:
             raise HTTPException(status_code=500, detail="Share release failed")
+
+        # confirm_payment already released the share; read the encrypted key share
+        record = share_store.get(signal_id)
+        if record is None or record.encrypted_key_share is None:
+            raise HTTPException(status_code=500, detail="Share release failed")
+        share_data = record.encrypted_key_share
 
         PURCHASES_PROCESSED.labels(result="available").inc()
         ACTIVE_SHARES.set(share_store.count)

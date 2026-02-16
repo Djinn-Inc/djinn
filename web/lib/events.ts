@@ -69,14 +69,17 @@ class EventCache<T extends { blockNumber: number }> {
     this.cache.set(key, { events: capped, lastBlock, updatedAt: Date.now() });
   }
 
-  /** Merge new events into existing cache, deduplicating by blockNumber + index. */
+  /** Merge new events into existing cache, deduplicating by blockNumber. */
   merge(key: string, newEvents: T[], lastBlock: number): T[] {
     const existing = this.cache.get(key);
     if (!existing) {
       this.set(key, newEvents, lastBlock);
       return newEvents;
     }
-    const merged = [...existing.events, ...newEvents];
+    // Only include events from blocks not already in the cache
+    const cutoff = existing.lastBlock;
+    const deduped = newEvents.filter((e) => e.blockNumber > cutoff);
+    const merged = [...existing.events, ...deduped];
     this.set(key, merged, lastBlock);
     return merged;
   }

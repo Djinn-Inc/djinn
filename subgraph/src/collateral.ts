@@ -137,13 +137,21 @@ export function handleCollateralReleased(event: Released): void {
     event.params.genius,
     event.block.timestamp
   );
-  position.locked = position.locked.minus(event.params.amount);
+  if (position.locked.lt(event.params.amount)) {
+    position.locked = BigInt.zero();
+  } else {
+    position.locked = position.locked.minus(event.params.amount);
+  }
   updateAvailable(position);
   position.lastUpdatedAt = event.block.timestamp;
   position.save();
 
   let genius = getOrCreateGenius(event.params.genius, event.block.timestamp);
-  genius.collateralLocked = genius.collateralLocked.minus(event.params.amount);
+  if (genius.collateralLocked.lt(event.params.amount)) {
+    genius.collateralLocked = BigInt.zero();
+  } else {
+    genius.collateralLocked = genius.collateralLocked.minus(event.params.amount);
+  }
   genius.save();
 }
 
