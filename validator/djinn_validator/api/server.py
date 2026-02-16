@@ -810,10 +810,30 @@ def create_app(
     # OT network endpoints (distributed triple generation)
     # ------------------------------------------------------------------
 
-    from djinn_validator.core.ot_network import OTTripleGenState
+    from djinn_validator.core.ot_network import (
+        DEFAULT_DH_GROUP,
+        DHGroup,
+        OTTripleGenState,
+        serialize_dh_public_key,
+    )
 
     _ot_states: dict[str, OTTripleGenState] = {}
     _ot_lock = _threading.Lock()
+
+    def _resolve_ot_params(
+        field_prime_hex: str | None, dh_prime_hex: str | None,
+    ) -> tuple[int, DHGroup]:
+        """Resolve OT parameters from request, falling back to defaults."""
+        from djinn_validator.utils.crypto import BN254_PRIME
+
+        fp = int(field_prime_hex, 16) if field_prime_hex else BN254_PRIME
+        if dh_prime_hex:
+            dhp = int(dh_prime_hex, 16)
+            bl = (dhp.bit_length() + 7) // 8
+            dh_group = DHGroup(prime=dhp, generator=2, byte_length=bl)
+        else:
+            dh_group = DEFAULT_DH_GROUP
+        return fp, dh_group
 
     @app.post("/v1/mpc/ot/setup", response_model=OTSetupResponse)
     async def ot_setup(req: OTSetupRequest, request: Request) -> OTSetupResponse:
@@ -827,17 +847,20 @@ def create_app(
                     session_id=req.session_id,
                     accepted=True,
                     sender_public_keys={
-                        str(t): hex(pk)
+                        str(t): serialize_dh_public_key(pk, state.dh_group)
                         for t, pk in state.get_sender_public_keys().items()
                     },
                 )
 
+            fp, dh_group = _resolve_ot_params(req.field_prime, req.dh_prime)
             state = OTTripleGenState(
                 session_id=req.session_id,
                 party_role="peer",
                 n_triples=req.n_triples,
                 x_coords=req.x_coords,
                 threshold=req.threshold,
+                prime=fp,
+                dh_group=dh_group,
             )
             state.initialize()
             _ot_states[req.session_id] = state
@@ -846,7 +869,7 @@ def create_app(
             session_id=req.session_id,
             accepted=True,
             sender_public_keys={
-                str(t): hex(pk)
+                str(t): serialize_dh_public_key(pk, state.dh_group)
                 for t, pk in state.get_sender_public_keys().items()
             },
         )

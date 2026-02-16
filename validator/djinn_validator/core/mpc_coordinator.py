@@ -113,6 +113,7 @@ class MPCCoordinator:
         threshold: int = 7,
         use_ot: bool | None = None,
         use_authenticated: bool | None = None,
+        pre_generated_triples: list[BeaverTriple] | None = None,
     ) -> MPCSessionState:
         """Create a new MPC session as coordinator.
 
@@ -123,6 +124,8 @@ class MPCCoordinator:
             use_authenticated: If True, generate SPDZ authenticated triples with
                     MAC verification for malicious security. If None (default),
                     reads USE_AUTHENTICATED_MPC env var.
+            pre_generated_triples: If provided, skip triple generation and use
+                    these pre-computed triples (e.g., from distributed OT).
         """
         import os
 
@@ -144,7 +147,15 @@ class MPCCoordinator:
         mac_alpha: int = 0
         triples: list[BeaverTriple] = []
 
-        if use_authenticated:
+        if pre_generated_triples is not None:
+            triples = pre_generated_triples
+            log.info(
+                "beaver_triples_generated",
+                method="network_ot",
+                count=len(triples),
+                participants=len(participant_xs),
+            )
+        elif use_authenticated:
             # Generate SPDZ authenticated triples with MAC key
             mac_alpha, mac_key_shares = generate_mac_key(sorted_xs, threshold)
             # Tree multiplication uses n_mults triples but we add 1 for r*factor[0]

@@ -1075,3 +1075,309 @@ class TestAuthenticatedDistributedMPC:
         finally:
             for store in stores:
                 store.close()
+
+
+# ---------------------------------------------------------------------------
+# Network OT distributed triple generation tests
+# ---------------------------------------------------------------------------
+
+
+class TestNetworkOTDistributedMPC:
+    """Test the distributed MPC with network-based OT triple generation.
+
+    Uses 2 validators (coordinator + 1 peer) so the 2-party OT protocol
+    runs over HTTP. Triples are generated via the 4-phase Gilboa OT protocol
+    without a trusted dealer.
+    """
+
+    @staticmethod
+    def _env_context(key: str, value: str):
+        """Context manager to set/restore an env var."""
+        import os
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            old = os.environ.get(key)
+            os.environ[key] = value
+            try:
+                yield
+            finally:
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        return _ctx()
+
+    @staticmethod
+    def _routers(clients):
+        """Create routed post/get functions for test clients."""
+        real_post = httpx.AsyncClient.post
+        real_get = httpx.AsyncClient.get
+
+        async def routed_post(self_client, url, **kwargs):
+            for i, client in enumerate(clients):
+                base = f"http://v{i}:8421"
+                if url.startswith(base):
+                    path = url[len(base):]
+                    return await client.post(path, **kwargs)
+            return await real_post(self_client, url, **kwargs)
+
+        async def routed_get(self_client, url, **kwargs):
+            for i, client in enumerate(clients):
+                base = f"http://v{i}:8421"
+                if url.startswith(base):
+                    path = url[len(base):]
+                    return await client.get(path, **kwargs)
+            return await real_get(self_client, url, **kwargs)
+
+        return routed_post, routed_get
+
+    async def _run_network_ot_mpc(
+        self,
+        secret: int,
+        available: set[int],
+        signal_id: str = "sig-ot",
+    ) -> MPCResult | None:
+        """Helper: run distributed MPC with network OT for a 2-validator setup.
+
+        Uses the BN254 field prime (required for MPC protocol correctness)
+        with a small DH group (p=1223) for fast OT key exchange in tests.
+        """
+        from httpx import ASGITransport
+
+        from djinn_validator.core.ot_network import DH_GROUP_TEST
+
+        n_validators = 2
+        threshold = 2
+        shares = split_secret(secret, n=n_validators, k=threshold)
+
+        stores: list[ShareStore] = []
+        try:
+            for share in shares:
+                store = ShareStore()
+                store.store(signal_id, "0xG", share, b"k")
+                stores.append(store)
+
+            apps = [_create_validator_app(store) for store in stores]
+            clients = [
+                httpx.AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url=f"http://v{i}:8421",
+                )
+                for i, app in enumerate(apps)
+            ]
+
+            try:
+                coordinator = MPCCoordinator()
+                orchestrator = MPCOrchestrator(
+                    coordinator=coordinator, neuron=None, threshold=threshold,
+                    ot_dh_group=DH_GROUP_TEST,
+                )
+                peers = [{"uid": 1, "url": "http://v1:8421"}]
+
+                routed_post, routed_get = self._routers(clients)
+
+                with self._env_context("USE_NETWORK_OT", "true"):
+                    with patch.object(httpx.AsyncClient, "post", routed_post), \
+                         patch.object(httpx.AsyncClient, "get", routed_get):
+                        return await orchestrator._distributed_mpc(
+                            signal_id=signal_id,
+                            local_share=shares[0],
+                            available_indices=available,
+                            peers=peers,
+                        )
+            finally:
+                for c in clients:
+                    await c.aclose()
+        finally:
+            for store in stores:
+                store.close()
+
+    @pytest.mark.asyncio
+    async def test_network_ot_available(self) -> None:
+        """2 validators using network OT, secret IS in available set."""
+        result = await self._run_network_ot_mpc(
+            secret=5, available={3, 5, 7}, signal_id="sig-ot-avail",
+        )
+        assert result is not None
+        assert result.available is True
+        assert result.participating_validators == 2
+
+    @pytest.mark.asyncio
+    async def test_network_ot_unavailable(self) -> None:
+        """2 validators using network OT, secret NOT in available set."""
+        result = await self._run_network_ot_mpc(
+            secret=5, available={1, 2, 3}, signal_id="sig-ot-unavail",
+        )
+        assert result is not None
+        assert result.available is False
+
+    @pytest.mark.asyncio
+    async def test_network_ot_single_index_match(self) -> None:
+        """Single available index that matches the secret."""
+        result = await self._run_network_ot_mpc(
+            secret=7, available={7}, signal_id="sig-ot-single",
+        )
+        assert result is not None
+        assert result.available is True
+
+    @pytest.mark.asyncio
+    async def test_network_ot_single_index_no_match(self) -> None:
+        """Single available index that does NOT match."""
+        result = await self._run_network_ot_mpc(
+            secret=7, available={3}, signal_id="sig-ot-nomatch",
+        )
+        assert result is not None
+        assert result.available is False
+
+    @pytest.mark.asyncio
+    async def test_network_ot_all_ten_indices(self) -> None:
+        """Test every index 1-10 against a fixed available set with OT triples."""
+        available = {2, 5, 8}
+        for secret in range(1, 11):
+            result = await self._run_network_ot_mpc(
+                secret=secret, available=available, signal_id=f"sig-ot-idx-{secret}",
+            )
+            assert result is not None
+            expected = secret in available
+            assert result.available is expected, (
+                f"secret={secret}, expected={expected}, got={result.available}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_network_ot_fallback_when_ot_fails(self) -> None:
+        """Falls back to local triple generation when OT peer fails."""
+        from httpx import ASGITransport
+
+        n_validators = 2
+        threshold = 2
+        secret = 5
+        available = {3, 5, 7}
+        shares = split_secret(secret, n=n_validators, k=threshold)
+
+        stores: list[ShareStore] = []
+        try:
+            for share in shares:
+                store = ShareStore()
+                store.store("sig-ot-fail", "0xG", share, b"k")
+                stores.append(store)
+
+            apps = [_create_validator_app(store) for store in stores]
+            clients = [
+                httpx.AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url=f"http://v{i}:8421",
+                )
+                for i, app in enumerate(apps)
+            ]
+
+            try:
+                coordinator = MPCCoordinator()
+                orchestrator = MPCOrchestrator(
+                    coordinator=coordinator, neuron=None, threshold=threshold,
+                )
+                peers = [{"uid": 1, "url": "http://v1:8421"}]
+
+                real_post = httpx.AsyncClient.post
+                call_count = 0
+
+                async def ot_failing_post(self_client, url, **kwargs):
+                    nonlocal call_count
+                    # Fail OT setup but allow MPC init/compute_gate/result
+                    if "/v1/mpc/ot/" in url:
+                        raise httpx.ConnectError("OT peer down")
+                    for i, client in enumerate(clients):
+                        base = f"http://v{i}:8421"
+                        if url.startswith(base):
+                            path = url[len(base):]
+                            return await client.post(path, **kwargs)
+                    return await real_post(self_client, url, **kwargs)
+
+                with self._env_context("USE_NETWORK_OT", "true"):
+                    with patch.object(httpx.AsyncClient, "post", ot_failing_post):
+                        result = await orchestrator._distributed_mpc(
+                            signal_id="sig-ot-fail",
+                            local_share=shares[0],
+                            available_indices=available,
+                            peers=peers,
+                        )
+
+                # Should still succeed via fallback to local triple generation
+                assert result is not None
+                assert result.available is True
+            finally:
+                for c in clients:
+                    await c.aclose()
+        finally:
+            for store in stores:
+                store.close()
+
+    @pytest.mark.asyncio
+    async def test_network_ot_not_used_for_three_peers(self) -> None:
+        """Network OT is only used for 2-party case (coordinator + 1 peer).
+        With 3 validators (2 peers), falls back to local triple generation."""
+        from httpx import ASGITransport
+
+        n_validators = 3
+        threshold = 2
+        secret = 5
+        available = {3, 5, 7}
+        shares = split_secret(secret, n=n_validators, k=threshold)
+
+        stores: list[ShareStore] = []
+        try:
+            for share in shares:
+                store = ShareStore()
+                store.store("sig-ot-3v", "0xG", share, b"k")
+                stores.append(store)
+
+            apps = [_create_validator_app(store) for store in stores]
+            clients = [
+                httpx.AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url=f"http://v{i}:8421",
+                )
+                for i, app in enumerate(apps)
+            ]
+
+            try:
+                coordinator = MPCCoordinator()
+                orchestrator = MPCOrchestrator(
+                    coordinator=coordinator, neuron=None, threshold=threshold,
+                )
+                peers = [
+                    {"uid": i, "url": f"http://v{i}:8421"}
+                    for i in range(1, n_validators)
+                ]
+                routed_post, _ = self._routers(clients)
+
+                ot_called = False
+                real_post = httpx.AsyncClient.post
+
+                async def tracking_post(self_client, url, **kwargs):
+                    nonlocal ot_called
+                    if "/v1/mpc/ot/" in url:
+                        ot_called = True
+                    return await routed_post(self_client, url, **kwargs)
+
+                with self._env_context("USE_NETWORK_OT", "true"):
+                    with patch.object(httpx.AsyncClient, "post", tracking_post):
+                        result = await orchestrator._distributed_mpc(
+                            signal_id="sig-ot-3v",
+                            local_share=shares[0],
+                            available_indices=available,
+                            peers=peers,
+                        )
+
+                assert result is not None
+                assert result.available is True
+                # OT endpoints should NOT be called for 3-validator case
+                assert not ot_called, "OT endpoints should not be used with >1 peer"
+            finally:
+                for c in clients:
+                    await c.aclose()
+        finally:
+            for store in stores:
+                store.close()

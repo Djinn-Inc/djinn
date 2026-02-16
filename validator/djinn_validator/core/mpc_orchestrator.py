@@ -26,6 +26,7 @@ import httpx
 import structlog
 
 from djinn_validator.core.mpc import (
+    BeaverTriple,
     DistributedParticipantState,
     MPCResult,
     _split_secret_at_points,
@@ -35,6 +36,15 @@ from djinn_validator.core.mpc import (
     secure_check_availability,
 )
 from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
+from djinn_validator.core.ot_network import (
+    OTTripleGenState,
+    deserialize_choices,
+    deserialize_dh_public_key,
+    deserialize_transfers,
+    serialize_choices,
+    serialize_dh_public_key,
+    serialize_transfers,
+)
 from djinn_validator.core.spdz import (
     AuthenticatedParticipantState,
     AuthenticatedShare,
@@ -67,10 +77,14 @@ class MPCOrchestrator:
         coordinator: MPCCoordinator,
         neuron: "DjinnValidator | None" = None,
         threshold: int = 7,
+        ot_dh_group: Any | None = None,
+        ot_field_prime: int | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._neuron = neuron
         self._threshold = threshold
+        self._ot_dh_group = ot_dh_group
+        self._ot_field_prime = ot_field_prime
 
     def _get_peer_validators(self) -> list[dict[str, Any]]:
         """Discover peer validator addresses from the metagraph.
@@ -240,6 +254,27 @@ class MPCOrchestrator:
         r_shares = _split_secret_at_points(r, participant_xs, self._threshold, p)
         r_share_map = {s.x: s.y for s in r_shares}
 
+        # Attempt distributed OT triple generation if enabled
+        use_network_ot = os.getenv("USE_NETWORK_OT", "").lower() in ("1", "true", "yes")
+        pre_generated_triples: list[BeaverTriple] | None = None
+        if use_network_ot and len(peers) == 1:
+            ot_session_id = f"ot-{signal_id}-{secrets.token_hex(4)}"
+            pre_generated_triples = await self._generate_ot_triples_via_network(
+                session_id=ot_session_id,
+                peer=peers[0],
+                n_triples=n_gates,
+                participant_xs=participant_xs,
+                my_x=my_x,
+                dh_group=self._ot_dh_group,
+                field_prime=self._ot_field_prime or BN254_PRIME,
+            )
+            if pre_generated_triples is None:
+                log.warning(
+                    "network_ot_failed_fallback",
+                    signal_id=signal_id,
+                    reason="distributed OT triple generation failed, using local generation",
+                )
+
         # Create MPC session with Beaver triples
         session = self._coordinator.create_session(
             signal_id=signal_id,
@@ -247,6 +282,7 @@ class MPCOrchestrator:
             coordinator_x=my_x,
             participant_xs=participant_xs,
             threshold=self._threshold,
+            pre_generated_triples=pre_generated_triples,
         )
 
         is_auth = session.is_authenticated
@@ -663,6 +699,211 @@ class MPCOrchestrator:
                         peer_uid=peer.get("uid"),
                         error=str(e),
                     )
+
+    async def _generate_ot_triples_via_network(
+        self,
+        session_id: str,
+        peer: dict[str, Any],
+        n_triples: int,
+        participant_xs: list[int],
+        my_x: int,
+        dh_group: Any | None = None,
+        field_prime: int = BN254_PRIME,
+    ) -> list[BeaverTriple] | None:
+        """Generate Beaver triples via 2-party OT over HTTP.
+
+        Runs the 4-phase Gilboa OT protocol with a single peer:
+        1. Setup — both parties initialize OT state, exchange sender PKs
+        2. Choices — exchange receiver choice commitments
+        3. Transfers — exchange encrypted OT messages
+        4. Complete — decrypt, accumulate, compute Shamir evaluations
+        5. Collect partial Shamir evaluations and combine into BeaverTriples
+
+        Neither party learns the other's additive shares. The coordinator
+        collects Shamir evaluations at all x_coords to form the final
+        BeaverTriple objects for distribution.
+
+        Currently supports 2-party case only (coordinator + 1 peer).
+        For n > 2, peer-to-peer connections are needed.
+        """
+        from djinn_validator.core.ot_network import DEFAULT_DH_GROUP
+
+        if dh_group is None:
+            dh_group = DEFAULT_DH_GROUP
+        p = field_prime
+
+        # Create coordinator's local OT state
+        coord_state = OTTripleGenState(
+            session_id=session_id,
+            party_role="coordinator",
+            n_triples=n_triples,
+            x_coords=participant_xs,
+            threshold=self._threshold,
+            prime=p,
+            dh_group=dh_group,
+        )
+        coord_state.initialize()
+
+        try:
+            async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
+                # Phase 1: Setup — initialize peer's OT state
+                setup_payload: dict[str, Any] = {
+                    "session_id": session_id,
+                    "n_triples": n_triples,
+                    "x_coords": participant_xs,
+                    "threshold": self._threshold,
+                }
+                # Pass custom field prime / DH group if non-default
+                if p != BN254_PRIME:
+                    setup_payload["field_prime"] = hex(p)
+                if dh_group is not DEFAULT_DH_GROUP:
+                    setup_payload["dh_prime"] = hex(dh_group.prime)
+
+                setup_resp = await client.post(
+                    f"{peer['url']}/v1/mpc/ot/setup",
+                    json=setup_payload,
+                )
+                if setup_resp.status_code != 200 or not setup_resp.json().get("accepted"):
+                    log.warning("ot_setup_failed", peer_uid=peer.get("uid"), status=setup_resp.status_code)
+                    return None
+
+                peer_sender_pks = {
+                    int(t): deserialize_dh_public_key(pk_hex)
+                    for t, pk_hex in setup_resp.json()["sender_public_keys"].items()
+                }
+
+                # Phase 2: Exchange choices (bidirectional)
+                # Direction A: coordinator is sender → get peer's receiver choices
+                coord_sender_pks_ser = {
+                    str(t): serialize_dh_public_key(pk, dh_group)
+                    for t, pk in coord_state.get_sender_public_keys().items()
+                }
+                choices_resp = await client.post(
+                    f"{peer['url']}/v1/mpc/ot/choices",
+                    json={
+                        "session_id": session_id,
+                        "peer_sender_pks": coord_sender_pks_ser,
+                    },
+                )
+                if choices_resp.status_code != 200:
+                    log.warning("ot_choices_failed", peer_uid=peer.get("uid"), status=choices_resp.status_code)
+                    return None
+
+                peer_choices = {
+                    int(t): deserialize_choices(c)
+                    for t, c in choices_resp.json()["choices"].items()
+                }
+
+                # Direction B: peer is sender → coordinator generates receiver choices
+                coord_choices = coord_state.generate_receiver_choices(peer_sender_pks)
+
+                # Phase 3: Exchange transfers (bidirectional)
+                # Direction A: coordinator processes peer's choices using coordinator's sender
+                coord_transfers, coord_sender_shares = coord_state.process_sender_choices(peer_choices)
+
+                # Direction B: send coordinator's choices to peer's sender
+                coord_choices_ser = {
+                    str(t): serialize_choices(c, dh_group)
+                    for t, c in coord_choices.items()
+                }
+                transfers_resp = await client.post(
+                    f"{peer['url']}/v1/mpc/ot/transfers",
+                    json={
+                        "session_id": session_id,
+                        "peer_choices": coord_choices_ser,
+                    },
+                )
+                if transfers_resp.status_code != 200:
+                    log.warning("ot_transfers_failed", peer_uid=peer.get("uid"), status=transfers_resp.status_code)
+                    return None
+
+                transfer_data = transfers_resp.json()
+                peer_transfers = {
+                    int(t): deserialize_transfers(pairs)
+                    for t, pairs in transfer_data["transfers"].items()
+                }
+                peer_sender_shares_hex = transfer_data["sender_shares"]
+
+                # Phase 4: Decrypt & accumulate (both directions)
+                # Coordinator decrypts peer's transfers (direction B: peer is sender)
+                coord_receiver_shares = coord_state.decrypt_receiver_transfers(peer_transfers)
+                coord_state.accumulate_ot_shares(coord_sender_shares, coord_receiver_shares)
+                coord_state.compute_shamir_evaluations()
+
+                # Send coordinator's transfers to peer for decryption (direction A)
+                coord_transfers_ser = {
+                    str(t): serialize_transfers(pairs)
+                    for t, pairs in coord_transfers.items()
+                }
+                complete_resp = await client.post(
+                    f"{peer['url']}/v1/mpc/ot/complete",
+                    json={
+                        "session_id": session_id,
+                        "peer_transfers": coord_transfers_ser,
+                        "own_sender_shares": peer_sender_shares_hex,
+                    },
+                )
+                if complete_resp.status_code != 200 or not complete_resp.json().get("completed"):
+                    log.warning("ot_complete_failed", peer_uid=peer.get("uid"), status=complete_resp.status_code)
+                    return None
+
+                # Phase 5: Collect Shamir evaluations and combine
+                # Get peer's evaluations at each x_coord
+                peer_evals: dict[int, list[dict[str, int]]] = {}
+                for x in participant_xs:
+                    shares_resp = await client.post(
+                        f"{peer['url']}/v1/mpc/ot/shares",
+                        json={
+                            "session_id": session_id,
+                            "party_x": x,
+                        },
+                    )
+                    if shares_resp.status_code != 200:
+                        log.warning("ot_shares_failed", peer_uid=peer.get("uid"), party_x=x)
+                        return None
+                    peer_evals[x] = [
+                        {"a": int(s["a"], 16), "b": int(s["b"], 16), "c": int(s["c"], 16)}
+                        for s in shares_resp.json()["triple_shares"]
+                    ]
+
+        except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
+            log.warning(
+                "ot_network_error",
+                peer_uid=peer.get("uid"),
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            return None
+
+        # Combine coordinator + peer Shamir evaluations into BeaverTriples
+        triples: list[BeaverTriple] = []
+        for t_idx in range(n_triples):
+            a_shares = []
+            b_shares = []
+            c_shares = []
+            for x in participant_xs:
+                coord_s = coord_state.get_shamir_shares_for_party(x)
+                if coord_s is None:
+                    return None
+                peer_s = peer_evals[x]
+                a_val = (coord_s[t_idx]["a"] + peer_s[t_idx]["a"]) % p
+                b_val = (coord_s[t_idx]["b"] + peer_s[t_idx]["b"]) % p
+                c_val = (coord_s[t_idx]["c"] + peer_s[t_idx]["c"]) % p
+                a_shares.append(Share(x=x, y=a_val))
+                b_shares.append(Share(x=x, y=b_val))
+                c_shares.append(Share(x=x, y=c_val))
+            triples.append(BeaverTriple(
+                a_shares=tuple(a_shares),
+                b_shares=tuple(b_shares),
+                c_shares=tuple(c_shares),
+            ))
+
+        log.info(
+            "ot_triples_generated_via_network",
+            n_triples=n_triples,
+            peer_uid=peer.get("uid"),
+        )
+        return triples
 
     def _single_validator_check(
         self,

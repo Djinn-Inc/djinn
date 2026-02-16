@@ -304,6 +304,10 @@ class OTSetupRequest(BaseModel):
     n_triples: int = Field(ge=1, le=20)
     x_coords: list[int] = Field(max_length=20)
     threshold: int = Field(default=7, ge=1, le=20)
+    # Optional field prime for test configurations (default: BN254 prime)
+    field_prime: str | None = Field(default=None, max_length=128)
+    # Optional DH group prime for test configurations (default: RFC 3526 Group 14)
+    dh_prime: str | None = Field(default=None, max_length=1024)
 
     @field_validator("x_coords")
     @classmethod

@@ -329,8 +329,8 @@ def serialize_dh_public_key(pk: int, dh_group: DHGroup | None = None) -> str:
 
 
 def deserialize_dh_public_key(hex_str: str) -> int:
-    """Deserialize a DH public key from hex."""
-    return int.from_bytes(bytes.fromhex(hex_str), "big")
+    """Deserialize a DH public key from hex (handles 0x prefix)."""
+    return int(hex_str, 16)
 
 
 def serialize_choices(t_values: list[int], dh_group: DHGroup | None = None) -> list[str]:
@@ -340,8 +340,8 @@ def serialize_choices(t_values: list[int], dh_group: DHGroup | None = None) -> l
 
 
 def deserialize_choices(hex_list: list[str]) -> list[int]:
-    """Deserialize choice commitments from hex strings."""
-    return [int.from_bytes(bytes.fromhex(h), "big") for h in hex_list]
+    """Deserialize choice commitments from hex strings (handles 0x prefix)."""
+    return [int(h, 16) for h in hex_list]
 
 
 def serialize_transfers(pairs: list[tuple[bytes, bytes]]) -> list[list[str]]:

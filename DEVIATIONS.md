@@ -120,3 +120,17 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 - **Gossip-abort protocol**: When the coordinator detects MAC verification failure during an authenticated MPC session, it broadcasts `POST /v1/mpc/abort` to all participants. Peers mark the session as FAILED and clean up state. The `compute_gate` endpoint rejects requests (HTTP 409) for aborted sessions.
 - **On-chain payment verification**: The purchase endpoint now queries the Escrow contract via `chain_client.verify_purchase()` before releasing key shares. Returns `"payment_required"` status when `pricePaid == 0`. In dev mode (no chain client), skips the check with a warning for backwards compatibility. Uses `keccak256(signal_id)` for string-to-uint256 mapping.
 **Impact:** Gossip-abort ensures consistency — all honest validators abort together when cheating is detected. Payment verification prevents free signal access. 6 new tests cover abort/payment flows. 736 total validator tests pass.
+
+## DEV-012: Network OT Wired into MPC Orchestrator [EXTENDS DEV-009]
+
+**Whitepaper Section:** Appendix C — MPC Set-Membership Protocol
+**Previous limitation:** DEV-009 implemented the OT network endpoints and state machine, but the MPC orchestrator still generated triples locally — the coordinator knew all triple values during generation.
+**What we did:** Wired the 4-phase OT protocol into the MPC orchestrator (`mpc_orchestrator.py`):
+- **`_generate_ot_triples_via_network()`**: Drives the full bidirectional Gilboa OT protocol over HTTP with a peer validator. Both cross-terms (coordinator.a × peer.b and peer.a × coordinator.b) are computed via OT so neither party learns the other's random values.
+- **Protocol flow**: Setup → exchange sender PKs → bidirectional choice generation → bidirectional transfer processing → decrypt & accumulate → compute Shamir evaluations → collect partial shares and combine into BeaverTriple objects.
+- **Activation**: Enabled via `USE_NETWORK_OT=1` env var. Currently supports the 2-party case (coordinator + 1 peer). Falls back to local triple generation when OT fails or when >1 peer is available.
+- **Configurable parameters**: DH group and field prime can be specified via the OT setup request, allowing fast DH groups (p=1223) in tests while using RFC 3526 Group 14 (2048-bit) in production.
+- **Graceful fallback**: If any OT phase fails (network error, serialization issue), falls back to local OT triple generation with a warning log.
+- **Serialization fix**: `deserialize_dh_public_key` and `deserialize_choices` now handle both `0x`-prefixed and raw hex formats. Server uses `serialize_dh_public_key()` for consistent fixed-width encoding.
+**Limitation:** 2-party only — for n > 2 validators, peer-to-peer OT connections would be needed (each pair must independently run the OT protocol). The star topology (coordinator hub) still means the coordinator collects all Shamir evaluations; a fully peer-to-peer topology is deferred.
+**Impact:** 7 new integration tests verify available/unavailable/single-index/all-indices/fallback/3-validator scenarios. 743 total validator tests pass.
