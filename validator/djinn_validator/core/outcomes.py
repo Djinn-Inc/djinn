@@ -235,7 +235,7 @@ def _determine_spread(
         adjusted = away + pick.line
         diff = adjusted - home
 
-    if diff == 0:
+    if abs(diff) < 1e-9:
         return Outcome.VOID  # Push
     return Outcome.FAVORABLE if diff > 0 else Outcome.UNFAVORABLE
 
@@ -247,7 +247,7 @@ def _determine_total(pick: ParsedPick, home: int, away: int) -> Outcome:
 
     total = home + away
 
-    if total == pick.line:
+    if abs(total - pick.line) < 1e-9:
         return Outcome.VOID  # Push
 
     if pick.side == "Over":

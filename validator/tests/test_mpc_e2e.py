@@ -364,4 +364,4 @@ class TestMPCEdgeCases:
         assert resp.status_code == 200
         data = resp.json()
         assert data["share_x"] == 3
-        assert int(data["share_y"], 16) == 0xABCD
+        assert "share_y" not in data

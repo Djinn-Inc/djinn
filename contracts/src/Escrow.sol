@@ -279,9 +279,6 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         if (sig.status != SignalStatus.Active) revert SignalNotActive(signalId);
         if (block.timestamp >= sig.expiresAt) revert SignalExpired(signalId);
 
-        // --- Mark signal as purchased immediately (prevents re-entry/double-purchase) ---
-        signalCommitment.updateStatus(signalId, SignalStatus.Purchased);
-
         // --- Calculate fee ---
         // fee = notional * maxPriceBps / 10_000
         uint256 fee = (notional * sig.maxPriceBps) / 10_000;
@@ -291,9 +288,14 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         uint256 creditUsed = fee < creditBalance ? fee : creditBalance;
         uint256 usdcPaid = fee - creditUsed;
 
-        // --- Check and deduct buyer's escrowed USDC ---
+        // --- Check buyer's escrowed USDC before any state changes ---
         uint256 buyerBal = balances[msg.sender];
         if (buyerBal < usdcPaid) revert InsufficientBalance(buyerBal, usdcPaid);
+
+        // --- Mark signal as purchased (prevents re-entry/double-purchase) ---
+        signalCommitment.updateStatus(signalId, SignalStatus.Purchased);
+
+        // --- Deduct buyer's escrowed USDC ---
         balances[msg.sender] = buyerBal - usdcPaid;
 
         // --- Burn credits used ---

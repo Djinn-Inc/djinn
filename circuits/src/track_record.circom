@@ -117,7 +117,19 @@ template TrackRecord(MAX_SIGNALS) {
         idxCheck2[i] === 0;
     }
 
-    // ─── 5. Score Computation ───
+    // ─── 5. Odds Range Check (prevent BN254 field wraparound) ───
+    component oddsGe[MAX_SIGNALS];
+    signal oddsCheck[MAX_SIGNALS];
+    for (var i = 0; i < MAX_SIGNALS; i++) {
+        oddsGe[i] = GreaterEqThan(64);
+        oddsGe[i].in[0] <== odds[i];
+        oddsGe[i].in[1] <== ODDS_PRECISION;
+        // Only enforce for active signals
+        oddsCheck[i] <== isActive[i].out * (1 - oddsGe[i].out);
+        oddsCheck[i] === 0;
+    }
+
+    // ─── 6. Score Computation ───
     component isFav[MAX_SIGNALS];
     component isUnfav[MAX_SIGNALS];
     component isVoid[MAX_SIGNALS];
@@ -169,7 +181,7 @@ template TrackRecord(MAX_SIGNALS) {
         loss[i] <== unfavBit[i] * lossRaw[i];
     }
 
-    // ─── 6. Accumulate ───
+    // ─── 7. Accumulate ───
     signal accGain[MAX_SIGNALS + 1];
     signal accLoss[MAX_SIGNALS + 1];
     signal accFav[MAX_SIGNALS + 1];
@@ -190,7 +202,7 @@ template TrackRecord(MAX_SIGNALS) {
         accVoid[i + 1] <== accVoid[i] + voidBit[i];
     }
 
-    // ─── 7. Verify Claimed Aggregates ───
+    // ─── 8. Verify Claimed Aggregates ───
     accGain[MAX_SIGNALS] === totalGain;
     accLoss[MAX_SIGNALS] === totalLoss;
     accFav[MAX_SIGNALS] === favCount;

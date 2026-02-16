@@ -188,24 +188,11 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     // Core functions
     // -------------------------------------------------------------------------
 
-    /// @notice Trigger an audit for a Genius-Idiot pair. Anyone can call this.
-    /// @dev Checks that the pair has reached 10 signals via Account.isAuditReady().
-    ///      Computes the Quality Score, executes settlement, and starts a new cycle.
+    /// @notice Trigger an audit for a Genius-Idiot pair. Alias for settle().
     /// @param genius The Genius address
     /// @param idiot The Idiot address
     function trigger(address genius, address idiot) external whenNotPaused nonReentrant {
-        _validateDependencies();
-        if (!account.isAuditReady(genius, idiot)) {
-            revert NotAuditReady(genius, idiot);
-        }
-
-        uint256 cycle = account.getCurrentCycle(genius, idiot);
-        if (auditResults[genius][idiot][cycle].timestamp != 0) {
-            revert AlreadySettled(genius, idiot, cycle);
-        }
-
-        int256 score = computeScore(genius, idiot);
-        _settle(genius, idiot, cycle, score, false);
+        _settleInternal(genius, idiot);
     }
 
     /// @notice Compute the Quality Score for a Genius-Idiot pair in the current cycle.
@@ -253,6 +240,11 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     /// @param genius The Genius address
     /// @param idiot The Idiot address
     function settle(address genius, address idiot) external whenNotPaused nonReentrant {
+        _settleInternal(genius, idiot);
+    }
+
+    /// @dev Shared settlement logic for trigger() and settle().
+    function _settleInternal(address genius, address idiot) internal {
         _validateDependencies();
         if (!account.isAuditReady(genius, idiot)) {
             revert NotAuditReady(genius, idiot);

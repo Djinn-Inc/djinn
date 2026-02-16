@@ -413,7 +413,7 @@ class TestShareInfoEndpoint:
         data = resp.json()
         assert data["signal_id"] == "test-signal-1"
         assert data["share_x"] == 3
-        assert data["share_y"] == hex(12345)
+        assert "share_y" not in data
 
     def test_share_info_not_found(self, test_app: TestClient) -> None:
         resp = test_app.get("/v1/signal/nonexistent/share_info")

@@ -151,6 +151,16 @@ def create_app(
     mpc_availability_timeout: float = 15.0,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
+    # Warn if chain client is missing in production
+    bt_network = os.environ.get("BT_NETWORK", "")
+    if chain_client is None and bt_network in ("finney", "mainnet"):
+        log.error(
+            "chain_client_not_configured",
+            bt_network=bt_network,
+            msg="Chain client not configured — payment verification will be skipped. "
+            "This is UNSAFE for production. Set BASE_RPC_URL to enable on-chain verification.",
+        )
+
     # Resources that need cleanup on shutdown
     _cleanup_resources: list = []
     _shutdown_event = asyncio.Event()
@@ -913,7 +923,6 @@ def create_app(
         return ShareInfoResponse(
             signal_id=signal_id,
             share_x=record.share.x,
-            share_y=hex(record.share.y),
         )
 
     # ------------------------------------------------------------------

@@ -169,7 +169,9 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     /// @param genius The Genius address
     /// @return Available collateral (deposit - locked) in USDC (6 decimals)
     function getAvailable(address genius) external view returns (uint256) {
-        return deposits[genius] - locked[genius];
+        uint256 dep = deposits[genius];
+        uint256 loc = locked[genius];
+        return dep > loc ? dep - loc : 0;
     }
 
     /// @notice Get collateral locked for a specific signal

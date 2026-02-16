@@ -145,7 +145,7 @@ class PurchaseOrchestrator:
         share_data = self._store.release(signal_id, buyer_address)
         if share_data is not None:
             req.status = PurchaseStatus.SHARES_RELEASED
-            req.completed_at = time.time()
+            req.completed_at = time.monotonic()
             log.info("purchase_complete", signal_id=signal_id, buyer=buyer_address)
         else:
             req.status = PurchaseStatus.FAILED
@@ -176,7 +176,7 @@ class PurchaseOrchestrator:
                     age_s=round(now - req.created_at, 1),
                 )
                 req.status = PurchaseStatus.FAILED
-                req.completed_at = time.time()
+                req.completed_at = time.monotonic()
                 failed += 1
         return failed
 

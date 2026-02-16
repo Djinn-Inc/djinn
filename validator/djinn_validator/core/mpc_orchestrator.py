@@ -208,17 +208,19 @@ class MPCOrchestrator:
 
         return peers
 
-    async def _collect_peer_shares(
+    async def _collect_peer_share_xs(
         self,
         peers: list[dict[str, Any]],
         signal_id: str,
-    ) -> list[Share]:
-        """Request shares from peer validators for a signal.
+    ) -> list[int]:
+        """Request share x-coordinates from peer validators for a signal.
 
-        Each validator holds one Shamir share of the real signal index.
-        We need at least `threshold` shares to run the MPC.
+        Returns the list of peer share x-values (evaluation points) for
+        validators that hold a share of this signal. The y-values are
+        never transmitted — they stay local to each validator and are
+        used only within the MPC protocol.
         """
-        shares = []
+        xs = []
         for peer in peers:
             try:
                 resp = await self._peer_request(
@@ -228,19 +230,14 @@ class MPCOrchestrator:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    shares.append(
-                        Share(
-                            x=data["share_x"],
-                            y=int(data["share_y"], 16),
-                        )
-                    )
+                    xs.append(data["share_x"])
             except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
                 log.warning(
                     "peer_share_request_failed",
                     peer_uid=peer["uid"],
                     error=str(e),
                 )
-        return shares
+        return xs
 
     async def check_availability(
         self,
@@ -414,26 +411,18 @@ class MPCOrchestrator:
             alpha = session.mac_alpha
             r_auth = authenticate_value(r, alpha, participant_xs, self._threshold, p)
             auth_r_map = {s.x: s for s in r_auth}
-            # Collect peer shares and reconstruct the actual secret so we can
-            # create authenticated shares.  In production the genius would
-            # create authenticated shares during signal submission; here we
-            # use the trusted-dealer model where the coordinator reconstructs.
-            peer_shares = await self._collect_peer_shares(peers, signal_id)
-            all_secret_shares = [local_share] + peer_shares
-            if len(all_secret_shares) < self._threshold:
-                log.warning(
-                    "insufficient_shares_for_auth",
-                    available=len(all_secret_shares),
-                    threshold=self._threshold,
-                )
-                self._mark_session_failed(session)
-                return None
-            actual_secret = reconstruct_at_zero(
-                {s.x: s.y for s in all_secret_shares},
-                p,
+            # Authenticated MPC requires pre-authenticated shares created at
+            # signal submission time. The coordinator must NOT reconstruct
+            # the secret — doing so defeats the purpose of MPC. Until the
+            # Genius creates authenticated shares during signal commitment,
+            # the authenticated mode is not available.
+            log.error(
+                "authenticated_mpc_not_supported",
+                signal_id=signal_id,
+                reason="coordinator must not reconstruct secret; pre-authenticated shares required",
             )
-            secret_auth = authenticate_value(actual_secret, alpha, participant_xs, self._threshold, p)
-            auth_secret_map = {s.x: s for s in secret_auth}
+            self._mark_session_failed(session)
+            return None
 
         # Build our own participant state
         if is_auth:

@@ -984,8 +984,9 @@ class TestAuthenticatedDistributedMPC:
                     else:
                         os.environ["USE_AUTHENTICATED_MPC"] = old_val
 
-                assert result is not None
-                assert result.available is True
+                # Authenticated mode is intentionally disabled (coordinator
+                # must not reconstruct secret). Expect None return.
+                assert result is None
             finally:
                 for c in clients:
                     await c.aclose()
@@ -1067,8 +1068,8 @@ class TestAuthenticatedDistributedMPC:
                     else:
                         os.environ["USE_AUTHENTICATED_MPC"] = old_val
 
-                assert result is not None
-                assert result.available is False
+                # Authenticated mode is intentionally disabled
+                assert result is None
             finally:
                 for c in clients:
                     await c.aclose()

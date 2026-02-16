@@ -161,7 +161,7 @@ class TestSSRFProtection:
 
 
 class TestCollectPeerShares:
-    """Test _collect_peer_shares with various failure modes."""
+    """Test _collect_peer_share_xs with various failure modes."""
 
     @pytest.mark.asyncio
     async def test_collects_shares_from_peers(self, httpx_mock) -> None:
@@ -173,16 +173,16 @@ class TestCollectPeerShares:
         ]
         httpx_mock.add_response(
             url="http://peer1:8421/v1/signal/sig-1/share_info",
-            json={"share_x": 1, "share_y": "ff"},
+            json={"share_x": 1},
         )
         httpx_mock.add_response(
             url="http://peer2:8421/v1/signal/sig-1/share_info",
-            json={"share_x": 2, "share_y": "1a"},
+            json={"share_x": 2},
         )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
-        assert len(shares) == 2
-        assert shares[0].x == 1
-        assert shares[0].y == 0xFF
+        xs = await orch._collect_peer_share_xs(peers, "sig-1")
+        assert len(xs) == 2
+        assert xs[0] == 1
+        assert xs[1] == 2
 
     @pytest.mark.asyncio
     async def test_partial_peer_failure(self, httpx_mock) -> None:
@@ -201,11 +201,11 @@ class TestCollectPeerShares:
             )
         httpx_mock.add_response(
             url="http://peer2:8421/v1/signal/sig-1/share_info",
-            json={"share_x": 2, "share_y": "ab"},
+            json={"share_x": 2},
         )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
-        assert len(shares) == 1
-        assert shares[0].x == 2
+        xs = await orch._collect_peer_share_xs(peers, "sig-1")
+        assert len(xs) == 1
+        assert xs[0] == 2
 
     @pytest.mark.asyncio
     async def test_malformed_json_response(self, httpx_mock) -> None:
@@ -215,23 +215,10 @@ class TestCollectPeerShares:
         peers = [{"uid": 1, "url": "http://peer1:8421"}]
         httpx_mock.add_response(
             url="http://peer1:8421/v1/signal/sig-1/share_info",
-            json={"share_x": 1},  # Missing share_y
+            json={"signal_id": "sig-1"},  # Missing share_x
         )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
-        assert len(shares) == 0
-
-    @pytest.mark.asyncio
-    async def test_invalid_hex_in_share_y(self, httpx_mock) -> None:
-        """Peer returns non-hex share_y."""
-        coord = MPCCoordinator()
-        orch = MPCOrchestrator(coordinator=coord, neuron=None)
-        peers = [{"uid": 1, "url": "http://peer1:8421"}]
-        httpx_mock.add_response(
-            url="http://peer1:8421/v1/signal/sig-1/share_info",
-            json={"share_x": 1, "share_y": "not-hex!"},
-        )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
-        assert len(shares) == 0
+        xs = await orch._collect_peer_share_xs(peers, "sig-1")
+        assert len(xs) == 0
 
     @pytest.mark.asyncio
     async def test_all_peers_fail(self, httpx_mock) -> None:
@@ -251,14 +238,14 @@ class TestCollectPeerShares:
                 url="http://peer2:8421/v1/signal/sig-1/share_info",
                 status_code=503,
             )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
+        shares = await orch._collect_peer_share_xs(peers, "sig-1")
         assert len(shares) == 0
 
     @pytest.mark.asyncio
     async def test_empty_peers_returns_empty(self) -> None:
         coord = MPCCoordinator()
         orch = MPCOrchestrator(coordinator=coord, neuron=None)
-        shares = await orch._collect_peer_shares([], "sig-1")
+        shares = await orch._collect_peer_share_xs([], "sig-1")
         assert shares == []
 
     @pytest.mark.asyncio
@@ -273,7 +260,7 @@ class TestCollectPeerShares:
             text="not valid json",
             headers={"content-type": "text/plain"},
         )
-        shares = await orch._collect_peer_shares(peers, "sig-1")
+        shares = await orch._collect_peer_share_xs(peers, "sig-1")
         assert len(shares) == 0
 
 

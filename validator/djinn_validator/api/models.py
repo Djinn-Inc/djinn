@@ -300,7 +300,6 @@ class ShareInfoResponse(BaseModel):
 
     signal_id: str
     share_x: int
-    share_y: str  # Hex-encoded y-coordinate (authenticated endpoint only)
 
 
 # ---------------------------------------------------------------------------
