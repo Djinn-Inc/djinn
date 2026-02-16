@@ -115,9 +115,27 @@ export default function GeniusDashboard() {
 
       {/* Active Signals */}
       <section className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-900 mb-4">
-          Active Signals
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Active Signals
+          </h2>
+          {!signalsLoading && mySignals.length > 0 && (
+            <span className="text-xs text-slate-500">
+              {mySignals.length} / 20 (proof limit)
+            </span>
+          )}
+        </div>
+        {!signalsLoading && mySignals.length >= 18 && (
+          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${
+            mySignals.length >= 20
+              ? "bg-red-50 text-red-700 border border-red-200"
+              : "bg-amber-50 text-amber-700 border border-amber-200"
+          }`}>
+            {mySignals.length >= 20
+              ? "You have reached the 20-signal proof limit. To generate a new track record proof, you will need to batch your signals into multiple proofs."
+              : `Approaching the 20-signal proof limit (${mySignals.length}/20). Track record proofs cover up to 20 signals each.`}
+          </div>
+        )}
         {signalsLoading ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">Loading signals...</p>

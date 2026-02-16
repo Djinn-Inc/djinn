@@ -12,6 +12,7 @@ import {
   toHex,
 } from "@/lib/crypto";
 import { getValidatorClients } from "@/lib/api";
+import { useActiveSignals } from "@/lib/hooks/useSignals";
 import {
   SPORT_GROUPS,
   SPORTS,
@@ -47,6 +48,10 @@ export default function CreateSignal() {
   const { authenticated, user } = usePrivy();
   const { commit, loading: commitLoading, error: commitError } =
     useCommitSignal();
+  const address = user?.wallet?.address;
+  const { signals: existingSignals } = useActiveSignals(undefined, address);
+  const signalCount = existingSignals.length;
+  const MAX_PROOF_SIGNALS = 20;
 
   // Wizard step
   const [step, setStep] = useState<WizardStep>("browse");
@@ -358,6 +363,14 @@ export default function CreateSignal() {
           Browse live games and pick your bet. The system will auto-generate
           plausible decoy lines from real odds data.
         </p>
+
+        {signalCount >= MAX_PROOF_SIGNALS && (
+          <div className="rounded-lg px-4 py-3 mb-6 text-sm bg-amber-50 text-amber-700 border border-amber-200">
+            You have {signalCount} active signals. Track record proofs support up
+            to {MAX_PROOF_SIGNALS} signals each. You can still create signals, but
+            will need to generate multiple proofs for your full track record.
+          </div>
+        )}
 
         {/* Sport Selector — grouped */}
         <div className="space-y-3 mb-6">
