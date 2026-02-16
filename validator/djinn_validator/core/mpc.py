@@ -358,76 +358,103 @@ def secure_check_availability(
 
 
 # ---------------------------------------------------------------------------
-# Per-Validator API (for production with network transport)
+# Reconstruction helper
+# ---------------------------------------------------------------------------
+
+
+def reconstruct_at_zero(
+    values: dict[int, int],
+    prime: int = BN254_PRIME,
+) -> int:
+    """Reconstruct a Shamir-shared secret at x=0 from share values.
+
+    Args:
+        values: Mapping of share x-coordinate to share value.
+        prime: Field prime.
+    """
+    result = 0
+    xs = sorted(values.keys())
+    for xi in xs:
+        li = _lagrange_coefficient(xi, xs, prime)
+        result = (result + li * values[xi]) % prime
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Distributed MPC participant state
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class ValidatorMPCState:
-    """MPC state held by a single validator during the protocol.
+class DistributedParticipantState:
+    """Per-session MPC state for a participant in the distributed protocol.
 
-    In production, each validator creates this locally and exchanges
-    messages with other validators over the network.
+    Each non-coordinator validator maintains this to compute per-gate
+    (d_i, e_i) contributions without revealing their secret share.
+    The coordinator also creates one for itself.
+
+    For each gate g, the participant computes:
+      - x_input: r_share (gate 0) or z from previous gate (gate g>0)
+      - y_input: secret_share - available_indices[g]
+      - d_i = x_input - triple_a[g]
+      - e_i = y_input - triple_b[g]
+
+    These (d_i, e_i) are sent to the coordinator. The coordinator
+    reconstructs the opened values d, e and broadcasts them back
+    for the next gate's computation.
     """
 
     validator_x: int
-    share_y: int
+    secret_share_y: int
+    r_share_y: int
     available_indices: list[int]
+    triple_a: list[int]
+    triple_b: list[int]
+    triple_c: list[int]
     prime: int = BN254_PRIME
+    _gates_completed: int = 0
 
-    # Beaver triple shares assigned to this validator
-    triple_a_shares: list[int] = field(default_factory=list)
-    triple_b_shares: list[int] = field(default_factory=list)
-    triple_c_shares: list[int] = field(default_factory=list)
-
-    def compute_round1(self) -> list[Round1Message]:
-        """Compute this validator's Round 1 messages for all multiplication gates.
-
-        Returns (d_i, e_i) pairs for each gate, to be broadcast to all validators.
-        """
-        p = self.prime
-        messages = []
-
-        # First gate: r * (s - a_0)
-        # Subsequent gates: prev_result * (s - a_{i})
-        # The input shares for each gate depend on the previous gate's output,
-        # BUT d_i and e_i only depend on the validator's LOCAL shares.
-        # In the sequential protocol, we need Round 1 results before computing
-        # the next gate's inputs. In tree multiplication, independent gates
-        # can be parallelized.
-
-        # For sequential multiplication, the validator needs to know the
-        # intermediate share values, which depend on the opened (d, e) from
-        # previous rounds. This method handles the FIRST multiplication only.
-        # Subsequent rounds use compute_round1_continued().
-
-        if not self.available_indices:
-            return messages
-
-        # First multiplication: inputs are r_share and (share_y - a_0)
-        a0 = self.available_indices[0]
-        x_share = self.share_y  # This would be r_share in production
-        y_share = (self.share_y - a0) % p
-
-        if self.triple_a_shares and self.triple_b_shares:
-            d = (x_share - self.triple_a_shares[0]) % p
-            e = (y_share - self.triple_b_shares[0]) % p
-            messages.append(Round1Message(self.validator_x, d, e))
-
-        return messages
-
-    def compute_output_share(
+    def compute_gate(
         self,
         gate_idx: int,
-        d_opened: int,
-        e_opened: int,
-    ) -> int:
-        """Compute this validator's output share for a multiplication gate."""
+        prev_opened_d: int | None = None,
+        prev_opened_e: int | None = None,
+    ) -> tuple[int, int]:
+        """Compute (d_i, e_i) for a multiplication gate.
+
+        Args:
+            gate_idx: Which gate (0-indexed, must be called sequentially).
+            prev_opened_d: Publicly opened d from gate g-1 (None for gate 0).
+            prev_opened_e: Publicly opened e from gate g-1 (None for gate 0).
+
+        Returns:
+            (d_i, e_i) tuple to send to the coordinator.
+        """
+        if gate_idx != self._gates_completed:
+            raise ValueError(f"Expected gate {self._gates_completed}, got {gate_idx}")
+
         p = self.prime
-        a_i = self.triple_a_shares[gate_idx]
-        b_i = self.triple_b_shares[gate_idx]
-        c_i = self.triple_c_shares[gate_idx]
-        return (d_opened * e_opened + d_opened * b_i + e_opened * a_i + c_i) % p
+
+        if gate_idx == 0:
+            x_input = self.r_share_y
+        else:
+            if prev_opened_d is None or prev_opened_e is None:
+                raise ValueError("Previous gate opened values required for gate > 0")
+            pg = gate_idx - 1
+            x_input = (
+                prev_opened_d * prev_opened_e
+                + prev_opened_d * self.triple_b[pg]
+                + prev_opened_e * self.triple_a[pg]
+                + self.triple_c[pg]
+            ) % p
+
+        y_input = (self.secret_share_y - self.available_indices[gate_idx]) % p
+
+        d_i = (x_input - self.triple_a[gate_idx]) % p
+        e_i = (y_input - self.triple_b[gate_idx]) % p
+
+        self._gates_completed += 1
+        return d_i, e_i
 
 
 # ---------------------------------------------------------------------------

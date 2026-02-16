@@ -163,6 +163,8 @@ class MPCInitRequest(BaseModel):
     threshold: int = Field(default=7, ge=1, le=20)
     # This validator's Beaver triple shares (one dict per gate)
     triple_shares: list[dict[str, str]] = Field(default_factory=list, max_length=20)  # hex-encoded
+    # This validator's share of the random mask r (hex-encoded)
+    r_share_y: str | None = None
 
     @field_validator("available_indices")
     @classmethod
@@ -222,6 +224,22 @@ class MPCResultRequest(BaseModel):
 class MPCResultResponse(BaseModel):
     session_id: str
     acknowledged: bool
+
+
+class MPCComputeGateRequest(BaseModel):
+    """POST /v1/mpc/compute_gate — Coordinator requests gate computation."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    gate_idx: int = Field(ge=0, le=20)
+    prev_opened_d: str | None = None  # Hex-encoded, None for gate 0
+    prev_opened_e: str | None = None  # Hex-encoded, None for gate 0
+
+
+class MPCComputeGateResponse(BaseModel):
+    session_id: str
+    gate_idx: int
+    d_value: str  # Hex-encoded
+    e_value: str  # Hex-encoded
 
 
 class MPCSessionStatusResponse(BaseModel):

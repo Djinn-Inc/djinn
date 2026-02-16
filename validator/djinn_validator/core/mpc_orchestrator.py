@@ -14,9 +14,11 @@ Falls back to single-validator prototype mode when:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
+import secrets
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -24,13 +26,16 @@ import httpx
 import structlog
 
 from djinn_validator.core.mpc import (
+    DistributedParticipantState,
     MPCResult,
+    _split_secret_at_points,
     check_availability,
     compute_local_contribution,
+    reconstruct_at_zero,
     secure_check_availability,
 )
-from djinn_validator.core.mpc_coordinator import MPCCoordinator
-from djinn_validator.utils.crypto import Share
+from djinn_validator.core.mpc_coordinator import MPCCoordinator, SessionStatus
+from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 if TYPE_CHECKING:
     from djinn_validator.bt.neuron import DjinnValidator
@@ -190,14 +195,23 @@ class MPCOrchestrator:
     ) -> MPCResult | None:
         """Run the distributed MPC protocol via HTTP.
 
-        1. Create session with Beaver triples
-        2. Send /v1/mpc/init to all peers with their triple shares
-        3. Exchange Round 1 messages for each multiplication gate
-        4. Compute and broadcast result
+        Full protocol:
+        1. Generate random mask r and split into shares
+        2. Create session with Beaver triples
+        3. Send /v1/mpc/init to all peers with their triple shares + r shares
+        4. For each multiplication gate, collect (d_i, e_i) from all peers
+        5. Reconstruct opened d, e and feed into next gate
+        6. Open final result and broadcast to peers
         """
+        p = BN254_PRIME
         my_x = local_share.x
-        raw_xs = [my_x] + [p["uid"] + 1 for p in peers]  # Use uid+1 as share x
-        # Validate x-coordinates are in valid range and unique
+        sorted_avail = sorted(available_indices)
+        n_gates = len(sorted_avail)
+
+        if n_gates == 0:
+            return MPCResult(available=False, participating_validators=1)
+
+        raw_xs = [my_x] + [peer["uid"] + 1 for peer in peers]
         participant_xs = sorted(set(x for x in raw_xs if 1 <= x <= 255))
 
         if len(participant_xs) < self._threshold:
@@ -208,51 +222,87 @@ class MPCOrchestrator:
             )
             return None
 
-        # Create the MPC session
+        # Generate random mask r (nonzero)
+        r = secrets.randbelow(p - 1) + 1
+        r_shares = _split_secret_at_points(r, participant_xs, self._threshold, p)
+        r_share_map = {s.x: s.y for s in r_shares}
+
+        # Create MPC session with Beaver triples
         session = self._coordinator.create_session(
             signal_id=signal_id,
-            available_indices=sorted(available_indices),
+            available_indices=sorted_avail,
             coordinator_x=my_x,
             participant_xs=participant_xs,
             threshold=self._threshold,
         )
 
-        # Distribute session invitations with triple shares to peers
-        accepted_peers = []
-        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-            for peer in peers:
-                peer_x = peer["uid"] + 1
-                triple_shares = self._coordinator.get_triple_shares_for_participant(
-                    session.session_id, peer_x,
-                )
-                if triple_shares is None:
-                    continue
+        # Build our own participant state
+        my_triples = self._coordinator.get_triple_shares_for_participant(
+            session.session_id, my_x,
+        )
+        if my_triples is None:
+            return None
 
-                try:
-                    resp = await client.post(
-                        f"{peer['url']}/v1/mpc/init",
-                        json={
-                            "session_id": session.session_id,
-                            "signal_id": signal_id,
-                            "available_indices": sorted(available_indices),
-                            "coordinator_x": my_x,
-                            "participant_xs": participant_xs,
-                            "threshold": self._threshold,
-                            "triple_shares": [
-                                {k: hex(v) for k, v in ts.items()}
-                                for ts in triple_shares
-                            ],
-                        },
-                    )
-                    if resp.status_code == 200 and resp.json().get("accepted"):
-                        accepted_peers.append(peer)
-                except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
-                    log.warning(
-                        "mpc_init_failed",
-                        peer_uid=peer["uid"],
-                        error_type=type(e).__name__,
-                        error=str(e),
-                    )
+        my_state = DistributedParticipantState(
+            validator_x=my_x,
+            secret_share_y=local_share.y,
+            r_share_y=r_share_map[my_x],
+            available_indices=sorted_avail,
+            triple_a=[ts["a"] for ts in my_triples],
+            triple_b=[ts["b"] for ts in my_triples],
+            triple_c=[ts["c"] for ts in my_triples],
+        )
+
+        # Distribute session invitations with triple shares + r shares
+        accepted_peers: list[dict[str, Any]] = []
+
+        async def _init_peer(
+            client: httpx.AsyncClient, peer: dict[str, Any],
+        ) -> dict[str, Any] | None:
+            peer_x = peer["uid"] + 1
+            triple_shares = self._coordinator.get_triple_shares_for_participant(
+                session.session_id, peer_x,
+            )
+            peer_r = r_share_map.get(peer_x)
+            if triple_shares is None or peer_r is None:
+                return None
+            try:
+                resp = await client.post(
+                    f"{peer['url']}/v1/mpc/init",
+                    json={
+                        "session_id": session.session_id,
+                        "signal_id": signal_id,
+                        "available_indices": sorted_avail,
+                        "coordinator_x": my_x,
+                        "participant_xs": participant_xs,
+                        "threshold": self._threshold,
+                        "triple_shares": [
+                            {k: hex(v) for k, v in ts.items()}
+                            for ts in triple_shares
+                        ],
+                        "r_share_y": hex(peer_r),
+                    },
+                )
+                if resp.status_code == 200 and resp.json().get("accepted"):
+                    return peer
+            except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
+                log.warning(
+                    "mpc_init_failed",
+                    peer_uid=peer["uid"],
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
+            return None
+
+        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
+            results = await asyncio.gather(
+                *(_init_peer(client, peer) for peer in peers),
+                return_exceptions=True,
+            )
+            accepted_peers = [
+                r for r in results
+                if r is not None and not isinstance(r, BaseException)
+            ]
 
         if len(accepted_peers) + 1 < self._threshold:
             log.warning(
@@ -268,38 +318,142 @@ class MPCOrchestrator:
             accepted_peers=len(accepted_peers),
         )
 
-        # For the remaining protocol rounds (Round 1 messages, output share
-        # computation), the full implementation requires async message
-        # exchange. In this version, if we've gotten this far, we use the
-        # coordinator's compute_result_with_shares as a simulation.
-        # The /v1/mpc/round1 and /v1/mpc/result endpoints are ready for
-        # the fully distributed version.
+        # Run per-gate protocol
+        active_peers = list(accepted_peers)
+        prev_d: int | None = None
+        prev_e: int | None = None
+
+        for gate_idx in range(n_gates):
+            # Compute our own (d_i, e_i)
+            my_d, my_e = my_state.compute_gate(gate_idx, prev_d, prev_e)
+            d_vals: dict[int, int] = {my_x: my_d}
+            e_vals: dict[int, int] = {my_x: my_e}
+
+            # Collect from peers in parallel
+            async def _collect_gate(
+                client: httpx.AsyncClient,
+                peer: dict[str, Any],
+                g_idx: int,
+                p_d: int | None,
+                p_e: int | None,
+            ) -> tuple[int, int, int] | None:
+                try:
+                    resp = await client.post(
+                        f"{peer['url']}/v1/mpc/compute_gate",
+                        json={
+                            "session_id": session.session_id,
+                            "gate_idx": g_idx,
+                            "prev_opened_d": hex(p_d) if p_d is not None else None,
+                            "prev_opened_e": hex(p_e) if p_e is not None else None,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        peer_x = peer["uid"] + 1
+                        return peer_x, int(data["d_value"], 16), int(data["e_value"], 16)
+                except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
+                    log.warning(
+                        "mpc_gate_failed",
+                        peer_uid=peer["uid"],
+                        gate_idx=g_idx,
+                        error_type=type(e).__name__,
+                        error=str(e),
+                    )
+                return None
+
+            async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
+                results = await asyncio.gather(
+                    *(_collect_gate(client, peer, gate_idx, prev_d, prev_e)
+                      for peer in active_peers),
+                    return_exceptions=True,
+                )
+
+                failed = []
+                for i, result in enumerate(results):
+                    if result is None or isinstance(result, BaseException):
+                        failed.append(active_peers[i])
+                    else:
+                        peer_x, d_val, e_val = result
+                        d_vals[peer_x] = d_val
+                        e_vals[peer_x] = e_val
+
+                for fp in failed:
+                    active_peers.remove(fp)
+
+            if len(d_vals) < self._threshold:
+                log.warning(
+                    "mpc_gate_insufficient",
+                    gate_idx=gate_idx,
+                    remaining=len(d_vals),
+                    threshold=self._threshold,
+                )
+                return None
+
+            # Reconstruct publicly opened d and e
+            prev_d = reconstruct_at_zero(d_vals, p)
+            prev_e = reconstruct_at_zero(e_vals, p)
+
+        # Compute final output shares z_i for each participant
+        z_vals: dict[int, int] = {}
+        last = n_gates - 1
+        for vx in d_vals:
+            ts = self._coordinator.get_triple_shares_for_participant(
+                session.session_id, vx,
+            )
+            if ts is None:
+                continue
+            z_i = (
+                prev_d * prev_e
+                + prev_d * ts[last]["b"]
+                + prev_e * ts[last]["a"]
+                + ts[last]["c"]
+            ) % p
+            z_vals[vx] = z_i
+
+        # Reconstruct the final result: r * P(s) — zero iff s ∈ available set
+        result_value = reconstruct_at_zero(z_vals, p)
+        available = result_value == 0
+
+        mpc_result = MPCResult(
+            available=available,
+            participating_validators=len(z_vals),
+        )
+
+        # Update session state
+        with self._coordinator._lock:
+            session.result = mpc_result
+            session.status = SessionStatus.COMPLETE
+
+        log.info(
+            "mpc_distributed_result",
+            session_id=session.session_id,
+            available=available,
+            participants=len(z_vals),
+            gates=n_gates,
+        )
 
         # Broadcast result to peers
-        if session.result:
-            async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
-                for peer in accepted_peers:
-                    try:
-                        await client.post(
-                            f"{peer['url']}/v1/mpc/result",
-                            json={
-                                "session_id": session.session_id,
-                                "signal_id": signal_id,
-                                "available": session.result.available,
-                                "participating_validators": session.result.participating_validators,
-                            },
-                        )
-                    except httpx.HTTPError as e:
-                        log.warning(
-                            "mpc_result_broadcast_failed",
-                            peer_uid=peer["uid"],
-                            error_type=type(e).__name__,
-                            error=str(e),
-                        )
+        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
+            for peer in active_peers:
+                try:
+                    await client.post(
+                        f"{peer['url']}/v1/mpc/result",
+                        json={
+                            "session_id": session.session_id,
+                            "signal_id": signal_id,
+                            "available": available,
+                            "participating_validators": len(z_vals),
+                        },
+                    )
+                except httpx.HTTPError as e:
+                    log.warning(
+                        "mpc_result_broadcast_failed",
+                        peer_uid=peer["uid"],
+                        error_type=type(e).__name__,
+                        error=str(e),
+                    )
 
-            return session.result
-
-        return None
+        return mpc_result
 
     def _single_validator_check(
         self,

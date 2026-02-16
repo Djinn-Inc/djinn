@@ -44,6 +44,8 @@ from djinn_validator.api.middleware import (
 from djinn_validator.api.models import (
     AnalyticsRequest,
     HealthResponse,
+    MPCComputeGateRequest,
+    MPCComputeGateResponse,
     MPCInitRequest,
     MPCInitResponse,
     MPCResultRequest,
@@ -63,6 +65,7 @@ from djinn_validator.api.models import (
     StoreShareResponse,
 )
 from djinn_validator.core.mpc import (
+    DistributedParticipantState,
     MPCResult,
     Round1Message,
     check_availability,
@@ -442,6 +445,12 @@ def create_app(
         threshold=7,
     )
 
+    # Per-session participant state for the distributed MPC protocol.
+    # Keyed by session_id. Cleaned up when sessions expire.
+    import threading as _threading
+    _participant_states: dict[str, DistributedParticipantState] = {}
+    _participant_lock = _threading.Lock()
+
     # Collect validator hotkeys from metagraph for auth
     def _get_validator_hotkeys() -> set[str] | None:
         """Get set of validator hotkeys from metagraph for MPC auth."""
@@ -481,6 +490,38 @@ def create_app(
         if not _mpc.replace_session_id(session.session_id, req.session_id):
             raise HTTPException(status_code=409, detail="Session ID conflict")
 
+        # Create distributed participant state if r_share provided
+        if req.r_share_y is not None:
+            # Look up our local share for this signal
+            record = share_store.get(req.signal_id)
+            if record is None:
+                log.warning("mpc_init_no_share", signal_id=req.signal_id)
+                return MPCInitResponse(
+                    session_id=req.session_id,
+                    accepted=False,
+                    message="No share held for this signal",
+                )
+
+            try:
+                r_share = int(req.r_share_y, 16)
+                triple_a = [int(ts.get("a", "0"), 16) for ts in req.triple_shares]
+                triple_b = [int(ts.get("b", "0"), 16) for ts in req.triple_shares]
+                triple_c = [int(ts.get("c", "0"), 16) for ts in req.triple_shares]
+            except (ValueError, TypeError) as e:
+                raise HTTPException(status_code=400, detail=f"Invalid hex in MPC init data: {e}")
+
+            state = DistributedParticipantState(
+                validator_x=record.share.x,
+                secret_share_y=record.share.y,
+                r_share_y=r_share,
+                available_indices=req.available_indices,
+                triple_a=triple_a,
+                triple_b=triple_b,
+                triple_c=triple_c,
+            )
+            with _participant_lock:
+                _participant_states[req.session_id] = state
+
         return MPCInitResponse(
             session_id=req.session_id,
             accepted=True,
@@ -505,6 +546,31 @@ def create_app(
             session_id=req.session_id,
             gate_idx=req.gate_idx,
             accepted=ok,
+        )
+
+    @app.post("/v1/mpc/compute_gate", response_model=MPCComputeGateResponse)
+    async def mpc_compute_gate(req: MPCComputeGateRequest, request: Request) -> MPCComputeGateResponse:
+        """Compute this validator's (d_i, e_i) for a multiplication gate."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _participant_lock:
+            state = _participant_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="No participant state for this session")
+
+        prev_d = int(req.prev_opened_d, 16) if req.prev_opened_d else None
+        prev_e = int(req.prev_opened_e, 16) if req.prev_opened_e else None
+
+        try:
+            d_i, e_i = state.compute_gate(req.gate_idx, prev_d, prev_e)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        return MPCComputeGateResponse(
+            session_id=req.session_id,
+            gate_idx=req.gate_idx,
+            d_value=hex(d_i),
+            e_value=hex(e_i),
         )
 
     @app.post("/v1/mpc/result", response_model=MPCResultResponse)
@@ -533,6 +599,10 @@ def create_app(
             signal_id=req.signal_id,
             available=req.available,
         )
+
+        # Clean up participant state
+        with _participant_lock:
+            _participant_states.pop(req.session_id, None)
 
         return MPCResultResponse(
             session_id=req.session_id,
