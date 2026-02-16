@@ -268,6 +268,42 @@ export function useSignal(signalId: bigint | undefined) {
 }
 
 // ---------------------------------------------------------------------------
+// Gas estimation utility
+// ---------------------------------------------------------------------------
+
+export interface GasEstimate {
+  gasLimit: bigint;
+  gasPrice: bigint;
+  totalCostWei: bigint;
+  totalCostEth: string; // Human-readable ETH cost
+}
+
+/** Estimate gas for a contract method call. Returns null if estimation fails. */
+export async function estimateGas(
+  contract: ethers.Contract,
+  method: string,
+  args: unknown[],
+): Promise<GasEstimate | null> {
+  try {
+    const provider = contract.runner as ethers.Signer;
+    const gasLimit = await contract[method].estimateGas(...args);
+    const feeData = await (provider as unknown as { provider: ethers.Provider }).provider.getFeeData();
+    const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
+    const totalCostWei = gasLimit * gasPrice;
+    const totalCostEth = ethers.formatEther(totalCostWei);
+
+    return {
+      gasLimit,
+      gasPrice,
+      totalCostWei,
+      totalCostEth,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Transaction hooks
 // ---------------------------------------------------------------------------
 
@@ -275,15 +311,19 @@ export function useCommitSignal() {
   const signer = useEthersSigner();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   const commit = useCallback(
     async (params: CommitParams) => {
       if (!signer) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
+      setTxHash(null);
       try {
         const contract = getSignalCommitmentContract(signer);
-        const tx = await contract.commit(params);
+        const gas = await estimateGas(contract, "commit", [params]);
+        const tx = await contract.commit(params, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
+        setTxHash(tx.hash);
         await tx.wait();
         return tx.hash as string;
       } catch (err) {
@@ -296,22 +336,26 @@ export function useCommitSignal() {
     [signer]
   );
 
-  return { commit, loading, error };
+  return { commit, loading, error, txHash };
 }
 
 export function usePurchaseSignal() {
   const signer = useEthersSigner();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   const purchase = useCallback(
     async (signalId: bigint, notional: bigint, odds: bigint) => {
       if (!signer) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
+      setTxHash(null);
       try {
         const contract = getEscrowContract(signer);
-        const tx = await contract.purchase(signalId, notional, odds);
+        const gas = await estimateGas(contract, "purchase", [signalId, notional, odds]);
+        const tx = await contract.purchase(signalId, notional, odds, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
+        setTxHash(tx.hash);
         const receipt = await tx.wait();
         return receipt;
       } catch (err) {
@@ -324,7 +368,7 @@ export function usePurchaseSignal() {
     [signer]
   );
 
-  return { purchase, loading, error };
+  return { purchase, loading, error, txHash };
 }
 
 export function useDepositEscrow() {
