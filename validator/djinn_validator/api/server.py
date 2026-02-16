@@ -53,6 +53,16 @@ from djinn_validator.api.models import (
     MPCRound1Request,
     MPCRound1Response,
     MPCSessionStatusResponse,
+    OTChoicesRequest,
+    OTChoicesResponse,
+    OTCompleteRequest,
+    OTCompleteResponse,
+    OTSetupRequest,
+    OTSetupResponse,
+    OTSharesRequest,
+    OTSharesResponse,
+    OTTransfersRequest,
+    OTTransfersResponse,
     OutcomeRequest,
     OutcomeResponse,
     PurchaseRequest,
@@ -61,6 +71,7 @@ from djinn_validator.api.models import (
     RegisterSignalRequest,
     RegisterSignalResponse,
     ResolveResponse,
+    ShareInfoResponse,
     StoreShareRequest,
     StoreShareResponse,
 )
@@ -144,15 +155,17 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # Request body size limit (1MB)
+    # Request body size limit (1MB default, 5MB for OT endpoints)
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
         content_length = request.headers.get("content-length")
         if content_length:
+            # OT endpoints carry larger payloads (DH group elements)
+            max_size = 5_242_880 if request.url.path.startswith("/v1/mpc/ot/") else 1_048_576
             try:
-                if int(content_length) > 1_048_576:
+                if int(content_length) > max_size:
                     from starlette.responses import JSONResponse
-                    return JSONResponse(status_code=413, content={"detail": "Request body too large (max 1MB)"})
+                    return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {max_size // 1048576}MB)"})
             except (ValueError, OverflowError):
                 from starlette.responses import JSONResponse
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
@@ -626,6 +639,206 @@ def create_app(
             available=session.result.available if session.result else None,
             participants_responded=responded,
             total_participants=len(session.participant_xs),
+        )
+
+    # ------------------------------------------------------------------
+    # Signal share info (for peer share discovery)
+    # ------------------------------------------------------------------
+
+    @app.get("/v1/signal/{signal_id}/share_info", response_model=ShareInfoResponse)
+    async def share_info(signal_id: str, request: Request) -> ShareInfoResponse:
+        """Return this validator's share x-coordinate for MPC peer discovery."""
+        _validate_signal_id_path(signal_id)
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        record = share_store.get(signal_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Signal not found on this validator")
+
+        return ShareInfoResponse(
+            signal_id=signal_id,
+            share_x=record.share.x,
+            share_y=hex(record.share.y),
+        )
+
+    # ------------------------------------------------------------------
+    # OT network endpoints (distributed triple generation)
+    # ------------------------------------------------------------------
+
+    from djinn_validator.core.ot_network import OTTripleGenState
+
+    _ot_states: dict[str, OTTripleGenState] = {}
+    _ot_lock = _threading.Lock()
+
+    @app.post("/v1/mpc/ot/setup", response_model=OTSetupResponse)
+    async def ot_setup(req: OTSetupRequest, request: Request) -> OTSetupResponse:
+        """Initialize distributed triple generation on this peer."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _ot_lock:
+            if req.session_id in _ot_states:
+                state = _ot_states[req.session_id]
+                return OTSetupResponse(
+                    session_id=req.session_id,
+                    accepted=True,
+                    sender_public_keys={
+                        str(t): hex(pk)
+                        for t, pk in state.get_sender_public_keys().items()
+                    },
+                )
+
+            state = OTTripleGenState(
+                session_id=req.session_id,
+                party_role="peer",
+                n_triples=req.n_triples,
+                x_coords=req.x_coords,
+                threshold=req.threshold,
+            )
+            state.initialize()
+            _ot_states[req.session_id] = state
+
+        return OTSetupResponse(
+            session_id=req.session_id,
+            accepted=True,
+            sender_public_keys={
+                str(t): hex(pk)
+                for t, pk in state.get_sender_public_keys().items()
+            },
+        )
+
+    @app.post("/v1/mpc/ot/choices", response_model=OTChoicesResponse)
+    async def ot_choices(req: OTChoicesRequest, request: Request) -> OTChoicesResponse:
+        """Generate and exchange OT choice commitments."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _ot_lock:
+            state = _ot_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="OT session not found")
+
+        from djinn_validator.core.ot_network import (
+            deserialize_choices,
+            deserialize_dh_public_key,
+            serialize_choices,
+        )
+
+        # Deserialize peer's sender public keys
+        peer_pks = {
+            int(t): deserialize_dh_public_key(pk_hex)
+            for t, pk_hex in req.peer_sender_pks.items()
+        }
+
+        # Generate this party's receiver choices
+        our_choices = state.generate_receiver_choices(peer_pks)
+
+        return OTChoicesResponse(
+            session_id=req.session_id,
+            choices={
+                str(t): serialize_choices(c)
+                for t, c in our_choices.items()
+            },
+        )
+
+    @app.post("/v1/mpc/ot/transfers", response_model=OTTransfersResponse)
+    async def ot_transfers(req: OTTransfersRequest, request: Request) -> OTTransfersResponse:
+        """Process peer choices and return encrypted OT transfers."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _ot_lock:
+            state = _ot_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="OT session not found")
+
+        from djinn_validator.core.ot_network import (
+            deserialize_choices,
+            serialize_transfers,
+        )
+
+        # Deserialize peer's choices for our sender instances
+        peer_choices_deserialized = {
+            int(t): deserialize_choices(c)
+            for t, c in req.peer_choices.items()
+        }
+
+        # Process: encrypt OT messages using our sender states
+        transfers, sender_shares = state.process_sender_choices(peer_choices_deserialized)
+
+        return OTTransfersResponse(
+            session_id=req.session_id,
+            transfers={
+                str(t): serialize_transfers(pairs)
+                for t, pairs in transfers.items()
+            },
+            sender_shares={
+                str(t): hex(s)
+                for t, s in sender_shares.items()
+            },
+        )
+
+    @app.post("/v1/mpc/ot/complete", response_model=OTCompleteResponse)
+    async def ot_complete(req: OTCompleteRequest, request: Request) -> OTCompleteResponse:
+        """Decrypt peer transfers and compute Shamir polynomial evaluations."""
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _ot_lock:
+            state = _ot_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="OT session not found")
+
+        from djinn_validator.core.ot_network import deserialize_transfers
+
+        # Decrypt the peer's encrypted transfers (where this party is receiver)
+        peer_transfers_deserialized = {
+            int(t): deserialize_transfers(pairs)
+            for t, pairs in req.peer_transfers.items()
+        }
+        receiver_shares = state.decrypt_receiver_transfers(peer_transfers_deserialized)
+
+        # Parse this party's own sender shares
+        own_sender_shares = {
+            int(t): int(s, 16)
+            for t, s in req.own_sender_shares.items()
+        }
+
+        # Accumulate cross-term shares into c values
+        state.accumulate_ot_shares(own_sender_shares, receiver_shares)
+
+        # Compute Shamir polynomial evaluations for distribution
+        state.compute_shamir_evaluations()
+
+        return OTCompleteResponse(
+            session_id=req.session_id,
+            completed=True,
+        )
+
+    @app.post("/v1/mpc/ot/shares", response_model=OTSharesResponse)
+    async def ot_shares(req: OTSharesRequest, request: Request) -> OTSharesResponse:
+        """Serve Shamir polynomial evaluations to a requesting party.
+
+        Each party contacts the OT peer directly to get the peer's partial
+        triple shares.  This prevents the coordinator from seeing the peer's
+        polynomial evaluations.
+        """
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _ot_lock:
+            state = _ot_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="OT session not found")
+
+        shares = state.get_shamir_shares_for_party(req.party_x)
+        if shares is None:
+            raise HTTPException(
+                status_code=425,
+                detail="OT triple generation not yet complete",
+            )
+
+        return OTSharesResponse(
+            session_id=req.session_id,
+            triple_shares=[
+                {k: hex(v) for k, v in ts.items()}
+                for ts in shares
+            ],
         )
 
     @app.get("/metrics")

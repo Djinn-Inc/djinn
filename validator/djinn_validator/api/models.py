@@ -250,3 +250,102 @@ class MPCSessionStatusResponse(BaseModel):
     available: bool | None = None
     participants_responded: int = 0
     total_participants: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Share Info (for peer share discovery)
+# ---------------------------------------------------------------------------
+
+
+class ShareInfoResponse(BaseModel):
+    """GET /v1/signal/{id}/share_info — Return share x-coordinate for MPC."""
+
+    signal_id: str
+    share_x: int
+    share_y: str  # Hex-encoded
+
+
+# ---------------------------------------------------------------------------
+# OT Network Endpoints (distributed triple generation)
+# ---------------------------------------------------------------------------
+
+
+class OTSetupRequest(BaseModel):
+    """POST /v1/mpc/ot/setup — Initialize distributed triple generation."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    n_triples: int = Field(ge=1, le=20)
+    x_coords: list[int] = Field(max_length=20)
+    threshold: int = Field(default=7, ge=1, le=20)
+
+    @field_validator("x_coords")
+    @classmethod
+    def validate_x_coords(cls, v: list[int]) -> list[int]:
+        for x in v:
+            if x < 1 or x > 255:
+                raise ValueError(f"x_coords values must be 1-255, got {x}")
+        return v
+
+
+class OTSetupResponse(BaseModel):
+    session_id: str
+    accepted: bool
+    sender_public_keys: dict[str, str] = Field(default_factory=dict)  # {triple_idx: hex_pk}
+
+
+class OTChoicesRequest(BaseModel):
+    """POST /v1/mpc/ot/choices — Exchange OT choice commitments."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    peer_sender_pks: dict[str, str] = Field(default_factory=dict)  # {triple_idx: hex_pk}
+    # Choices are sent in a compact binary format: base64 of concatenated T_k values
+    choices: dict[str, list[str]] = Field(default_factory=dict)  # {triple_idx: [hex_Tk]}
+
+
+class OTChoicesResponse(BaseModel):
+    session_id: str
+    choices: dict[str, list[str]] = Field(default_factory=dict)  # {triple_idx: [hex_Tk]}
+
+
+class OTTransfersRequest(BaseModel):
+    """POST /v1/mpc/ot/transfers — Exchange encrypted OT messages."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    # Peer's choices for this party's sender instances
+    peer_choices: dict[str, list[str]] = Field(default_factory=dict)  # {triple_idx: [hex_Tk]}
+
+
+class OTTransfersResponse(BaseModel):
+    session_id: str
+    # Encrypted pairs: {triple_idx: [[hex_E0, hex_E1], ...]}
+    transfers: dict[str, list[list[str]]] = Field(default_factory=dict)
+    # Sender shares accumulated (hex-encoded): {triple_idx: hex}
+    sender_shares: dict[str, str] = Field(default_factory=dict)
+
+
+class OTCompleteRequest(BaseModel):
+    """POST /v1/mpc/ot/complete — Finalize OT and compute Shamir evaluations."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    # Encrypted transfers from the peer's sender instances
+    peer_transfers: dict[str, list[list[str]]] = Field(default_factory=dict)
+    # Sender shares from this party's sender instances (hex-encoded)
+    own_sender_shares: dict[str, str] = Field(default_factory=dict)
+
+
+class OTCompleteResponse(BaseModel):
+    session_id: str
+    completed: bool
+
+
+class OTSharesRequest(BaseModel):
+    """GET /v1/mpc/ot/shares — Fetch Shamir evaluations for a party."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    party_x: int = Field(ge=1, le=255)
+
+
+class OTSharesResponse(BaseModel):
+    session_id: str
+    # Partial triple shares: [{a: hex, b: hex, c: hex}, ...]
+    triple_shares: list[dict[str, str]] = Field(default_factory=list)

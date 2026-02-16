@@ -78,3 +78,18 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Security model:** Semi-honest (honest-but-curious). For malicious security, add MAC-based verification (SPDZ-style) in a future iteration.
 **Performance:** Gilboa multiplication involves 256 OT instances per field multiplication, which is compute-intensive but parallelizable. For 10 available indices with 10 parties, this is 10 triples * 45 pairs * 256 OTs = ~115K OT instances. In practice, the OT operations are local hash evaluations (~3s on consumer hardware). Network round-trips for actual OT message exchange are not yet implemented — the current protocol simulates OT locally and would need `/v1/mpc/ot/*` endpoints for full distributed deployment.
 **Impact:** Eliminates the trusted dealer limitation. The coordinator no longer learns Beaver triple underlying values. 47 new tests verify correctness, randomness, and compatibility with existing MPC protocol.
+
+## DEV-009: Network OT Endpoints for Distributed Triple Generation [EXTENDS DEV-008]
+
+**Whitepaper Section:** Appendix C — MPC Set-Membership Protocol
+**Previous limitation:** DEV-008 computed OT-based triples locally within a single process. For actual multi-validator deployment, OT messages must traverse the network.
+**What we did:** Implemented the full network-aware OT protocol in `validator/djinn_validator/core/ot_network.py`:
+- **DH-based Gilboa OT**: Sender generates DH keypair (a, A=g^a). Receiver encodes bit b via T_k = g^{r_k} (b=0) or A·g^{r_k} (b=1). Sender derives two keys K0=H(T_k^a), K1=H((T_k/A)^a) and XOR-encrypts both messages. Only the receiver can decrypt the chosen one.
+- **Configurable DH groups**: `DHGroup` abstraction supports RFC 3526 Group 14 (2048-bit) for production and a small safe prime (p=1223) for fast tests.
+- **Adaptive bit count**: OT round count per multiplication matches field prime bit length (17 bits for test, 254 for BN254), minimizing unnecessary work.
+- **OTTripleGenState**: Full lifecycle state machine managing sender/receiver setup, choice generation, transfer encryption/decryption, share accumulation, and Shamir polynomial evaluation.
+- **REST endpoints**: `POST /v1/mpc/ot/{setup,choices,transfers,complete}`, `POST /v1/mpc/ot/shares`, `GET /v1/signal/{id}/share_info` — 6 new endpoints for the 4-phase OT protocol (setup → choices → transfers → complete) plus share retrieval and peer discovery.
+- **Body size limit**: OT endpoints accept up to 5MB (DH group elements are large).
+- **Serialization helpers**: Hex-encoded DH public keys, choice commitments, and encrypted transfers for HTTP transport.
+**Security model:** CDH assumption in the chosen DH group. Semi-honest — same as DEV-008. SPDZ MAC verification deferred to future work.
+**Impact:** Validators can now exchange Beaver triple shares over HTTP without any party learning the other's inputs. 35 new tests verify OT correctness, triple generation, Shamir conversion, serialization roundtrips, and all API endpoints. Full test suite (693 tests) passes with no regressions.
