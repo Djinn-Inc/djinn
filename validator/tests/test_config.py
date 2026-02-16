@@ -221,6 +221,19 @@ class TestConfigMPCPeerTimeout:
         with pytest.raises(ValueError, match="MPC_PEER_TIMEOUT"):
             config.validate()
 
+    def test_mpc_peer_timeout_too_high_raises(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", mpc_peer_timeout=120.0)
+        with pytest.raises(ValueError, match="MPC_PEER_TIMEOUT"):
+            config.validate()
+
+    def test_rate_limit_capacity_below_rate_warns(self) -> None:
+        config = _config(
+            bt_network="local", sports_api_key="key",
+            rate_limit_capacity=5, rate_limit_rate=10,
+        )
+        warnings = config.validate()
+        assert any("RATE_LIMIT_CAPACITY" in w for w in warnings)
+
 
 class TestConfigAddressValidation:
     def test_valid_address_accepted(self) -> None:

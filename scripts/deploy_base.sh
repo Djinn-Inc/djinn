@@ -50,8 +50,60 @@ if [ -z "${DEPLOYER_KEY:-}" ]; then
     exit 1
 fi
 
+# --- Pre-flight checks ---
+echo "Running pre-flight checks..."
+
+# Check forge is installed
+if ! command -v forge &> /dev/null; then
+    echo "ERROR: forge (Foundry) not found. Install: https://getfoundry.sh"
+    exit 1
+fi
+
+# Check cast is installed
+if ! command -v cast &> /dev/null; then
+    echo "ERROR: cast (Foundry) not found. Install: https://getfoundry.sh"
+    exit 1
+fi
+
+# Check RPC connectivity
+echo -n "  RPC connectivity... "
+if ! cast chain-id --rpc-url "$RPC_URL" &>/dev/null; then
+    echo "FAILED"
+    echo "ERROR: Cannot connect to RPC endpoint: $RPC_URL"
+    exit 1
+fi
+ACTUAL_CHAIN_ID=$(cast chain-id --rpc-url "$RPC_URL")
+if [ "$ACTUAL_CHAIN_ID" != "$CHAIN_ID" ]; then
+    echo "FAILED"
+    echo "ERROR: Chain ID mismatch. Expected $CHAIN_ID, got $ACTUAL_CHAIN_ID"
+    exit 1
+fi
+echo "OK (chain $ACTUAL_CHAIN_ID)"
+
+# Check deployer balance
 DEPLOYER=$(cast wallet address "$DEPLOYER_KEY")
 BALANCE=$(cast balance "$DEPLOYER" --rpc-url "$RPC_URL" --ether)
+echo -n "  Deployer balance... "
+# Warn if balance seems low (< 0.01 ETH)
+BALANCE_WEI=$(cast balance "$DEPLOYER" --rpc-url "$RPC_URL")
+if [ "$BALANCE_WEI" = "0" ]; then
+    echo "FAILED"
+    echo "ERROR: Deployer has 0 ETH. Fund $DEPLOYER before deploying."
+    exit 1
+fi
+echo "OK ($BALANCE ETH)"
+
+# Check contracts compile
+echo -n "  Contracts compile... "
+if ! forge build --root "$CONTRACTS_DIR" --silent 2>/dev/null; then
+    echo "FAILED"
+    echo "ERROR: Contract compilation failed. Run 'forge build' in $CONTRACTS_DIR"
+    exit 1
+fi
+echo "OK"
+
+echo "Pre-flight checks passed."
+echo ""
 echo "Deployer: $DEPLOYER"
 echo "Balance:  $BALANCE ETH"
 echo "RPC:      $RPC_URL"

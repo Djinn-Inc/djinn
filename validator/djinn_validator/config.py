@@ -125,8 +125,13 @@ class Config:
             raise ValueError(f"RATE_LIMIT_CAPACITY must be >= 1, got {self.rate_limit_capacity}")
         if self.rate_limit_rate < 1:
             raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
-        if self.mpc_peer_timeout < 1.0:
-            raise ValueError(f"MPC_PEER_TIMEOUT must be >= 1.0, got {self.mpc_peer_timeout}")
+        if self.mpc_peer_timeout < 1.0 or self.mpc_peer_timeout > 60.0:
+            raise ValueError(f"MPC_PEER_TIMEOUT must be 1.0-60.0, got {self.mpc_peer_timeout}")
+        if self.rate_limit_capacity < self.rate_limit_rate:
+            warnings.append(
+                f"RATE_LIMIT_CAPACITY ({self.rate_limit_capacity}) < RATE_LIMIT_RATE ({self.rate_limit_rate}) "
+                "— bucket will never fill above rate"
+            )
         if strict and warnings:
             raise ValueError("Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings))
         return warnings

@@ -12,11 +12,14 @@ from starlette.responses import JSONResponse
 
 import djinn_validator.api.middleware as mw_module
 from djinn_validator.api.middleware import (
+    API_VERSION,
     RateLimitMiddleware,
     RateLimiter,
+    RequestIdMiddleware,
     TokenBucket,
     _check_nonce,
     _NONCE_CACHE,
+    _SECURITY_HEADERS,
     create_signature_message,
     get_cors_origins,
     validate_signed_request,
@@ -384,3 +387,36 @@ class TestNonceReplay:
         resp2 = client.post("/v1/mpc/test", json={}, headers=headers)
         assert resp2.status_code == 401
         assert "Nonce already used" in resp2.json()["detail"]
+
+
+class TestSecurityHeaders:
+    @pytest.fixture
+    def header_app(self) -> TestClient:
+        app = FastAPI()
+        app.add_middleware(RequestIdMiddleware)
+
+        @app.get("/test")
+        async def test_endpoint() -> dict:
+            return {"ok": True}
+
+        return TestClient(app)
+
+    def test_api_version_header_set(self, header_app: TestClient) -> None:
+        resp = header_app.get("/test")
+        assert resp.headers.get("X-API-Version") == API_VERSION
+
+    def test_security_headers_present(self, header_app: TestClient) -> None:
+        resp = header_app.get("/test")
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+        assert resp.headers.get("X-Frame-Options") == "DENY"
+        assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        assert resp.headers.get("Cache-Control") == "no-store"
+
+    def test_request_id_header_set(self, header_app: TestClient) -> None:
+        resp = header_app.get("/test")
+        assert "X-Request-ID" in resp.headers
+        assert len(resp.headers["X-Request-ID"]) > 0
+
+    def test_forwarded_request_id_preserved(self, header_app: TestClient) -> None:
+        resp = header_app.get("/test", headers={"X-Request-ID": "custom-id-123"})
+        assert resp.headers["X-Request-ID"] == "custom-id-123"

@@ -63,6 +63,16 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="LINE_TOLERANCE"):
             config.validate()
 
+    def test_line_tolerance_too_high_raises(self) -> None:
+        config = _config(odds_api_key="key", line_tolerance=200.0)
+        with pytest.raises(ValueError, match="LINE_TOLERANCE"):
+            config.validate()
+
+    def test_rate_limit_capacity_below_rate_warns(self) -> None:
+        config = _config(odds_api_key="key", bt_network="local", rate_limit_capacity=3, rate_limit_rate=10)
+        warnings = config.validate()
+        assert any("RATE_LIMIT_CAPACITY" in w for w in warnings)
+
 
 class TestConfigNetworkWarning:
     def test_known_network_no_warning(self) -> None:

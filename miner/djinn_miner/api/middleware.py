@@ -20,12 +20,15 @@ log = structlog.get_logger()
 # ---------------------------------------------------------------------------
 
 
+API_VERSION = "0.1.0"
+
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Cache-Control": "no-store",
+    "X-API-Version": API_VERSION,
 }
 
 
