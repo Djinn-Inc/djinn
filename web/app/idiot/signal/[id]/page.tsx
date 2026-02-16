@@ -165,7 +165,7 @@ export default function PurchaseSignal() {
         },
       );
 
-      if (!purchaseResult.available) {
+      if (!purchaseResult.available || !purchaseResult.encrypted_key_share) {
         setStepError(
           purchaseResult.message ||
             "Signal not available at this sportsbook (MPC check failed)",
@@ -184,14 +184,15 @@ export default function PurchaseSignal() {
         setStep("error");
         return;
       }
-      if (isNaN(oddsNum) || !Number.isFinite(oddsNum) || oddsNum < 1.01) {
-        setStepError("Invalid odds (must be at least 1.01)");
+      if (isNaN(oddsNum) || !Number.isFinite(oddsNum) || oddsNum < 1.01 || oddsNum > 10000) {
+        setStepError("Invalid odds (must be between 1.01 and 10,000)");
         setStep("error");
         return;
       }
 
       const notionalBig = BigInt(Math.floor(notionalNum * 1_000_000));
-      const oddsBig = BigInt(Math.floor(oddsNum * 100));
+      // Contract uses 6-decimal precision (ODDS_PRECISION = 1e6)
+      const oddsBig = BigInt(Math.floor(oddsNum * 1_000_000));
 
       await purchase(signalId, notionalBig, oddsBig);
 

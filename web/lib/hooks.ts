@@ -412,6 +412,10 @@ export function useDepositEscrow() {
       setError(null);
       try {
         const usdc = getUsdcContract(signer);
+        const balance = await usdc.balanceOf(await signer.getAddress());
+        if (balance < amount) {
+          throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
+        }
         const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
         await approveTx.wait();
 
