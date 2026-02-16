@@ -27,7 +27,7 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /build /app
 
-RUN useradd -m -r appuser && chown -R appuser:appuser /app
+RUN useradd -m -r appuser && mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8422

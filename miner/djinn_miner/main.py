@@ -82,6 +82,7 @@ async def run_server(app: object, host: str, port: int) -> None:
         port=port,
         log_level="info",
         timeout_graceful_shutdown=10,
+        timeout_keep_alive=65,
     )
     server = uvicorn.Server(config)
     await server.serve()
