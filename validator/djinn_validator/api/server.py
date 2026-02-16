@@ -44,6 +44,8 @@ from djinn_validator.api.middleware import (
 from djinn_validator.api.models import (
     AnalyticsRequest,
     HealthResponse,
+    MPCAbortRequest,
+    MPCAbortResponse,
     MPCComputeGateRequest,
     MPCComputeGateResponse,
     MPCInitRequest,
@@ -660,6 +662,11 @@ def create_app(
         """Compute this validator's (d_i, e_i) for a multiplication gate."""
         await validate_signed_request(request, _get_validator_hotkeys())
 
+        # Reject if session has been aborted
+        session = _mpc.get_session(req.session_id)
+        if session is not None and session.status == SessionStatus.FAILED:
+            raise HTTPException(status_code=409, detail="Session aborted")
+
         with _participant_lock:
             state = _participant_states.get(req.session_id)
         if state is None:
@@ -728,6 +735,37 @@ def create_app(
             session_id=req.session_id,
             acknowledged=True,
         )
+
+    @app.post("/v1/mpc/abort", response_model=MPCAbortResponse)
+    async def mpc_abort(req: MPCAbortRequest, request: Request) -> MPCAbortResponse:
+        """Accept an abort notification from the coordinator.
+
+        When a validator detects MAC verification failure during an
+        authenticated MPC session, the coordinator broadcasts an abort
+        to all participants. Each participant marks the session as FAILED
+        and cleans up participant state.
+        """
+        await validate_signed_request(request, _get_validator_hotkeys())
+        session = _mpc.get_session(req.session_id)
+        if session is None:
+            return MPCAbortResponse(session_id=req.session_id, acknowledged=False)
+
+        # Mark session as failed
+        with _mpc._lock:
+            session.status = SessionStatus.FAILED
+        log.warning(
+            "mpc_abort_received",
+            session_id=req.session_id,
+            reason=req.reason,
+            gate_idx=req.gate_idx,
+            offending_x=req.offending_validator_x,
+        )
+
+        # Clean up participant state
+        with _participant_lock:
+            _participant_states.pop(req.session_id, None)
+
+        return MPCAbortResponse(session_id=req.session_id, acknowledged=True)
 
     @app.get("/v1/mpc/{session_id}/status", response_model=MPCSessionStatusResponse)
     async def mpc_status(session_id: str) -> MPCSessionStatusResponse:

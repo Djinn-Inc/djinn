@@ -508,6 +508,9 @@ class MPCOrchestrator:
                 ]
                 if not verify_mac_opening(prev_d, d_auth_shares, [m for m in mac_key_shares if m], p):
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="d")
+                    await self._broadcast_abort(
+                        session.session_id, active_peers, gate_idx, "d_mac_check_failed",
+                    )
                     return None
                 # Verify e
                 e_auth_shares = [
@@ -516,6 +519,9 @@ class MPCOrchestrator:
                 ]
                 if not verify_mac_opening(prev_e, e_auth_shares, [m for m in mac_key_shares if m], p):
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="e")
+                    await self._broadcast_abort(
+                        session.session_id, active_peers, gate_idx, "e_mac_check_failed",
+                    )
                     return None
                 log.debug("mac_verified", gate_idx=gate_idx)
 
@@ -609,6 +615,54 @@ class MPCOrchestrator:
                     )
 
         return mpc_result
+
+    async def _broadcast_abort(
+        self,
+        session_id: str,
+        peers: list[dict[str, Any]],
+        gate_idx: int,
+        reason: str,
+        offending_x: int | None = None,
+    ) -> None:
+        """Broadcast an abort message to all peers when MAC verification fails.
+
+        Marks the local session as FAILED and notifies all active peers
+        so they can clean up their participant state.
+        """
+        # Mark local session as failed
+        session = self._coordinator.get_session(session_id)
+        if session is not None:
+            with self._coordinator._lock:
+                session.status = SessionStatus.FAILED
+
+        log.warning(
+            "mpc_abort_broadcast",
+            session_id=session_id,
+            gate_idx=gate_idx,
+            reason=reason,
+            offending_x=offending_x,
+            n_peers=len(peers),
+        )
+
+        payload = {
+            "session_id": session_id,
+            "reason": reason,
+            "gate_idx": gate_idx,
+            "offending_validator_x": offending_x,
+        }
+
+        async with httpx.AsyncClient(timeout=PEER_TIMEOUT) as client:
+            for peer in peers:
+                try:
+                    await client.post(
+                        f"{peer['url']}/v1/mpc/abort", json=payload,
+                    )
+                except (httpx.HTTPError, Exception) as e:
+                    log.warning(
+                        "mpc_abort_send_failed",
+                        peer_uid=peer.get("uid"),
+                        error=str(e),
+                    )
 
     def _single_validator_check(
         self,

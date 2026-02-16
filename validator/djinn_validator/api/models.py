@@ -255,6 +255,20 @@ class MPCComputeGateResponse(BaseModel):
     e_mac: str | None = None  # Hex-encoded
 
 
+class MPCAbortRequest(BaseModel):
+    """POST /v1/mpc/abort — Coordinator broadcasts abort due to MAC failure."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    reason: str = Field(max_length=512)
+    gate_idx: int = Field(ge=0, le=20)
+    offending_validator_x: int | None = None  # x-coord of suspected cheater, if identifiable
+
+
+class MPCAbortResponse(BaseModel):
+    session_id: str
+    acknowledged: bool
+
+
 class MPCSessionStatusResponse(BaseModel):
     """GET /v1/mpc/{session_id}/status — Check MPC session status."""
 

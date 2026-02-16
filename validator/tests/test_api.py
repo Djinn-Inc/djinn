@@ -493,6 +493,44 @@ class TestMPCEndpoints:
         })
         assert resp.status_code == 422
 
+    def test_mpc_abort_nonexistent_session(self, client: TestClient) -> None:
+        resp = client.post("/v1/mpc/abort", json={
+            "session_id": "nonexistent",
+            "reason": "test abort",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["acknowledged"] is False
+
+    def test_mpc_abort_existing_session(self, client: TestClient) -> None:
+        # Create a session first
+        resp = client.post("/v1/mpc/init", json={
+            "session_id": "abort-test-1",
+            "signal_id": "sig-1",
+            "available_indices": [1, 3],
+            "coordinator_x": 1,
+            "participant_xs": [1, 2, 3],
+            "threshold": 2,
+        })
+        assert resp.status_code == 200
+
+        # Abort it
+        resp = client.post("/v1/mpc/abort", json={
+            "session_id": "abort-test-1",
+            "reason": "d_mac_check_failed",
+            "gate_idx": 1,
+            "offending_validator_x": 2,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["acknowledged"] is True
+
+        # Session should now be FAILED — compute_gate should be rejected
+        resp = client.post("/v1/mpc/compute_gate", json={
+            "session_id": "abort-test-1",
+            "gate_idx": 0,
+        })
+        assert resp.status_code == 409
+
 
 class TestReadinessEndpoint:
     def test_readiness_returns_checks(self, client: TestClient) -> None:
