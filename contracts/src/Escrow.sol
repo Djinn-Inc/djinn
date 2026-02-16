@@ -121,6 +121,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     error NotionalTooSmall(uint256 provided, uint256 min);
     error NotionalTooLarge(uint256 provided, uint256 max);
     error OddsOutOfRange(uint256 odds);
+    error NotionalExceedsSignalMax(uint256 notional, uint256 maxNotional);
 
     /// @notice Minimum notional per purchase (1 USDC in 6 decimals — prevents dust griefing)
     uint256 public constant MIN_NOTIONAL = 1e6;
@@ -285,6 +286,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         Signal memory sig = signalCommitment.getSignal(signalId);
         if (sig.status != SignalStatus.Active) revert SignalNotActive(signalId);
         if (block.timestamp >= sig.expiresAt) revert SignalExpired(signalId);
+        if (sig.maxNotional > 0 && notional > sig.maxNotional) {
+            revert NotionalExceedsSignalMax(notional, sig.maxNotional);
+        }
 
         // --- Calculate fee ---
         // fee = notional * maxPriceBps / 10_000

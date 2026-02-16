@@ -231,11 +231,13 @@ export interface AvailableBet {
   bookCount: number;
   minPrice: number;
   maxPrice: number;
+  /** Bookmaker titles that offer this bet */
+  books: string[];
 }
 
 /** Extract all unique bets from an event, using consensus odds across bookmakers. */
 export function extractBets(event: OddsEvent): AvailableBet[] {
-  const betMap = new Map<string, { prices: number[]; bet: AvailableBet }>();
+  const betMap = new Map<string, { prices: number[]; titles: string[]; bet: AvailableBet }>();
 
   for (const bk of event.bookmakers) {
     for (const mkt of bk.markets) {
@@ -244,9 +246,13 @@ export function extractBets(event: OddsEvent): AvailableBet[] {
         const existing = betMap.get(key);
         if (existing) {
           existing.prices.push(outcome.price);
+          if (!existing.titles.includes(bk.title)) {
+            existing.titles.push(bk.title);
+          }
         } else {
           betMap.set(key, {
             prices: [outcome.price],
+            titles: [bk.title],
             bet: {
               event,
               market: mkt.key,
@@ -256,6 +262,7 @@ export function extractBets(event: OddsEvent): AvailableBet[] {
               bookCount: 1,
               minPrice: outcome.price,
               maxPrice: outcome.price,
+              books: [],
             },
           });
         }
@@ -263,12 +270,13 @@ export function extractBets(event: OddsEvent): AvailableBet[] {
     }
   }
 
-  return [...betMap.values()].map(({ prices, bet }) => ({
+  return [...betMap.values()].map(({ prices, titles, bet }) => ({
     ...bet,
     avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
     bookCount: prices.length,
     minPrice: Math.min(...prices),
     maxPrice: Math.max(...prices),
+    books: titles,
   }));
 }
 

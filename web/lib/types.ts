@@ -19,6 +19,7 @@ export interface Signal {
   sport: string;
   maxPriceBps: bigint;
   slaMultiplierBps: bigint;
+  maxNotional: bigint;
   expiresAt: bigint;
   decoyLines: string[];
   availableSportsbooks: string[];
@@ -62,6 +63,7 @@ export interface CommitParams {
   sport: string;
   maxPriceBps: bigint;
   slaMultiplierBps: bigint;
+  maxNotional: bigint;
   expiresAt: bigint;
   decoyLines: string[];
   availableSportsbooks: string[];

@@ -84,6 +84,7 @@ contract EscrowFuzzTest is Test {
                 sport: "NFL",
                 maxPriceBps: maxPriceBps,
                 slaMultiplierBps: slaMultiplierBps,
+                maxNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoys(),
                 availableSportsbooks: _buildBooks()
@@ -156,6 +157,7 @@ contract EscrowFuzzTest is Test {
                 sport: "NBA",
                 maxPriceBps: maxPriceBps,
                 slaMultiplierBps: slaMultiplierBps,
+                maxNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoys(),
                 availableSportsbooks: _buildBooks()

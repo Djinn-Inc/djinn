@@ -38,6 +38,8 @@ type Signal @entity {
   maxPriceBps: BigInt!
   "SLA multiplier in basis points for collateral lock"
   slaMultiplierBps: BigInt!
+  "Maximum notional per purchase (USDC, 6 decimals). 0 means no per-signal cap."
+  maxNotional: BigInt!
   "Unix timestamp after which the signal expires"
   expiresAt: BigInt!
   "Current status of the signal"

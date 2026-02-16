@@ -28,6 +28,7 @@ function createMockSignal(overrides: Partial<Signal> = {}): Signal {
     sport: "NFL",
     maxPriceBps: 500n,
     slaMultiplierBps: 200n,
+    maxNotional: 10000_000000n,
     expiresAt: BigInt(Math.floor(Date.now() / 1000) + 86400), // 1 day from now
     decoyLines: ["Line A over 3.5", "Line B under 7"],
     availableSportsbooks: ["DraftKings", "FanDuel"],

@@ -25,6 +25,7 @@ struct Signal {
     string sport;
     uint256 maxPriceBps;
     uint256 slaMultiplierBps;
+    uint256 maxNotional;
     uint256 expiresAt;
     string[] decoyLines;
     string[] availableSportsbooks;

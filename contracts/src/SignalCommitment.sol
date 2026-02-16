@@ -21,6 +21,7 @@ contract SignalCommitment is Ownable {
         string sport;
         uint256 maxPriceBps;
         uint256 slaMultiplierBps;
+        uint256 maxNotional;
         uint256 expiresAt;
         string[] decoyLines;
         string[] availableSportsbooks;
@@ -48,6 +49,7 @@ contract SignalCommitment is Ownable {
         string sport,
         uint256 maxPriceBps,
         uint256 slaMultiplierBps,
+        uint256 maxNotional,
         uint256 expiresAt
     );
 
@@ -182,6 +184,7 @@ contract SignalCommitment is Ownable {
         s.sport = p.sport;
         s.maxPriceBps = p.maxPriceBps;
         s.slaMultiplierBps = p.slaMultiplierBps;
+        s.maxNotional = p.maxNotional;
         s.expiresAt = p.expiresAt;
         s.status = SignalStatus.Active;
         s.createdAt = block.timestamp;
@@ -202,7 +205,7 @@ contract SignalCommitment is Ownable {
             s.availableSportsbooks.push(p.availableSportsbooks[i]);
         }
 
-        emit SignalCommitted(p.signalId, msg.sender, p.sport, p.maxPriceBps, p.slaMultiplierBps, p.expiresAt);
+        emit SignalCommitted(p.signalId, msg.sender, p.sport, p.maxPriceBps, p.slaMultiplierBps, p.maxNotional, p.expiresAt);
     }
 
     /// @notice Void a signal that has not yet been purchased

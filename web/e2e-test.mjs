@@ -40,8 +40,8 @@ const ERC20_ABI = [
 ];
 
 const SIGNAL_ABI = [
-  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p) external",
-  "function getSignal(uint256) view returns (tuple(address genius, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks, bytes walletRecoveryBlob, uint8 status, uint256 createdAt))",
+  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p) external",
+  "function getSignal(uint256) view returns (tuple(address genius, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks, bytes walletRecoveryBlob, uint8 status, uint256 createdAt))",
   "function isActive(uint256) view returns (bool)",
 ];
 
@@ -258,6 +258,7 @@ async function main() {
     sport: "NBA",
     maxPriceBps: 1000n, // 10%
     slaMultiplierBps: 10000n, // 100%
+    maxNotional: 10000_000000n, // $10,000 USDC
     expiresAt,
     decoyLines,
     availableSportsbooks: ["DraftKings", "FanDuel"],

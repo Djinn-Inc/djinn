@@ -32,17 +32,6 @@ import {
 const SHAMIR_TOTAL_SHARES = 10;
 const SHAMIR_THRESHOLD = 7;
 
-const SPORTSBOOKS = [
-  "DraftKings",
-  "FanDuel",
-  "BetMGM",
-  "Caesars",
-  "PointsBet",
-  "BetRivers",
-  "Barstool",
-  "WynnBET",
-] as const;
-
 type WizardStep = "browse" | "review" | "configure" | "committing" | "distributing" | "success" | "error";
 
 export default function CreateSignal() {
@@ -78,6 +67,7 @@ export default function CreateSignal() {
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
   const [slaMultiplier, setSlaMultiplier] = useState("100");
+  const [maxNotional, setMaxNotional] = useState("10000");
   const [expiresIn, setExpiresIn] = useState("24");
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
 
@@ -144,6 +134,7 @@ export default function CreateSignal() {
     setRealPick(pick);
     setMarketOdds(bet.avgPrice);
     setEditOdds(decimalToAmerican(bet.avgPrice));
+    setSelectedSportsbooks(bet.books);
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
     const pos = cryptoRandomInt(10);
@@ -172,12 +163,6 @@ export default function CreateSignal() {
     return lines;
   };
 
-  const toggleSportsbook = (book: string) => {
-    setSelectedSportsbooks((prev) =>
-      prev.includes(book) ? prev.filter((b) => b !== book) : [...prev, book],
-    );
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStepError(null);
@@ -190,11 +175,6 @@ export default function CreateSignal() {
     const geniusAddress = user?.wallet?.address;
     if (!geniusAddress) {
       setStepError("Wallet address not available");
-      return;
-    }
-
-    if (selectedSportsbooks.length === 0) {
-      setStepError("Select at least one sportsbook");
       return;
     }
 
@@ -254,6 +234,12 @@ export default function CreateSignal() {
         setStep("configure");
         return;
       }
+      const maxNotionalNum = parseFloat(maxNotional);
+      if (isNaN(maxNotionalNum) || !Number.isFinite(maxNotionalNum) || maxNotionalNum < 1) {
+        setStepError("Invalid max notional (must be at least $1)");
+        setStep("configure");
+        return;
+      }
 
       const expiresAt = BigInt(
         Math.floor(Date.now() / 1000) + expiresInNum * 3600,
@@ -268,6 +254,7 @@ export default function CreateSignal() {
         sport: selectedSport.label,
         maxPriceBps: BigInt(Math.round(maxPriceNum * 100)),
         slaMultiplierBps: BigInt(Math.round(slaNum * 100)),
+        maxNotional: BigInt(Math.round(maxNotionalNum * 1e6)),
         expiresAt,
         decoyLines: serializedLines,
         availableSportsbooks: selectedSportsbooks,
@@ -777,24 +764,52 @@ export default function CreateSignal() {
         </div>
 
         <div>
-          <label className="label">Available Sportsbooks</label>
-          <div className="flex flex-wrap gap-2 mt-1">
-            {SPORTSBOOKS.map((book) => (
-              <button
-                key={book}
-                type="button"
-                onClick={() => toggleSportsbook(book)}
-                className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                  selectedSportsbooks.includes(book)
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                {book}
-              </button>
-            ))}
-          </div>
+          <label htmlFor="maxNotional" className="label">Max Notional (USDC)</label>
+          <input
+            id="maxNotional"
+            type="number"
+            value={maxNotional}
+            onChange={(e) => setMaxNotional(e.target.value)}
+            placeholder="10000"
+            min="1"
+            max="1000000000"
+            step="1"
+            className="input"
+            required
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Maximum bet size a buyer can place on this signal. Caps your collateral exposure per purchase.
+          </p>
+          {(() => {
+            const mn = parseFloat(maxNotional);
+            const sla = parseFloat(slaMultiplier);
+            if (!isNaN(mn) && mn > 0 && !isNaN(sla) && sla > 0) {
+              const maxLock = mn * sla / 100;
+              return (
+                <p className="text-xs text-slate-500 mt-1">
+                  At max notional, <span className="font-semibold text-genius-700">${maxLock.toLocaleString()}</span> of your collateral would be locked.
+                </p>
+              );
+            }
+            return null;
+          })()}
         </div>
+
+        {selectedSportsbooks.length > 0 && (
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1.5">Available Sportsbooks (auto-detected)</p>
+            <div className="flex flex-wrap gap-2">
+              {selectedSportsbooks.map((book) => (
+                <span
+                  key={book}
+                  className="rounded-lg px-3 py-1.5 text-sm bg-slate-100 text-slate-600"
+                >
+                  {book}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {(commitError || stepError) && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4" role="alert">

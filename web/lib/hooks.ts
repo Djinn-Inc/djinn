@@ -309,6 +309,7 @@ export function useSignal(signalId: bigint | undefined) {
           sport: String(raw.sport ?? ""),
           maxPriceBps: toBigInt(raw.maxPriceBps),
           slaMultiplierBps: toBigInt(raw.slaMultiplierBps),
+          maxNotional: toBigInt(raw.maxNotional),
           expiresAt: toBigInt(raw.expiresAt),
           decoyLines: Array.isArray(raw.decoyLines) ? raw.decoyLines.map(String) : [],
           availableSportsbooks: Array.isArray(raw.availableSportsbooks) ? raw.availableSportsbooks.map(String) : [],

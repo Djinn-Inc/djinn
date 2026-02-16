@@ -543,6 +543,11 @@ export default function PurchaseSignal() {
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Your protection amount. You can bet any size independently &mdash; this sets the fee and how much the genius risks if wrong.
+                    {signal.maxNotional > 0n && (
+                      <span className="block mt-0.5 text-slate-400">
+                        Max: ${formatUsdc(signal.maxNotional)} (set by genius)
+                      </span>
+                    )}
                   </p>
                 </div>
 

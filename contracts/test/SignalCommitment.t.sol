@@ -44,6 +44,7 @@ contract SignalCommitmentTest is Test {
             sport: "NFL",
             maxPriceBps: 500,
             slaMultiplierBps: 15_000,
+                maxNotional: 10_000e6,
             expiresAt: block.timestamp + 1 hours,
             decoyLines: _makeDecoyLines(),
             availableSportsbooks: _makeSportsbooks()
@@ -86,7 +87,7 @@ contract SignalCommitmentTest is Test {
         SignalCommitment.CommitParams memory p = _defaultParams(signalId);
 
         vm.expectEmit(true, true, false, true);
-        emit SignalCommitment.SignalCommitted(signalId, genius, "NFL", p.maxPriceBps, p.slaMultiplierBps, p.expiresAt);
+        emit SignalCommitment.SignalCommitted(signalId, genius, "NFL", p.maxPriceBps, p.slaMultiplierBps, p.maxNotional, p.expiresAt);
 
         vm.prank(genius);
         sc.commit(p);
