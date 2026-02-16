@@ -397,6 +397,79 @@ export async function getAuditsByGenius(
   return [...all].sort((a, b) => b.blockNumber - a.blockNumber);
 }
 
+export async function getAuditsByIdiot(
+  provider: ethers.Provider,
+  idiotAddress: string,
+  fromBlock: number = 0,
+): Promise<AuditEvent[]> {
+  const cacheKey = `audits:idiot:${idiotAddress.toLowerCase()}`;
+  const cached = auditCache.get(cacheKey);
+
+  if (cached && auditCache.isFresh(cacheKey)) {
+    return cached.events;
+  }
+
+  const contract = new ethers.Contract(
+    ADDRESSES.audit,
+    AUDIT_ABI,
+    provider,
+  );
+
+  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const audits: AuditEvent[] = [];
+
+  const auditFilter = contract.filters.AuditSettled(null, idiotAddress);
+  const auditEvents = await queryFilterChunked(contract, auditFilter, startBlock);
+
+  for (const event of auditEvents) {
+    const log = event as ethers.EventLog;
+    if (!log.args) continue;
+
+    audits.push({
+      genius: log.args.genius as string,
+      idiot: log.args.idiot as string,
+      cycle: BigInt(log.args.cycle),
+      qualityScore: BigInt(log.args.qualityScore),
+      trancheA: BigInt(log.args.trancheA),
+      trancheB: BigInt(log.args.trancheB),
+      protocolFee: BigInt(log.args.protocolFee),
+      isEarlyExit: false,
+      blockNumber: log.blockNumber,
+    });
+  }
+
+  const earlyExitFilter = contract.filters.EarlyExitSettled(null, idiotAddress);
+  const earlyExitEvents = await queryFilterChunked(contract, earlyExitFilter, startBlock);
+
+  for (const event of earlyExitEvents) {
+    const log = event as ethers.EventLog;
+    if (!log.args) continue;
+
+    audits.push({
+      genius: log.args.genius as string,
+      idiot: log.args.idiot as string,
+      cycle: BigInt(log.args.cycle),
+      qualityScore: BigInt(log.args.qualityScore),
+      trancheA: 0n,
+      trancheB: BigInt(log.args.creditsAwarded),
+      protocolFee: 0n,
+      isEarlyExit: true,
+      blockNumber: log.blockNumber,
+    });
+  }
+
+  audits.sort((a, b) => b.blockNumber - a.blockNumber);
+
+  const all = cached
+    ? auditCache.merge(cacheKey, audits, getMaxBlock(audits, cached.lastBlock))
+    : audits;
+  if (!cached) {
+    auditCache.set(cacheKey, all, getMaxBlock(audits, fromBlock));
+  }
+
+  return [...all].sort((a, b) => b.blockNumber - a.blockNumber);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

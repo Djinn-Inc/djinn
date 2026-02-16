@@ -179,22 +179,23 @@ export default function GeniusDashboard() {
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="pb-3 font-medium">Cycle</th>
                 <th className="pb-3 font-medium">Idiot</th>
-                <th className="pb-3 font-medium">Signals</th>
                 <th className="pb-3 font-medium">QS Delta</th>
                 <th className="pb-3 font-medium">Outcome</th>
+                <th className="pb-3 font-medium">Earned</th>
+                <th className="pb-3 font-medium">Fee</th>
                 <th className="pb-3 font-medium">Date</th>
               </tr>
             </thead>
             <tbody>
               {auditsLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                  <td colSpan={7} className="text-center text-slate-500 py-8">
                     Loading...
                   </td>
                 </tr>
               ) : audits.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                  <td colSpan={7} className="text-center text-slate-500 py-8">
                     No audit history yet
                   </td>
                 </tr>
@@ -203,7 +204,6 @@ export default function GeniusDashboard() {
                   <tr key={i} className="border-b border-slate-100">
                     <td className="py-3">{a.cycle.toString()}</td>
                     <td className="py-3">{truncateAddress(a.idiot)}</td>
-                    <td className="py-3">-</td>
                     <td className="py-3">
                       <span className={Number(a.qualityScore) >= 0 ? "text-green-600" : "text-red-500"}>
                         {Number(a.qualityScore) >= 0 ? "+" : ""}{a.qualityScore.toString()}
@@ -216,6 +216,20 @@ export default function GeniusDashboard() {
                         <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
                       ) : (
                         <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {a.trancheA > 0n ? (
+                        <span className="text-green-600">${formatUsdc(a.trancheA)}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {a.protocolFee > 0n ? (
+                        <span className="text-slate-500">${formatUsdc(a.protocolFee)}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
                       )}
                     </td>
                     <td className="py-3 text-slate-500">Block {a.blockNumber}</td>

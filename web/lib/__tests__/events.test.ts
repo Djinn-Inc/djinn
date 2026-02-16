@@ -31,6 +31,7 @@ import {
   getSignalsByGenius,
   getPurchasesByBuyer,
   getAuditsByGenius,
+  getAuditsByIdiot,
   resetEventCaches,
 } from "../events";
 
@@ -232,6 +233,60 @@ describe("getAuditsByGenius", () => {
     mockQueryFilter.mockResolvedValue([]);
 
     const audits = await getAuditsByGenius(mockProvider, "0xGenius");
+    expect(audits).toHaveLength(0);
+  });
+});
+
+describe("getAuditsByIdiot", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetEventCaches();
+  });
+
+  it("queries by idiot address and combines events", async () => {
+    mockQueryFilter
+      .mockResolvedValueOnce([
+        {
+          args: {
+            genius: "0xGenius1",
+            idiot: "0xIdiot",
+            cycle: BigInt(1),
+            qualityScore: BigInt(700),
+            trancheA: BigInt(50),
+            trancheB: BigInt(100),
+            protocolFee: BigInt(5),
+          },
+          blockNumber: 600,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          args: {
+            genius: "0xGenius2",
+            idiot: "0xIdiot",
+            cycle: BigInt(1),
+            qualityScore: BigInt(400),
+            creditsAwarded: BigInt(25),
+          },
+          blockNumber: 700,
+        },
+      ]);
+
+    const audits = await getAuditsByIdiot(mockProvider, "0xIdiot");
+    expect(audits).toHaveLength(2);
+    expect(audits[0].blockNumber).toBe(700);
+    expect(audits[0].isEarlyExit).toBe(true);
+    expect(audits[1].blockNumber).toBe(600);
+    expect(audits[1].isEarlyExit).toBe(false);
+    expect(audits[1].trancheA).toBe(BigInt(50));
+    expect(mockFilters.AuditSettled).toHaveBeenCalledWith(null, "0xIdiot");
+    expect(mockFilters.EarlyExitSettled).toHaveBeenCalledWith(null, "0xIdiot");
+  });
+
+  it("returns empty when no audits exist", async () => {
+    mockQueryFilter.mockResolvedValue([]);
+
+    const audits = await getAuditsByIdiot(mockProvider, "0xIdiot");
     expect(audits).toHaveLength(0);
   });
 });

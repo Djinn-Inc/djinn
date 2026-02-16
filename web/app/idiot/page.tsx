@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
+import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function IdiotDashboard() {
@@ -19,6 +20,7 @@ export default function IdiotDashboard() {
   const { withdraw: withdrawEscrow, loading: withdrawLoading } = useWithdrawEscrow();
 
   const { purchases, loading: purchasesLoading } = usePurchaseHistory(address);
+  const { audits, loading: auditsLoading } = useIdiotAuditHistory(address);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -227,7 +229,7 @@ export default function IdiotDashboard() {
       </section>
 
       {/* Purchase History */}
-      <section>
+      <section className="mb-8">
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Purchase History
         </h2>
@@ -237,10 +239,10 @@ export default function IdiotDashboard() {
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="pb-3 font-medium">ID</th>
                 <th className="pb-3 font-medium">Signal</th>
-                <th className="pb-3 font-medium">Genius</th>
                 <th className="pb-3 font-medium">Notional</th>
-                <th className="pb-3 font-medium">Fee Paid</th>
-                <th className="pb-3 font-medium">Outcome</th>
+                <th className="pb-3 font-medium">USDC Paid</th>
+                <th className="pb-3 font-medium">Credits Used</th>
+                <th className="pb-3 font-medium">Total Fee</th>
                 <th className="pb-3 font-medium">Date</th>
               </tr>
             </thead>
@@ -262,15 +264,84 @@ export default function IdiotDashboard() {
                   <tr key={p.purchaseId} className="border-b border-slate-100">
                     <td className="py-3">#{p.purchaseId}</td>
                     <td className="py-3">{truncateAddress(p.signalId)}</td>
-                    <td className="py-3">-</td>
                     <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
-                    <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
+                    <td className="py-3">${formatUsdc(BigInt(p.usdcPaid))}</td>
                     <td className="py-3">
-                      <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
-                        Pending
-                      </span>
+                      {BigInt(p.creditUsed) > 0n ? (
+                        <span className="text-idiot-500">{formatUsdc(BigInt(p.creditUsed))}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
                     </td>
+                    <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
                     <td className="py-3 text-slate-500">Block {p.blockNumber}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Audit History */}
+      <section>
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">
+          Settlement History
+        </h2>
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="pb-3 font-medium">Cycle</th>
+                <th className="pb-3 font-medium">Genius</th>
+                <th className="pb-3 font-medium">Result</th>
+                <th className="pb-3 font-medium">Payout</th>
+                <th className="pb-3 font-medium">Credits</th>
+                <th className="pb-3 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditsLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                    Loading...
+                  </td>
+                </tr>
+              ) : audits.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
+                    No settlements yet
+                  </td>
+                </tr>
+              ) : (
+                audits.map((a, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-3">{a.cycle.toString()}</td>
+                    <td className="py-3">{truncateAddress(a.genius)}</td>
+                    <td className="py-3">
+                      {a.isEarlyExit ? (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700">Early Exit</span>
+                      ) : Number(a.qualityScore) >= 0 ? (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
+                      ) : (
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {a.trancheA > 0n ? (
+                        <span className="text-green-600">${formatUsdc(a.trancheA)}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {a.trancheB > 0n ? (
+                        <span className="text-idiot-500">{formatUsdc(a.trancheB)}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-slate-500">Block {a.blockNumber}</td>
                   </tr>
                 ))
               )}

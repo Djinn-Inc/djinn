@@ -126,7 +126,7 @@ jobs:
         run: npm test
 
   subgraph:
-    name: Subgraph Build
+    name: Subgraph Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -139,6 +139,10 @@ jobs:
       - run: npm ci
       - run: npx graph codegen
       - run: npx graph build
+      - name: Install matchstick dependencies
+        run: sudo apt-get install -y -qq libpq5
+      - name: Run subgraph tests
+        run: npx graph test
 
   security-scan:
     name: Dependency Security Scan
