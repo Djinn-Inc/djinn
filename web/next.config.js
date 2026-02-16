@@ -1,3 +1,22 @@
+// Validate contract addresses at build time in production
+if (process.env.NODE_ENV === "production") {
+  const addressPattern = /^0x[0-9a-fA-F]{40}$/;
+  const required = [
+    "NEXT_PUBLIC_USDC_ADDRESS",
+    "NEXT_PUBLIC_ESCROW_ADDRESS",
+    "NEXT_PUBLIC_SIGNAL_COMMITMENT_ADDRESS",
+    "NEXT_PUBLIC_COLLATERAL_ADDRESS",
+    "NEXT_PUBLIC_CREDIT_LEDGER_ADDRESS",
+    "NEXT_PUBLIC_ACCOUNT_ADDRESS",
+  ];
+  for (const key of required) {
+    const val = process.env[key];
+    if (!val || !addressPattern.test(val)) {
+      throw new Error(`${key} is missing or invalid (expected 0x-prefixed 40-hex address, got: ${val || "undefined"})`);
+    }
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config) => {

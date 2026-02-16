@@ -389,6 +389,32 @@ class TestNonceReplay:
         assert "Nonce already used" in resp2.json()["detail"]
 
 
+    def test_nonce_thread_safety(self) -> None:
+        """Concurrent nonce checks don't corrupt state."""
+        import threading
+
+        _NONCE_CACHE.clear()
+        results: list[bool] = []
+        errors: list[Exception] = []
+
+        def check_many(prefix: str, count: int) -> None:
+            for i in range(count):
+                try:
+                    results.append(_check_nonce(f"{prefix}-{i}"))
+                except Exception as e:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=check_many, args=(f"t{t}", 100)) for t in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Thread errors: {errors}"
+        assert len(results) == 500
+        assert all(r is True for r in results), "All unique nonces should be accepted"
+
+
 class TestSecurityHeaders:
     @pytest.fixture
     def header_app(self) -> TestClient:

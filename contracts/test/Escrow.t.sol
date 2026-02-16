@@ -359,6 +359,19 @@ contract EscrowIntegrationTest is Test {
         escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
     }
 
+    function test_purchase_reverts_zero_notional() public {
+        _createSignal(SIGNAL_ID);
+
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+
+        _depositIdiotEscrow(1e6);
+
+        vm.expectRevert(Escrow.ZeroAmount.selector);
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, 0, ODDS);
+    }
+
     // ─── Fee Calculation
     // ─────────────────────────────────────────────────
 

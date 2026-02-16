@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +44,7 @@ class ShareStore:
     _MAX_CONNECT_RETRIES = 3
 
     def __init__(self, db_path: str | Path | None = None) -> None:
+        self._lock = threading.Lock()
         if db_path is not None:
             path = Path(db_path)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,16 +141,17 @@ class ShareStore:
             raise ValueError("genius_address must not be empty")
         if not encrypted_key_share:
             raise ValueError("encrypted_key_share must not be empty")
-        try:
-            self._conn.execute(
-                "INSERT INTO shares (signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (signal_id, genius_address, share.x, str(share.y), encrypted_key_share, time.time()),
-            )
-            self._conn.commit()
-            log.info("share_stored", signal_id=signal_id, genius=genius_address)
-        except sqlite3.IntegrityError:
-            log.warning("share_already_stored", signal_id=signal_id)
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO shares (signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (signal_id, genius_address, share.x, str(share.y), encrypted_key_share, time.time()),
+                )
+                self._conn.commit()
+                log.info("share_stored", signal_id=signal_id, genius=genius_address)
+            except sqlite3.IntegrityError:
+                log.warning("share_already_stored", signal_id=signal_id)
 
     def get(self, signal_id: str) -> SignalShareRecord | None:
         """Retrieve a share record by signal ID."""
@@ -195,49 +198,51 @@ class ShareStore:
         if not signal_id or not buyer_address:
             return None
 
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
-
-            row = self._conn.execute(
-                "SELECT encrypted_key_share FROM shares WHERE signal_id = ?",
-                (signal_id,),
-            ).fetchone()
-            if row is None:
-                self._conn.execute("COMMIT")
-                log.warning("share_not_found", signal_id=signal_id)
-                return None
-
-            encrypted_key_share = row[0]
-
-            existing = self._conn.execute(
-                "SELECT 1 FROM releases WHERE signal_id = ? AND buyer_address = ?",
-                (signal_id, buyer_address),
-            ).fetchone()
-            if existing:
-                self._conn.execute("COMMIT")
-                log.warning("share_already_released", signal_id=signal_id, buyer=buyer_address)
-                return encrypted_key_share
-
-            self._conn.execute(
-                "INSERT INTO releases (signal_id, buyer_address, released_at) VALUES (?, ?, ?)",
-                (signal_id, buyer_address, time.time()),
-            )
-            self._conn.execute("COMMIT")
-            log.info("share_released", signal_id=signal_id, buyer=buyer_address)
-            return encrypted_key_share
-        except Exception as e:
-            log.error("share_release_error", signal_id=signal_id, buyer=buyer_address, error=str(e))
+        with self._lock:
             try:
-                self._conn.execute("ROLLBACK")
-            except Exception as rb_err:
-                log.error("share_release_rollback_failed", signal_id=signal_id, error=str(rb_err))
-            raise
+                self._conn.execute("BEGIN IMMEDIATE")
+
+                row = self._conn.execute(
+                    "SELECT encrypted_key_share FROM shares WHERE signal_id = ?",
+                    (signal_id,),
+                ).fetchone()
+                if row is None:
+                    self._conn.execute("COMMIT")
+                    log.warning("share_not_found", signal_id=signal_id)
+                    return None
+
+                encrypted_key_share = row[0]
+
+                existing = self._conn.execute(
+                    "SELECT 1 FROM releases WHERE signal_id = ? AND buyer_address = ?",
+                    (signal_id, buyer_address),
+                ).fetchone()
+                if existing:
+                    self._conn.execute("COMMIT")
+                    log.warning("share_already_released", signal_id=signal_id, buyer=buyer_address)
+                    return encrypted_key_share
+
+                self._conn.execute(
+                    "INSERT INTO releases (signal_id, buyer_address, released_at) VALUES (?, ?, ?)",
+                    (signal_id, buyer_address, time.time()),
+                )
+                self._conn.execute("COMMIT")
+                log.info("share_released", signal_id=signal_id, buyer=buyer_address)
+                return encrypted_key_share
+            except Exception as e:
+                log.error("share_release_error", signal_id=signal_id, buyer=buyer_address, error=str(e))
+                try:
+                    self._conn.execute("ROLLBACK")
+                except Exception as rb_err:
+                    log.error("share_release_rollback_failed", signal_id=signal_id, error=str(rb_err))
+                raise
 
     def remove(self, signal_id: str) -> None:
         """Remove a share (e.g., signal voided or expired)."""
-        self._conn.execute("DELETE FROM releases WHERE signal_id = ?", (signal_id,))
-        self._conn.execute("DELETE FROM shares WHERE signal_id = ?", (signal_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM releases WHERE signal_id = ?", (signal_id,))
+            self._conn.execute("DELETE FROM shares WHERE signal_id = ?", (signal_id,))
+            self._conn.commit()
 
     @property
     def count(self) -> int:

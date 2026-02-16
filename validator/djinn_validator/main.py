@@ -28,6 +28,17 @@ from djinn_validator.core.purchase import PurchaseOrchestrator
 from djinn_validator.core.scoring import MinerScorer
 from djinn_validator.core.shares import ShareStore
 
+
+def _sanitize_url(url: str) -> str:
+    """Strip credentials and path from URL for safe logging."""
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port or 443}"
+    except Exception:
+        return "<unparseable>"
+
 log = structlog.get_logger()
 
 
@@ -202,7 +213,7 @@ async def async_main() -> None:
         netuid=config.bt_netuid,
         bt_network=config.bt_network,
         bt_connected=bt_ok,
-        rpc_url=config.base_rpc_url[:40] + "..." if len(config.base_rpc_url) > 40 else config.base_rpc_url,
+        rpc_url=_sanitize_url(config.base_rpc_url),
         shares_held=share_store.count,
         log_format=os.getenv("LOG_FORMAT", "console"),
     )

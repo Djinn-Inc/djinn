@@ -243,6 +243,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         nonReentrant
         returns (uint256 purchaseId)
     {
+        // --- Validate inputs ---
+        if (notional == 0) revert ZeroAmount();
+
         // --- Validate dependencies are wired up ---
         if (address(signalCommitment) == address(0)) revert ContractNotSet("SignalCommitment");
         if (address(collateral) == address(0)) revert ContractNotSet("Collateral");

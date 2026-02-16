@@ -248,3 +248,45 @@ class TestShareStoreSignalIdValidation:
     def test_spaces_rejected(self) -> None:
         with pytest.raises(ValueError, match="Invalid signal_id"):
             self.store.store("sig id", "0xG", Share(x=1, y=1), b"key")
+
+
+class TestShareStoreThreadSafety:
+    """ShareStore operations are safe under concurrent access."""
+
+    def setup_method(self) -> None:
+        self.store = ShareStore()
+
+    def test_concurrent_store_and_release(self) -> None:
+        import threading
+
+        errors: list[Exception] = []
+
+        def store_signals(start: int, count: int) -> None:
+            for i in range(start, start + count):
+                try:
+                    self.store.store(f"sig-{i}", "0xGenius", Share(x=i + 1, y=i * 100), b"key-data")
+                except Exception as e:
+                    errors.append(e)
+
+        def release_signals(start: int, count: int) -> None:
+            for i in range(start, start + count):
+                try:
+                    self.store.release(f"sig-{i}", "0xBuyer")
+                except Exception as e:
+                    errors.append(e)
+
+        # Store 50 signals first
+        store_signals(0, 50)
+
+        # Concurrently store more and release existing
+        threads = [
+            threading.Thread(target=store_signals, args=(50, 50)),
+            threading.Thread(target=release_signals, args=(0, 50)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Thread errors: {errors}"
+        assert self.store.count == 100

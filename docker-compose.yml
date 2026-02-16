@@ -21,7 +21,7 @@ services:
     image: ghcr.io/foundry-rs/foundry:latest
     entrypoint: ["anvil", "--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337"]
     ports:
-      - "8545:8545"
+      - "127.0.0.1:8545:8545"
     healthcheck:
       test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
       interval: 5s
@@ -40,7 +40,7 @@ services:
       context: ./validator
       dockerfile: Dockerfile
     ports:
-      - "8421:8421"
+      - "127.0.0.1:8421:8421"
     env_file:
       - ./validator/.env
     environment:
@@ -73,7 +73,7 @@ services:
       context: ./miner
       dockerfile: Dockerfile
     ports:
-      - "8422:8422"
+      - "127.0.0.1:8422:8422"
     env_file:
       - ./miner/.env
     environment:
@@ -105,7 +105,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - ./web/.env
     environment:
