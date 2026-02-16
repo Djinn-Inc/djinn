@@ -315,6 +315,9 @@ def create_app(
                 timeout=15.0,
             )
         except TimeoutError:
+            from djinn_validator.api.metrics import MPC_ERRORS
+
+            MPC_ERRORS.labels(reason="timeout").inc()
             PURCHASES_PROCESSED.labels(result="error").inc()
             raise HTTPException(status_code=504, detail="MPC availability check timed out")
 

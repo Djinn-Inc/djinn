@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import secrets
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -49,6 +50,7 @@ from djinn_validator.core.spdz import (
     authenticate_value,
     verify_mac_opening,
 )
+from djinn_validator.utils.circuit_breaker import CircuitBreaker
 from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 if TYPE_CHECKING:
@@ -86,27 +88,44 @@ class MPCOrchestrator:
         self._ot_field_prime = ot_field_prime
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
         self._http = httpx.AsyncClient(timeout=PEER_TIMEOUT, limits=limits)
+        self._peer_breakers: dict[int, CircuitBreaker] = {}
 
     async def close(self) -> None:
         """Release the shared HTTP client."""
         await self._http.aclose()
 
+    def _get_peer_breaker(self, peer_uid: int) -> CircuitBreaker:
+        """Get or create a circuit breaker for a peer validator."""
+        if peer_uid not in self._peer_breakers:
+            self._peer_breakers[peer_uid] = CircuitBreaker(
+                name=f"peer_{peer_uid}",
+                failure_threshold=3,
+                recovery_timeout=20.0,
+            )
+        return self._peer_breakers[peer_uid]
+
     async def _peer_request(
         self,
         method: str,
         url: str,
+        *,
+        peer_uid: int | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """HTTP request with retry and exponential backoff.
+        """HTTP request with circuit breaker, retry, and exponential backoff.
 
         Retries on transport errors and 5xx server errors.
         Propagates request_id for distributed tracing.
         """
+        # Check circuit breaker for this peer
+        if peer_uid is not None:
+            breaker = self._get_peer_breaker(peer_uid)
+            if not breaker.allow_request():
+                raise httpx.ConnectError(f"Circuit breaker open for peer {peer_uid}")
+
         # Propagate request ID for distributed tracing
         headers = kwargs.pop("headers", {})
         try:
-            import structlog
-
             ctx = structlog.contextvars.get_contextvars()
             if "request_id" in ctx:
                 headers["X-Request-ID"] = ctx["request_id"]
@@ -119,6 +138,8 @@ class MPCOrchestrator:
             try:
                 resp = await getattr(self._http, method)(url, **kwargs)
                 if resp.status_code < 500:
+                    if peer_uid is not None:
+                        self._get_peer_breaker(peer_uid).record_success()
                     return resp
                 last_exc = httpx.HTTPStatusError(
                     f"Server error {resp.status_code}",
@@ -129,6 +150,8 @@ class MPCOrchestrator:
                 last_exc = e
             if attempt < self._PEER_RETRIES:
                 await asyncio.sleep(self._RETRY_BACKOFF * (2**attempt))
+        if peer_uid is not None:
+            self._get_peer_breaker(peer_uid).record_failure()
         raise last_exc  # type: ignore[misc]
 
     def _get_peer_validators(self) -> list[dict[str, Any]]:
@@ -179,6 +202,7 @@ class MPCOrchestrator:
                 resp = await self._peer_request(
                     "get",
                     f"{peer['url']}/v1/signal/{signal_id}/share_info",
+                    peer_uid=peer["uid"],
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -207,6 +231,9 @@ class MPCOrchestrator:
         Attempts multi-validator secure MPC first.
         Falls back to single-validator prototype if insufficient peers.
         """
+        from djinn_validator.api.metrics import MPC_DURATION, MPC_ERRORS, MPC_SESSIONS
+
+        start = time.monotonic()
         peers = self._get_peer_validators()
 
         if not peers:
@@ -216,7 +243,10 @@ class MPCOrchestrator:
                 signal_id=signal_id,
                 reason="no peers discovered",
             )
-            return self._single_validator_check(local_share, available_indices)
+            MPC_SESSIONS.labels(mode="single_validator").inc()
+            result = self._single_validator_check(local_share, available_indices)
+            MPC_DURATION.labels(mode="single_validator").observe(time.monotonic() - start)
+            return result
 
         # Collect shares from peers
         all_shares = [local_share]
@@ -236,13 +266,17 @@ class MPCOrchestrator:
                 signal_id=signal_id,
                 participants=len(all_shares),
             )
-            return secure_check_availability(
+            MPC_SESSIONS.labels(mode="distributed").inc()
+            result = secure_check_availability(
                 shares=all_shares,
                 available_indices=available_indices,
                 threshold=self._threshold,
             )
+            MPC_DURATION.labels(mode="distributed").observe(time.monotonic() - start)
+            return result
 
         # Not enough peers — try distributed protocol via HTTP
+        MPC_SESSIONS.labels(mode="distributed").inc()
         result = await self._distributed_mpc(
             signal_id,
             local_share,
@@ -250,6 +284,7 @@ class MPCOrchestrator:
             peers,
         )
         if result is not None:
+            MPC_DURATION.labels(mode="distributed").observe(time.monotonic() - start)
             return result
 
         # Final fallback: single-validator mode
@@ -258,7 +293,10 @@ class MPCOrchestrator:
             signal_id=signal_id,
             reason="distributed MPC failed",
         )
-        return self._single_validator_check(local_share, available_indices)
+        MPC_ERRORS.labels(reason="distributed_fallback").inc()
+        result = self._single_validator_check(local_share, available_indices)
+        MPC_DURATION.labels(mode="single_validator").observe(time.monotonic() - start)
+        return result
 
     async def _distributed_mpc(
         self,
@@ -294,6 +332,9 @@ class MPCOrchestrator:
         participant_xs = sorted(set(x for x in raw_xs if 1 <= x <= 255))
 
         if len(participant_xs) < self._threshold:
+            from djinn_validator.api.metrics import MPC_ERRORS
+
+            MPC_ERRORS.labels(reason="insufficient_peers").inc()
             log.warning(
                 "insufficient_mpc_participants",
                 available=len(participant_xs),
@@ -321,6 +362,9 @@ class MPCOrchestrator:
                 field_prime=self._ot_field_prime or BN254_PRIME,
             )
             if pre_generated_triples is None:
+                from djinn_validator.api.metrics import MPC_ERRORS
+
+                MPC_ERRORS.labels(reason="ot_setup_failure").inc()
                 log.warning(
                     "network_ot_failed_fallback",
                     signal_id=signal_id,
@@ -452,6 +496,7 @@ class MPCOrchestrator:
                 resp = await self._peer_request(
                     "post",
                     f"{peer['url']}/v1/mpc/init",
+                    peer_uid=peer["uid"],
                     json=init_payload,
                 )
                 if resp.status_code == 200 and resp.json().get("accepted"):
@@ -522,6 +567,7 @@ class MPCOrchestrator:
                     resp = await self._peer_request(
                         "post",
                         f"{peer['url']}/v1/mpc/compute_gate",
+                        peer_uid=peer["uid"],
                         json={
                             "session_id": session.session_id,
                             "gate_idx": g_idx,
@@ -589,6 +635,9 @@ class MPCOrchestrator:
                     AuthenticatedShare(x=vx, y=d_vals[vx], mac=d_mac_vals[vx]) for vx in sorted(d_mac_vals.keys())
                 ]
                 if not verify_mac_opening(prev_d, d_auth_shares, [m for m in mac_key_shares if m], p):
+                    from djinn_validator.api.metrics import MPC_ERRORS
+
+                    MPC_ERRORS.labels(reason="mac_failure").inc()
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="d")
                     await self._broadcast_abort(
                         session.session_id,
@@ -602,6 +651,9 @@ class MPCOrchestrator:
                     AuthenticatedShare(x=vx, y=e_vals[vx], mac=e_mac_vals[vx]) for vx in sorted(e_mac_vals.keys())
                 ]
                 if not verify_mac_opening(prev_e, e_auth_shares, [m for m in mac_key_shares if m], p):
+                    from djinn_validator.api.metrics import MPC_ERRORS
+
+                    MPC_ERRORS.labels(reason="mac_failure").inc()
                     log.error("mac_verification_failed", gate_idx=gate_idx, value="e")
                     await self._broadcast_abort(
                         session.session_id,
@@ -683,6 +735,7 @@ class MPCOrchestrator:
                 await self._peer_request(
                     "post",
                     f"{peer['url']}/v1/mpc/result",
+                    peer_uid=peer["uid"],
                     json={
                         "session_id": session.session_id,
                         "signal_id": signal_id,
@@ -737,7 +790,7 @@ class MPCOrchestrator:
 
         for peer in peers:
             try:
-                await self._peer_request("post", f"{peer['url']}/v1/mpc/abort", json=payload)
+                await self._peer_request("post", f"{peer['url']}/v1/mpc/abort", peer_uid=peer.get("uid"), json=payload)
             except (httpx.HTTPError, Exception) as e:
                 log.warning(
                     "mpc_abort_send_failed",
@@ -806,6 +859,7 @@ class MPCOrchestrator:
             setup_resp = await self._peer_request(
                 "post",
                 f"{peer['url']}/v1/mpc/ot/setup",
+                peer_uid=peer.get("uid"),
                 json=setup_payload,
             )
             if setup_resp.status_code != 200 or not setup_resp.json().get("accepted"):
@@ -825,6 +879,7 @@ class MPCOrchestrator:
             choices_resp = await self._peer_request(
                 "post",
                 f"{peer['url']}/v1/mpc/ot/choices",
+                peer_uid=peer.get("uid"),
                 json={"session_id": session_id, "peer_sender_pks": coord_sender_pks_ser},
             )
             if choices_resp.status_code != 200:
@@ -845,6 +900,7 @@ class MPCOrchestrator:
             transfers_resp = await self._peer_request(
                 "post",
                 f"{peer['url']}/v1/mpc/ot/transfers",
+                peer_uid=peer.get("uid"),
                 json={"session_id": session_id, "peer_choices": coord_choices_ser},
             )
             if transfers_resp.status_code != 200:
@@ -866,6 +922,7 @@ class MPCOrchestrator:
             complete_resp = await self._peer_request(
                 "post",
                 f"{peer['url']}/v1/mpc/ot/complete",
+                peer_uid=peer.get("uid"),
                 json={
                     "session_id": session_id,
                     "peer_transfers": coord_transfers_ser,
@@ -883,6 +940,7 @@ class MPCOrchestrator:
                 shares_resp = await self._peer_request(
                     "post",
                     f"{peer['url']}/v1/mpc/ot/shares",
+                    peer_uid=peer.get("uid"),
                     json={"session_id": session_id, "party_x": x},
                 )
                 if shares_resp.status_code != 200:

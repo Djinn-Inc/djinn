@@ -52,6 +52,7 @@ class ShareStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA wal_autocheckpoint=1000")
         self._conn.execute("PRAGMA busy_timeout=5000")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._create_tables()
 
     @staticmethod

@@ -17,6 +17,8 @@ import structlog
 from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 
+from djinn_validator.utils.circuit_breaker import CircuitBreaker
+
 log = structlog.get_logger()
 
 # Minimal ABIs — only the functions the validator needs
@@ -116,6 +118,11 @@ class ChainClient:
         self._escrow_address = escrow_address
         self._signal_address = signal_address
         self._account_address = account_address
+        self._circuit_breaker = CircuitBreaker(
+            name="rpc",
+            failure_threshold=3,
+            recovery_timeout=30.0,
+        )
         self._w3 = self._create_provider(self._rpc_urls[0])
         self._setup_contracts()
 
@@ -164,24 +171,37 @@ class ChainClient:
         return True
 
     async def _with_failover(self, make_call: Callable[[], Awaitable[Any]]) -> Any:
-        """Execute a contract call with RPC failover.
+        """Execute a contract call with circuit breaker and RPC failover.
 
-        The make_call callable is re-invoked after each rotation so it picks up
-        the freshly-created contract references.
+        The circuit breaker prevents hammering endpoints that are consistently
+        failing. The make_call callable is re-invoked after each rotation so
+        it picks up the freshly-created contract references.
         """
+        if not self._circuit_breaker.allow_request():
+            raise ConnectionError(
+                f"RPC circuit breaker open — all endpoints unhealthy (recovery in {self._circuit_breaker._recovery_timeout}s)"
+            )
+
         tried = 0
         total = len(self._rpc_urls)
         last_exc: Exception | None = None
         while tried < total:
             try:
-                return await make_call()
+                result = await make_call()
+                self._circuit_breaker.record_success()
+                return result
             except _FAILOVER_ERRORS as e:
                 last_exc = e
                 tried += 1
                 if tried < total and self._rotate_rpc():
+                    from djinn_validator.api.metrics import RPC_FAILOVERS
+
+                    RPC_FAILOVERS.inc()
                     log.warning("rpc_call_failed_retrying", err=str(e), tried=tried)
                     continue
+                self._circuit_breaker.record_failure()
                 raise
+        self._circuit_breaker.record_failure()
         raise last_exc or ConnectionError("All RPC endpoints exhausted")
 
     async def is_signal_active(self, signal_id: int) -> bool:

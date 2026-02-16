@@ -39,6 +39,30 @@ MPC_SESSIONS = Counter(
     ["mode"],  # single_validator, distributed
 )
 
+MPC_DURATION = Histogram(
+    "djinn_validator_mpc_duration_seconds",
+    "End-to-end MPC availability check duration",
+    ["mode"],  # single_validator, distributed
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0),
+)
+
+MPC_ERRORS = Counter(
+    "djinn_validator_mpc_errors_total",
+    "MPC errors by reason",
+    ["reason"],  # timeout, network, mac_failure, ot_setup_failure, insufficient_peers
+)
+
+RPC_FAILOVERS = Counter(
+    "djinn_validator_rpc_failovers_total",
+    "RPC endpoint failover events",
+)
+
+CIRCUIT_BREAKER_STATE = Gauge(
+    "djinn_validator_circuit_breaker_open",
+    "Whether a circuit breaker is open (1) or closed (0)",
+    ["target"],  # rpc, peer_{uid}
+)
+
 OUTCOMES_ATTESTED = Counter(
     "djinn_validator_outcomes_attested_total",
     "Total outcomes attested",
