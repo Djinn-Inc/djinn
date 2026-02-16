@@ -402,4 +402,85 @@ contract CollateralTest is Test {
         vm.expectRevert();
         col.setAuthorized(address(0xDEAD), true);
     }
+
+    // ─── Invariant Tests: slash + release accounting ──────────────────────
+
+    function test_slash_then_release_accounting() public {
+        _depositAs(genius, 5_000e6);
+
+        // Lock 3k across two signals
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, 1_500e6);
+        vm.prank(authorizedCaller);
+        col.lock(2, genius, 1_500e6);
+
+        // Slash 2k → deposits=3k, locked caps to 3k (from 3k), still consistent
+        vm.prank(authorizedCaller);
+        col.slash(genius, 2_000e6, recipient);
+
+        assertEq(col.getDeposit(genius), 3_000e6);
+        assertEq(col.getLocked(genius), 3_000e6);
+
+        // Release signal 1 (1.5k) → locked should go from 3k to 1.5k
+        vm.prank(authorizedCaller);
+        col.release(1, genius, 1_500e6);
+
+        assertEq(col.getLocked(genius), 1_500e6);
+        assertEq(col.getSignalLock(genius, 1), 0);
+        assertEq(col.getSignalLock(genius, 2), 1_500e6);
+
+        // Available = 3k - 1.5k = 1.5k
+        assertEq(col.getAvailable(genius), 1_500e6);
+    }
+
+    function test_slash_exceeding_then_release_handles_zero_locked() public {
+        _depositAs(genius, 5_000e6);
+
+        // Lock 4k
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, 4_000e6);
+
+        // Slash all 5k → deposits=0, locked=0
+        vm.prank(authorizedCaller);
+        col.slash(genius, 5_000e6, recipient);
+
+        assertEq(col.getDeposit(genius), 0);
+        assertEq(col.getLocked(genius), 0);
+
+        // signalLock still shows 4k, but release handles the discrepancy
+        // release checks signalLock first, then caps locked reduction
+        assertEq(col.getSignalLock(genius, 1), 4_000e6);
+
+        // Release the signal lock — locked is already 0, capped to 0
+        vm.prank(authorizedCaller);
+        col.release(1, genius, 4_000e6);
+
+        assertEq(col.getLocked(genius), 0);
+        assertEq(col.getSignalLock(genius, 1), 0);
+    }
+
+    function test_deposit_locked_available_invariant() public {
+        _depositAs(genius, 10_000e6);
+
+        // Lock various amounts
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, 2_000e6);
+        vm.prank(authorizedCaller);
+        col.lock(2, genius, 3_000e6);
+
+        // Invariant: available = deposit - locked
+        assertEq(col.getAvailable(genius), col.getDeposit(genius) - col.getLocked(genius));
+
+        // Slash 4k
+        vm.prank(authorizedCaller);
+        col.slash(genius, 4_000e6, recipient);
+
+        // After slash: deposit=6k, locked capped to 5k (but was already 5k, capped to 6k)
+        // Actually locked was 5k, deposits became 6k, 5k <= 6k so locked stays 5k
+        assertEq(col.getDeposit(genius), 6_000e6);
+        assertEq(col.getLocked(genius), 5_000e6);
+
+        // Invariant still holds
+        assertEq(col.getAvailable(genius), col.getDeposit(genius) - col.getLocked(genius));
+    }
 }

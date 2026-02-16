@@ -473,4 +473,89 @@ contract EscrowIntegrationTest is Test {
         vm.prank(random);
         escrow.refund(genius, idiot, 0, 100e6);
     }
+
+    function test_refund_zero_reverts() public {
+        vm.expectRevert(Escrow.ZeroAmount.selector);
+        escrow.refund(genius, idiot, 0, 0);
+    }
+
+    function test_refund_exceeds_pool_reverts() public {
+        // Build up a fee pool via a purchase
+        _createSignal(SIGNAL_ID);
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        uint256 poolBalance = escrow.feePool(genius, idiot, cycle);
+
+        // Try to refund more than pool contains
+        vm.expectRevert(
+            abi.encodeWithSelector(Escrow.InsufficientBalance.selector, poolBalance, poolBalance + 1)
+        );
+        escrow.refund(genius, idiot, cycle, poolBalance + 1);
+    }
+
+    function test_refund_successive_drains_pool() public {
+        // Build up a fee pool via a purchase
+        _createSignal(SIGNAL_ID);
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000; // 50e6
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+
+        // First refund: half the pool
+        escrow.refund(genius, idiot, cycle, expectedFee / 2);
+        assertEq(escrow.feePool(genius, idiot, cycle), expectedFee / 2, "Pool half-drained");
+        assertEq(escrow.getBalance(idiot), expectedFee / 2, "Idiot got first refund");
+
+        // Second refund: remaining half
+        escrow.refund(genius, idiot, cycle, expectedFee / 2);
+        assertEq(escrow.feePool(genius, idiot, cycle), 0, "Pool fully drained");
+        assertEq(escrow.getBalance(idiot), expectedFee, "Idiot got full refund");
+
+        // Third refund: pool is empty, should revert
+        vm.expectRevert(
+            abi.encodeWithSelector(Escrow.InsufficientBalance.selector, 0, 1)
+        );
+        escrow.refund(genius, idiot, cycle, 1);
+    }
+
+    // ─── setOutcome Tests ─────────────────────────────────────────────────
+
+    function test_setOutcome_success() public {
+        // Complete a purchase
+        _createSignal(SIGNAL_ID);
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+
+        // Set authorized caller
+        escrow.setAuthorizedCaller(owner, true);
+
+        escrow.setOutcome(purchaseId, Outcome.Favorable);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(uint8(p.outcome), uint8(Outcome.Favorable), "Outcome should be Favorable");
+    }
+
+    function test_setOutcome_unauthorized_reverts() public {
+        address random = address(0xDEAD);
+        vm.expectRevert(Escrow.Unauthorized.selector);
+        vm.prank(random);
+        escrow.setOutcome(0, Outcome.Favorable);
+    }
 }

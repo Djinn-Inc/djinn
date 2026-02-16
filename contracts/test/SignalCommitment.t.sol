@@ -395,4 +395,77 @@ contract SignalCommitmentTest is Test {
         vm.expectRevert();
         sc.setAuthorizedCaller(address(0xDEAD), true);
     }
+
+    // ─── Tests: State transition coverage ─────────────────────────────────
+
+    function test_updateStatus_activeToPurchased() public {
+        _commitDefault(3000);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3000, SignalStatus.Purchased);
+
+        assertEq(uint8(sc.getSignal(3000).status), uint8(SignalStatus.Purchased));
+    }
+
+    function test_updateStatus_purchasedToSettled() public {
+        _commitDefault(3001);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3001, SignalStatus.Purchased);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3001, SignalStatus.Settled);
+
+        assertEq(uint8(sc.getSignal(3001).status), uint8(SignalStatus.Settled));
+    }
+
+    function test_updateStatus_activeToVoided() public {
+        _commitDefault(3002);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3002, SignalStatus.Voided);
+
+        assertEq(uint8(sc.getSignal(3002).status), uint8(SignalStatus.Voided));
+    }
+
+    function test_isActive_falseAfterPurchase() public {
+        _commitDefault(3003);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3003, SignalStatus.Purchased);
+
+        assertFalse(sc.isActive(3003));
+    }
+
+    function test_isActive_falseAfterSettled() public {
+        _commitDefault(3004);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3004, SignalStatus.Settled);
+
+        assertFalse(sc.isActive(3004));
+    }
+
+    function test_voidSignal_revertOnVoidedSignal() public {
+        _commitDefault(3005);
+
+        vm.prank(genius);
+        sc.voidSignal(3005);
+
+        // Voided signals are not Active, so voidSignal should revert
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalAlreadyPurchased.selector, 3005));
+        vm.prank(genius);
+        sc.voidSignal(3005);
+    }
+
+    function test_voidSignal_revertOnSettledSignal() public {
+        _commitDefault(3006);
+
+        vm.prank(authorizedCaller);
+        sc.updateStatus(3006, SignalStatus.Settled);
+
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalAlreadyPurchased.selector, 3006));
+        vm.prank(genius);
+        sc.voidSignal(3006);
+    }
 }
