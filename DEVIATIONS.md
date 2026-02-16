@@ -93,3 +93,19 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 - **Serialization helpers**: Hex-encoded DH public keys, choice commitments, and encrypted transfers for HTTP transport.
 **Security model:** CDH assumption in the chosen DH group. Semi-honest — same as DEV-008. SPDZ MAC verification deferred to future work.
 **Impact:** Validators can now exchange Beaver triple shares over HTTP without any party learning the other's inputs. 35 new tests verify OT correctness, triple generation, Shamir conversion, serialization roundtrips, and all API endpoints. Full test suite (693 tests) passes with no regressions.
+
+## DEV-010: SPDZ MAC Verification for Malicious Security [EXTENDS DEV-008/DEV-009]
+
+**Whitepaper Section:** Appendix C — MPC Set-Membership Protocol
+**Previous limitation:** DEV-008/DEV-009 assumed a semi-honest (honest-but-curious) adversary model. A malicious party could corrupt their shares to manipulate the MPC output without detection.
+**What we did:** Implemented SPDZ-style information-theoretic MAC verification in `validator/djinn_validator/core/spdz.py`:
+- **Global MAC key α**: Shamir-shared among validators. No single party knows α.
+- **Authenticated shares**: Every shared value v carries MAC shares γ(v) where reconstruct(γ) = α * v. MACs are independently Shamir-shared.
+- **Authenticated Beaver triples**: Triple components (a, b, c) all carry MAC shares.
+- **MAC verification on every opening**: When d = x - a is opened, each party computes σ_j = γ(d)_j - α_j * d. Reconstructing Σ L_j * σ_j = 0 proves correctness; non-zero means cheating.
+- **Commit-then-reveal protocol**: Parties commit to σ_j before revealing, preventing adaptive forgery.
+- **AuthenticatedMPCSession**: Full MPC protocol with MAC checks on every multiplication gate opening. Aborts with `MACVerificationError` if any check fails.
+- **AuthenticatedParticipantState**: Per-validator state for distributed protocol with MAC support.
+- **MAC propagation through multiplication**: z = d*e + d*b + e*a + c has MAC γ(z)_j = d*e*α_j + d*γ(b)_j + e*γ(a)_j + γ(c)_j.
+**Security model:** Active security with abort (malicious parties detected, protocol aborts). With 7-of-10 honest majority, guaranteed output delivery.
+**Impact:** 32 new tests verify MAC generation, verification, commitment protocol, authenticated MPC correctness (including randomized trials), and tamper detection for corrupted shares and triples. 725 total tests pass.
