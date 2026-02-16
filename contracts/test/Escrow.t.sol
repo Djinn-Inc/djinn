@@ -654,4 +654,146 @@ contract EscrowIntegrationTest is Test {
         vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalTooSmall.selector, dustNotional, 1e6));
         escrow.purchase(SIGNAL_ID, dustNotional, ODDS);
     }
+
+    // ─── maxNotional Enforcement
+    // ──────────────────────────────────────────────
+
+    function test_purchase_reverts_notional_exceeds_signal_max() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        uint256 bigNotional = 10_001e6; // exceeds 10_000e6
+        uint256 requiredCollateral = (bigNotional * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (bigNotional * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalExceedsSignalMax.selector, bigNotional, 10_000e6));
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, bigNotional, ODDS);
+    }
+
+    function test_purchase_succeeds_at_exact_maxNotional() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        uint256 exactMax = 10_000e6;
+        uint256 requiredCollateral = (exactMax * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (exactMax * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(SIGNAL_ID, exactMax, ODDS);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(p.notional, exactMax, "Notional at exact max should succeed");
+    }
+
+    function test_purchase_succeeds_with_unlimited_maxNotional() public {
+        uint256 sigId = 500;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("unlimited"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 0, // unlimited
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 bigNotional = 100_000e6;
+        uint256 requiredCollateral = (bigNotional * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(requiredCollateral);
+        uint256 expectedFee = (bigNotional * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(expectedFee);
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(sigId, bigNotional, ODDS);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(p.notional, bigNotional, "Unlimited maxNotional should allow any amount");
+    }
+
+    // ─── canPurchase View
+    // ──────────────────────────────────────────────
+
+    function test_canPurchase_active_signal() public {
+        _createSignal(SIGNAL_ID);
+        (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, NOTIONAL);
+        assertTrue(canBuy, "Active signal should be purchasable");
+        assertEq(bytes(reason).length, 0, "No reason for purchasable signal");
+    }
+
+    function test_canPurchase_voided_signal() public {
+        _createSignal(SIGNAL_ID);
+        vm.prank(genius);
+        signalCommitment.voidSignal(SIGNAL_ID);
+
+        (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, NOTIONAL);
+        assertFalse(canBuy, "Voided signal should not be purchasable");
+        assertEq(reason, "Signal not active");
+    }
+
+    function test_canPurchase_expired_signal() public {
+        _createSignal(SIGNAL_ID);
+        vm.warp(block.timestamp + 2 days);
+
+        (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, NOTIONAL);
+        assertFalse(canBuy, "Expired signal should not be purchasable");
+        assertEq(reason, "Signal expired");
+    }
+
+    function test_canPurchase_exceeds_maxNotional() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, 10_001e6);
+        assertFalse(canBuy, "Notional exceeding max should fail");
+        assertEq(reason, "Notional exceeds signal max");
+    }
+
+    function test_canPurchase_below_minNotional() public {
+        _createSignal(SIGNAL_ID);
+
+        (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, 100); // dust
+        assertFalse(canBuy, "Dust notional should fail");
+        assertEq(reason, "Notional too small");
+    }
+
+    function test_canPurchase_above_maxNotional_global() public {
+        uint256 sigId = 501;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("bigmax"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 0, // unlimited signal-level
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 tooBig = 1e15 + 1; // exceeds MAX_NOTIONAL
+        (bool canBuy, string memory reason) = escrow.canPurchase(sigId, tooBig);
+        assertFalse(canBuy, "Above global MAX_NOTIONAL should fail");
+        assertEq(reason, "Notional too large");
+    }
+
+    function test_canPurchase_signalCommitment_not_set() public {
+        // Deploy fresh escrow without wiring
+        Escrow freshEscrow = new Escrow(address(usdc), owner);
+
+        (bool canBuy, string memory reason) = freshEscrow.canPurchase(1, NOTIONAL);
+        assertFalse(canBuy, "Should fail with no SignalCommitment set");
+        assertEq(reason, "SignalCommitment not set");
+    }
 }

@@ -89,8 +89,8 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     function withdraw(uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 dep = deposits[msg.sender];
-        uint256 lock = locked[msg.sender];
-        uint256 available = dep > lock ? dep - lock : 0;
+        uint256 lck = locked[msg.sender];
+        uint256 available = dep > lck ? dep - lck : 0;
         if (amount > available) {
             revert WithdrawalExceedsAvailable(available, amount);
         }
@@ -107,8 +107,8 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     function lock(uint256 signalId, address genius, uint256 amount) external onlyAuthorized {
         if (amount == 0) revert ZeroAmount();
         uint256 dep = deposits[genius];
-        uint256 loc = locked[genius];
-        uint256 available = dep > loc ? dep - loc : 0;
+        uint256 lck = locked[genius];
+        uint256 available = dep > lck ? dep - lck : 0;
         if (amount > available) {
             revert InsufficientFreeCollateral(available, amount);
         }
@@ -174,8 +174,8 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     /// @return Available collateral (deposit - locked) in USDC (6 decimals)
     function getAvailable(address genius) external view returns (uint256) {
         uint256 dep = deposits[genius];
-        uint256 loc = locked[genius];
-        return dep > loc ? dep - loc : 0;
+        uint256 lck = locked[genius];
+        return dep > lck ? dep - lck : 0;
     }
 
     /// @notice Get collateral locked for a specific signal

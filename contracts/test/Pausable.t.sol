@@ -324,4 +324,102 @@ contract PausableTest is Test {
         vm.expectRevert(Pausable.ExpectedPause.selector);
         escrow.unpause();
     }
+
+    // ─── SignalCommitment Pause Tests
+    // ─────────────────────────────────
+
+    function test_signalCommitment_pause_onlyOwner() public {
+        signalCommitment.pause();
+        assertTrue(signalCommitment.paused(), "Should be paused");
+    }
+
+    function test_signalCommitment_pause_reverts_nonOwner() public {
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, nonOwner));
+        vm.prank(nonOwner);
+        signalCommitment.pause();
+    }
+
+    function test_signalCommitment_unpause_onlyOwner() public {
+        signalCommitment.pause();
+        signalCommitment.unpause();
+        assertFalse(signalCommitment.paused(), "Should be unpaused");
+    }
+
+    function test_signalCommitment_unpause_reverts_nonOwner() public {
+        signalCommitment.pause();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, nonOwner));
+        vm.prank(nonOwner);
+        signalCommitment.unpause();
+    }
+
+    function test_signalCommitment_commit_reverts_whenPaused() public {
+        signalCommitment.pause();
+
+        string[] memory decoys = new string[](10);
+        for (uint256 i; i < 10; i++) decoys[i] = "decoy";
+        string[] memory books = new string[](1);
+        books[0] = "DraftKings";
+
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: 1,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("signal"),
+                sport: "NFL",
+                maxPriceBps: 500,
+                slaMultiplierBps: 15000,
+                maxNotional: 10_000e6,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: decoys,
+                availableSportsbooks: books
+            })
+        );
+    }
+
+    function test_signalCommitment_commit_works_afterUnpause() public {
+        signalCommitment.pause();
+        signalCommitment.unpause();
+
+        string[] memory decoys = new string[](10);
+        for (uint256 i; i < 10; i++) decoys[i] = "decoy";
+        string[] memory books = new string[](1);
+        books[0] = "DraftKings";
+
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: 1,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("signal"),
+                sport: "NFL",
+                maxPriceBps: 500,
+                slaMultiplierBps: 15000,
+                maxNotional: 10_000e6,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: decoys,
+                availableSportsbooks: books
+            })
+        );
+
+        assertEq(signalCommitment.getSignal(1).genius, genius, "Signal should be created after unpause");
+    }
+
+    function test_signalCommitment_starts_unpaused() public view {
+        assertFalse(signalCommitment.paused(), "SignalCommitment should start unpaused");
+    }
+
+    function test_signalCommitment_pause_does_not_affect_escrow() public {
+        signalCommitment.pause();
+
+        // Escrow should still work
+        usdc.mint(idiot, 1000e6);
+        vm.startPrank(idiot);
+        usdc.approve(address(escrow), 1000e6);
+        escrow.deposit(1000e6);
+        vm.stopPrank();
+
+        assertEq(escrow.getBalance(idiot), 1000e6, "Escrow should work when only SignalCommitment is paused");
+    }
 }
