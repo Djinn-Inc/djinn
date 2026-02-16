@@ -14,7 +14,7 @@ def _int_env(key: str, default: str) -> int:
     val = os.getenv(key, default)
     try:
         return int(val)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         raise ValueError(f"Invalid integer for {key}: {val!r}")
 
 
@@ -22,7 +22,7 @@ def _float_env(key: str, default: str) -> float:
     val = os.getenv(key, default)
     try:
         return float(val)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         raise ValueError(f"Invalid float for {key}: {val!r}")
 
 
@@ -76,8 +76,12 @@ class Config:
     odds_precision: int = 1_000_000
     bps_denom: int = 10_000
 
-    def validate(self) -> list[str]:
-        """Validate config at startup. Returns list of warnings (empty = all good)."""
+    def validate(self, *, strict: bool = False) -> list[str]:
+        """Validate config at startup. Returns list of warnings (empty = all good).
+
+        Args:
+            strict: If True, raise ValueError on any warning (use for production safety).
+        """
         import re
         warnings = []
         if not (1 <= self.bt_netuid <= 65535):
@@ -122,4 +126,8 @@ class Config:
             raise ValueError(f"RATE_LIMIT_RATE must be >= 1, got {self.rate_limit_rate}")
         if self.mpc_peer_timeout < 1.0:
             raise ValueError(f"MPC_PEER_TIMEOUT must be >= 1.0, got {self.mpc_peer_timeout}")
+        if strict and warnings:
+            raise ValueError(
+                f"Config validation failed in strict mode:\n" + "\n".join(f"  - {w}" for w in warnings)
+            )
         return warnings

@@ -14,7 +14,7 @@ def _int_env(key: str, default: str) -> int:
     val = os.getenv(key, default)
     try:
         return int(val)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         raise ValueError(f"Invalid integer for {key}: {val!r}")
 
 
@@ -22,7 +22,7 @@ def _float_env(key: str, default: str) -> float:
     val = os.getenv(key, default)
     try:
         return float(val)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         raise ValueError(f"Invalid float for {key}: {val!r}")
 
 
