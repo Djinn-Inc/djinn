@@ -36,8 +36,16 @@ export function useTrackRecordProofs(geniusAddress?: string) {
       const contract = getTrackRecordContract(provider);
       const filter = contract.filters.TrackRecordSubmitted(null, geniusAddress);
       const latestBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, latestBlock - 7_776_000);
-      const events = await contract.queryFilter(filter, fromBlock, "latest");
+      // Public RPCs limit getLogs to 10,000 blocks per call — chunk the scan
+      const SCAN_RANGE = 500_000; // ~6 days on Base (2s blocks)
+      const CHUNK_SIZE = 9_999;
+      const scanFrom = Math.max(0, latestBlock - SCAN_RANGE);
+      const events: ethers.Log[] = [];
+      for (let from = scanFrom; from <= latestBlock; from += CHUNK_SIZE + 1) {
+        const to = Math.min(from + CHUNK_SIZE, latestBlock);
+        const chunk = await contract.queryFilter(filter, from, to);
+        events.push(...chunk);
+      }
 
       const entries: TrackRecordProofEntry[] = events.map((e) => {
         const log = e as ethers.EventLog;

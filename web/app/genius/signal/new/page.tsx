@@ -356,7 +356,8 @@ export default function CreateSignal() {
 
       setStep("success");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Signal creation failed";
+      const { humanizeError } = await import("@/lib/hooks");
+      const msg = humanizeError(err, "Signal creation failed");
       setStepError(msg);
       // Stay on configure page for recoverable errors (wallet, validation)
       // so the user can fix and retry without losing their settings

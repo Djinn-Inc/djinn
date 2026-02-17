@@ -73,7 +73,8 @@ export function formatUsdc(amount: bigint): string {
   const whole = amount / 1_000_000n;
   const frac = amount % 1_000_000n;
   const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
-  return fracStr ? `${whole}.${fracStr}` : whole.toString();
+  const wholeStr = Number(whole).toLocaleString("en-US");
+  return fracStr ? `${wholeStr}.${fracStr}` : wholeStr;
 }
 
 export function parseUsdc(amount: string): bigint {

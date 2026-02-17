@@ -15,7 +15,7 @@ import {
 } from "./contracts";
 
 /** Max blocks per queryFilter call to avoid RPC rate limits. */
-const BLOCK_CHUNK_SIZE = 10_000;
+const BLOCK_CHUNK_SIZE = 9_999;
 
 /** Cache TTL in milliseconds (30 seconds). */
 const CACHE_TTL_MS = 30_000;
