@@ -817,20 +817,43 @@ export default function CreateSignal() {
                     </div>
 
                     {/* Market depth — real pick only */}
-                    {isReal && bookPrices.length > 0 && (
+                    {isReal && bookPrices.length > 0 && (() => {
+                      const bestPrice = bookPrices[0].price;
+                      const worstPrice = bookPrices[bookPrices.length - 1].price;
+                      const hasRange = bestPrice !== worstPrice;
+                      return (
                       <div className="rounded-lg bg-white border border-genius-200 overflow-hidden">
                         <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium px-3 pt-2 pb-1">
-                          Market Depth
+                          Market Depth — click a book to use its odds
                         </p>
                         <table className="w-full text-xs">
                           <tbody>
                             {bookPrices.map(({ book, price }, bi) => {
                               const displayOdds = formatOdds(price, oddsFormat);
+                              const isBest = hasRange && price === bestPrice;
+                              const isWorst = hasRange && price === worstPrice;
                               const atOrBetter = signalDecimal != null && price >= signalDecimal;
                               return (
-                                <tr key={`${book}-${bi}`} className={atOrBetter ? "bg-genius-50" : ""}>
-                                  <td className={`pl-3 py-1 font-medium ${atOrBetter ? "text-genius-700" : "text-slate-500"}`}>{book}</td>
-                                  <td className={`pr-3 py-1 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>{displayOdds}</td>
+                                <tr
+                                  key={`${book}-${bi}`}
+                                  className={`cursor-pointer transition-colors hover:bg-genius-100 ${
+                                    isBest ? "bg-green-50" : isWorst ? "bg-red-50" : atOrBetter ? "bg-genius-50" : ""
+                                  }`}
+                                  onClick={() => {
+                                    setEditOdds(decimalToAmerican(price));
+                                    setRealPick((prev) => prev ? { ...prev, price } : prev);
+                                  }}
+                                >
+                                  <td className={`pl-3 py-1.5 font-medium ${
+                                    isBest ? "text-green-700" : isWorst ? "text-red-600" : atOrBetter ? "text-genius-700" : "text-slate-500"
+                                  }`}>
+                                    {book}
+                                    {isBest && <span className="ml-1.5 text-[9px] font-semibold text-green-600 uppercase">Best</span>}
+                                    {isWorst && <span className="ml-1.5 text-[9px] font-semibold text-red-500 uppercase">Worst</span>}
+                                  </td>
+                                  <td className={`pr-3 py-1.5 text-right font-mono font-semibold ${
+                                    isBest ? "text-green-700" : isWorst ? "text-red-600" : atOrBetter ? "text-genius-700" : "text-slate-400"
+                                  }`}>{displayOdds}</td>
                                 </tr>
                               );
                             })}
@@ -842,7 +865,8 @@ export default function CreateSignal() {
                           </p>
                         )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
               </div>
