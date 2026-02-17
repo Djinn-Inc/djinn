@@ -60,9 +60,11 @@ export default function CreateSignal() {
   const [decoyLines, setDecoyLines] = useState<StructuredLine[]>([]);
   const [realIndex, setRealIndex] = useState(0);
 
-  // Odds: market reference and genius's minimum acceptable (American format string)
+  // Odds: market reference and genius's signal odds (American format string)
   const [marketOdds, setMarketOdds] = useState<number | null>(null);
   const [editOdds, setEditOdds] = useState("");
+  // Per-book prices for depth visualization
+  const [bookPrices, setBookPrices] = useState<{ book: string; price: number }[]>([]);
 
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
@@ -135,6 +137,19 @@ export default function CreateSignal() {
     setMarketOdds(bet.avgPrice);
     setEditOdds(decimalToAmerican(bet.avgPrice));
     setSelectedSportsbooks(bet.books);
+    // Extract per-book prices for depth visualization
+    const prices: { book: string; price: number }[] = [];
+    for (const bk of bet.event.bookmakers) {
+      for (const mkt of bk.markets) {
+        if (mkt.key !== bet.market) continue;
+        for (const outcome of mkt.outcomes) {
+          if (outcome.name === bet.side && (outcome.point ?? null) === bet.line) {
+            prices.push({ book: bk.title, price: outcome.price });
+          }
+        }
+      }
+    }
+    setBookPrices(prices.sort((a, b) => b.price - a.price));
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
     const pos = cryptoRandomInt(10);
@@ -168,7 +183,7 @@ export default function CreateSignal() {
     setStepError(null);
 
     if (!realPick) {
-      setStepError("No bet selected");
+      setStepError("No signal selected");
       return;
     }
 
@@ -400,7 +415,7 @@ export default function CreateSignal() {
           )}
         </div>
         <p className="text-slate-500 mb-6">
-          Browse live games and pick your bet. The system will auto-generate
+          Browse live games and select your signal. The system will auto-generate
           plausible decoy lines from real odds data.
         </p>
 
@@ -530,8 +545,8 @@ export default function CreateSignal() {
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Review Lines</h1>
         <p className="text-slate-500 mb-6">
-          Adjust your pick below, then review the full line list. 9 decoy lines
-          are auto-generated from real odds data. Buyers won&apos;t know which line is yours.
+          Adjust your signal below, then review the full line list. 9 decoy lines
+          are auto-generated from real odds data. Purchasers won&apos;t know which line is yours.
         </p>
 
         {/* ─── Editable pick ─── */}
@@ -576,15 +591,16 @@ export default function CreateSignal() {
               </div>
             )}
 
-            {/* Editable odds — available for ALL markets, required for ML */}
+            {/* Editable odds — available for ALL markets */}
             {(() => {
               const oddsNum = editOdds ? parseInt(editOdds, 10) : null;
               const isValid = oddsNum === null || oddsNum >= 100 || oddsNum <= -100;
+              const signalDecimal = editOdds ? americanToDecimal(editOdds) : null;
               return (
                 <>
                   <div className="flex items-center gap-3">
                     <label htmlFor="editOdds" className="text-xs text-genius-700 font-medium whitespace-nowrap">
-                      Min Odds:
+                      Signal Odds:
                     </label>
                     <input
                       id="editOdds"
@@ -600,7 +616,7 @@ export default function CreateSignal() {
                       className={`w-28 rounded-lg border bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 ${
                         !isValid ? "border-red-400" : "border-genius-300"
                       }`}
-                      aria-label="Edit minimum acceptable odds (American format)"
+                      aria-label="Edit signal odds (American format)"
                     />
                     <span className="text-xs text-genius-500">
                       American format (e.g. -110, +150)
@@ -612,9 +628,46 @@ export default function CreateSignal() {
                     </p>
                   )}
                   <p className="text-[11px] text-genius-500 mt-2">
-                    Minimum odds you&apos;ll accept. Buyers must place at these odds or better.
-                    {realPick.market === "h2h" && " For moneyline bets, this is the key parameter."}
+                    The odds at which you value this signal.
+                    {realPick.market === "h2h" && " For moneyline signals, this is the key parameter."}
                   </p>
+
+                  {/* Market depth visualization */}
+                  {bookPrices.length > 0 && (
+                    <div className="mt-3 rounded-lg bg-white border border-genius-200 p-3">
+                      <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium mb-2">
+                        Market Depth — {bookPrices.length} {bookPrices.length === 1 ? "book" : "books"}
+                      </p>
+                      <div className="space-y-1">
+                        {bookPrices.map(({ book, price }, i) => {
+                          const american = decimalToAmerican(price);
+                          const atOrBetter = signalDecimal != null && price >= signalDecimal;
+                          return (
+                            <div
+                              key={`${book}-${i}`}
+                              className="flex items-center gap-2 text-xs"
+                            >
+                              <div
+                                className={`h-2 rounded-full ${atOrBetter ? "bg-genius-400" : "bg-slate-200"}`}
+                                style={{ width: `${Math.max(20, Math.min(100, (price / Math.max(...bookPrices.map(p => p.price))) * 100))}%` }}
+                              />
+                              <span className={`font-mono font-medium flex-shrink-0 ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>
+                                {american}
+                              </span>
+                              <span className={`truncate ${atOrBetter ? "text-genius-600" : "text-slate-400"}`}>
+                                {book}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {signalDecimal != null && (
+                        <p className="text-[10px] text-genius-500 mt-2 border-t border-genius-100 pt-2">
+                          {bookPrices.filter(p => p.price >= signalDecimal).length} of {bookPrices.length} books at or above your signal odds
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </>
               );
             })()}
@@ -622,7 +675,7 @@ export default function CreateSignal() {
         )}
 
         <p className="text-xs text-slate-400 mb-3">
-          {sameMarketCount}/10 lines are {realPick?.market === "h2h" ? "moneyline" : realPick?.market} bets — higher same-market ratio = harder to identify your pick
+          {sameMarketCount}/10 lines are {realPick?.market === "h2h" ? "moneyline" : realPick?.market} — higher same-market ratio = harder to identify your signal
         </p>
 
         <div className="space-y-2 mb-6">
@@ -778,7 +831,7 @@ export default function CreateSignal() {
             required
           />
           <p className="text-xs text-slate-500 mt-1">
-            Maximum bet size a buyer can place on this signal. Caps your collateral exposure per purchase.
+            Maximum notional a purchaser can specify. Caps your collateral exposure per purchase.
           </p>
           {(() => {
             const mn = parseFloat(maxNotional);

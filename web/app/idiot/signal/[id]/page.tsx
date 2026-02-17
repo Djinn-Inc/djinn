@@ -14,6 +14,7 @@ import {
   SignalStatus,
   signalStatusLabel,
   formatBps,
+  formatUsdc,
   truncateAddress,
 } from "@/lib/types";
 import type { CandidateLine } from "@/lib/api";
@@ -542,7 +543,7 @@ export default function PurchaseSignal() {
                     required
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Your protection amount. You can bet any size independently &mdash; this sets the fee and how much the genius risks if wrong.
+                    Your protection amount. This sets the fee and how much the genius risks if the signal is wrong. What you do with the information is your business.
                     {signal.maxNotional > 0n && (
                       <span className="block mt-0.5 text-slate-400">
                         Max: ${formatUsdc(signal.maxNotional)} (set by genius)

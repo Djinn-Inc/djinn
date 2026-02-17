@@ -154,6 +154,7 @@ export interface SignalEvent {
   sport: string;
   maxPriceBps: bigint;
   slaMultiplierBps: bigint;
+  maxNotional: bigint;
   expiresAt: bigint;
   blockNumber: number;
 }
@@ -172,6 +173,7 @@ function parseSignalEvents(
       sport: log.args.sport as string,
       maxPriceBps: BigInt(log.args.maxPriceBps),
       slaMultiplierBps: BigInt(log.args.slaMultiplierBps),
+      maxNotional: BigInt(log.args.maxNotional),
       expiresAt: BigInt(log.args.expiresAt),
       blockNumber: log.blockNumber,
     });
