@@ -96,8 +96,14 @@ export function useEthersProvider(): ethers.BrowserProvider | null {
       setProvider(null);
       return;
     }
-    // wagmi's walletClient.transport exposes an EIP-1193 provider
-    const ethProvider = new ethers.BrowserProvider(walletClient.transport, EXPECTED_CHAIN_ID);
+    // Wrap walletClient.request as an EIP-1193 provider so all JSON-RPC calls
+    // (including eth_sendTransaction) route through the wallet's signing flow
+    // (Coinbase Smart Wallet popup, MetaMask extension, etc.)
+    const eip1193 = {
+      request: ({ method, params }: { method: string; params?: unknown[] }) =>
+        walletClient.request({ method, params } as never),
+    };
+    const ethProvider = new ethers.BrowserProvider(eip1193, EXPECTED_CHAIN_ID);
     setProvider(ethProvider);
   }, [walletClient]);
 
