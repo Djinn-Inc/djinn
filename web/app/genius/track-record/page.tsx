@@ -18,7 +18,6 @@ import {
 } from "@/lib/hooks/useSettledSignals";
 
 type ProofState = "idle" | "generating" | "complete" | "error";
-type InputMode = "auto" | "manual";
 
 const OUTCOME_MAP: Record<string, bigint> = {
   Favorable: 1n,
@@ -26,27 +25,10 @@ const OUTCOME_MAP: Record<string, bigint> = {
   Void: 3n,
 };
 
-const EXAMPLE_SIGNAL = JSON.stringify(
-  [
-    {
-      preimage: "12345678901234567890",
-      index: "1",
-      outcome: "1",
-      notional: "1000000",
-      odds: "1910000",
-      slaBps: "15000",
-    },
-  ],
-  null,
-  2,
-);
-
 export default function TrackRecordPage() {
   const { authenticated, user } = usePrivy();
   const address = user?.wallet?.address;
   const router = useRouter();
-  const [inputMode, setInputMode] = useState<InputMode>("auto");
-  const [signalJson, setSignalJson] = useState("");
   const [state, setState] = useState<ProofState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<TrackRecordProofResult | null>(null);
@@ -144,40 +126,6 @@ export default function TrackRecordPage() {
     }
   };
 
-  const handleGenerateFromJson = async () => {
-    setErrorMsg(null);
-    setState("generating");
-
-    try {
-      const parsed = JSON.parse(signalJson);
-      if (!Array.isArray(parsed)) {
-        throw new Error("Input must be a JSON array of signal objects");
-      }
-
-      const signals: SignalData[] = parsed.map(
-        (s: Record<string, string>, i: number) => {
-          if (!s.preimage || !s.index || !s.outcome || !s.notional || !s.odds) {
-            throw new Error(
-              `Signal at index ${i} missing required fields (preimage, index, outcome, notional, odds)`,
-            );
-          }
-          return {
-            preimage: BigInt(s.preimage),
-            index: BigInt(s.index),
-            outcome: BigInt(s.outcome),
-            notional: BigInt(s.notional),
-            odds: BigInt(s.odds),
-            slaBps: BigInt(s.slaBps || "0"),
-          };
-        },
-      );
-
-      await generateAndSetResult(signals);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Proof generation failed");
-      setState("error");
-    }
-  };
 
   const generateAndSetResult = async (signals: SignalData[]) => {
     const proofResult = await generateTrackRecordProof(signals);
@@ -229,18 +177,6 @@ export default function TrackRecordPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result;
-      if (typeof text === "string") {
-        setSignalJson(text);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -355,193 +291,103 @@ export default function TrackRecordPage() {
       ) : (
         /* ─── Input View ─── */
         <div className="space-y-6">
-          {/* Mode toggle */}
-          <div className="flex gap-2">
+          <div className="card">
+            <h2 className="text-lg font-semibold text-slate-900 mb-2">
+              Your Signals
+            </h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Select settled signals to include in your track record proof.
+              Signal data is saved locally when you create signals and merged
+              with on-chain purchase outcomes.
+            </p>
+
+            {signalsLoading && (
+              <div className="text-center py-8">
+                <div className="inline-block w-6 h-6 border-2 border-genius-500 border-t-transparent rounded-full animate-spin mb-2" />
+                <p className="text-xs text-slate-500">Loading signal data...</p>
+              </div>
+            )}
+
+            {signalsError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
+                <p className="text-xs text-red-600">{signalsError}</p>
+              </div>
+            )}
+
+            {!signalsLoading && savedCount === 0 && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-center">
+                <p className="text-sm text-amber-700 mb-2">
+                  No saved signal data found.
+                </p>
+                <p className="text-xs text-amber-600">
+                  Signal data is saved automatically when you create new signals.
+                </p>
+              </div>
+            )}
+
+            {!signalsLoading && proofableSignals.length > 0 && (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-slate-400">
+                    {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
+                  </p>
+                  <button
+                    type="button"
+                    onClick={selectAll}
+                    className="text-xs text-genius-600 hover:text-genius-800"
+                  >
+                    Select all (max 20)
+                  </button>
+                </div>
+
+                <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
+                  {proofableSignals.map((sig) => (
+                    <SignalRow
+                      key={sig.signalId}
+                      signal={sig}
+                      selected={selectedIds.has(sig.signalId)}
+                      onToggle={() => toggleSignal(sig.signalId)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {!signalsLoading && savedCount > 0 && proofableSignals.length === 0 && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
+                <p className="text-sm text-slate-600">
+                  You have {savedCount} saved signal{savedCount !== 1 ? "s" : ""}, but none have settled purchases yet.
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Purchases need to be settled through the audit cycle before they can be included in a proof.
+                </p>
+              </div>
+            )}
+
+            {errorMsg && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
+                <p className="text-xs text-red-600">{errorMsg}</p>
+              </div>
+            )}
+
+            {state === "generating" && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
+                <p className="text-xs text-blue-600">
+                  Generating Groth16 proof... This may take a few seconds.
+                </p>
+              </div>
+            )}
+
             <button
-              type="button"
-              onClick={() => setInputMode("auto")}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                inputMode === "auto"
-                  ? "bg-genius-500 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              onClick={handleGenerateFromSelected}
+              disabled={state === "generating" || selectedIds.size === 0}
+              className="btn-primary w-full py-3"
             >
-              My Signals ({savedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode("manual")}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                inputMode === "manual"
-                  ? "bg-genius-500 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              Manual Input
+              {state === "generating"
+                ? "Generating Proof..."
+                : `Generate Proof (${selectedIds.size} signal${selectedIds.size !== 1 ? "s" : ""})`}
             </button>
           </div>
-
-          {inputMode === "auto" ? (
-            /* ─── Auto-populated signals ─── */
-            <div className="card">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Your Signals
-              </h2>
-              <p className="text-sm text-slate-500 mb-4">
-                Select settled signals to include in your track record proof.
-                Signal data is saved locally when you create signals and merged
-                with on-chain purchase outcomes.
-              </p>
-
-              {signalsLoading && (
-                <div className="text-center py-8">
-                  <div className="inline-block w-6 h-6 border-2 border-genius-500 border-t-transparent rounded-full animate-spin mb-2" />
-                  <p className="text-xs text-slate-500">Loading signal data...</p>
-                </div>
-              )}
-
-              {signalsError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
-                  <p className="text-xs text-red-600">{signalsError}</p>
-                </div>
-              )}
-
-              {!signalsLoading && savedCount === 0 && (
-                <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-center">
-                  <p className="text-sm text-amber-700 mb-2">
-                    No saved signal data found.
-                  </p>
-                  <p className="text-xs text-amber-600">
-                    Signal data is saved automatically when you create new signals.
-                    For signals created before this feature, use the Manual Input tab.
-                  </p>
-                </div>
-              )}
-
-              {!signalsLoading && proofableSignals.length > 0 && (
-                <>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-slate-400">
-                      {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
-                    </p>
-                    <button
-                      type="button"
-                      onClick={selectAll}
-                      className="text-xs text-genius-600 hover:text-genius-800"
-                    >
-                      Select all (max 20)
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
-                    {proofableSignals.map((sig) => (
-                      <SignalRow
-                        key={sig.signalId}
-                        signal={sig}
-                        selected={selectedIds.has(sig.signalId)}
-                        onToggle={() => toggleSignal(sig.signalId)}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {!signalsLoading && savedCount > 0 && proofableSignals.length === 0 && (
-                <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
-                  <p className="text-sm text-slate-600">
-                    You have {savedCount} saved signal{savedCount !== 1 ? "s" : ""}, but none have settled purchases yet.
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Purchases need to be settled through the audit cycle before they can be included in a proof.
-                  </p>
-                </div>
-              )}
-
-              {errorMsg && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
-                  <p className="text-xs text-red-600">{errorMsg}</p>
-                </div>
-              )}
-
-              {state === "generating" && (
-                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
-                  <p className="text-xs text-blue-600">
-                    Generating Groth16 proof... This may take a few seconds.
-                  </p>
-                </div>
-              )}
-
-              <button
-                onClick={handleGenerateFromSelected}
-                disabled={state === "generating" || selectedIds.size === 0}
-                className="btn-primary w-full py-3"
-              >
-                {state === "generating"
-                  ? "Generating Proof..."
-                  : `Generate Proof (${selectedIds.size} signal${selectedIds.size !== 1 ? "s" : ""})`}
-              </button>
-            </div>
-          ) : (
-            /* ─── Manual JSON input ─── */
-            <div className="card">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">
-                Manual Signal Data
-              </h2>
-              <p className="text-sm text-slate-500 mb-4">
-                Paste your signal data as a JSON array, or upload a JSON file.
-                Each signal needs: preimage, index, outcome (1=Favorable,
-                2=Unfavorable, 3=Void), notional, odds, and slaBps. Up to 20
-                signals per proof.
-              </p>
-
-              <div className="mb-4">
-                <label htmlFor="signalFile" className="label">Upload JSON File</label>
-                <input
-                  id="signalFile"
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileUpload}
-                  className="input"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label htmlFor="signalJson" className="label">Or Paste JSON</label>
-                <textarea
-                  id="signalJson"
-                  value={signalJson}
-                  onChange={(e) => setSignalJson(e.target.value)}
-                  placeholder={EXAMPLE_SIGNAL}
-                  rows={12}
-                  className="input font-mono text-xs"
-                />
-              </div>
-
-              {errorMsg && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
-                  <p className="text-xs text-red-600">{errorMsg}</p>
-                </div>
-              )}
-
-              {state === "generating" && (
-                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
-                  <p className="text-xs text-blue-600">
-                    Generating Groth16 proof... This may take a few seconds.
-                  </p>
-                </div>
-              )}
-
-              <button
-                onClick={handleGenerateFromJson}
-                disabled={state === "generating" || !signalJson.trim()}
-                className="btn-primary w-full py-3"
-              >
-                {state === "generating"
-                  ? "Generating Proof..."
-                  : "Generate Track Record Proof"}
-              </button>
-            </div>
-          )}
 
           <div className="card">
             <h3 className="text-sm font-medium text-slate-900 mb-3">

@@ -90,7 +90,7 @@ export default function About() {
             </div>
             <h3 className="font-semibold text-slate-900 mb-2">Purchase Access</h3>
             <p className="text-sm text-slate-500">
-              Buyers deposit USDC and purchase signal access. Miners verify
+              Idiots deposit USDC and purchase signal access. Miners verify
               line availability. The key is released via Shamir secret sharing.
             </p>
           </div>
@@ -140,7 +140,7 @@ export default function About() {
             </ul>
           </div>
           <div className="rounded-2xl border-2 border-idiot-200 bg-idiot-50/50 p-8">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">For Buyers</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-4">For Idiots</h3>
             <ul className="space-y-3 text-sm text-slate-600">
               <li className="flex items-start gap-3">
                 <svg className="w-5 h-5 text-idiot-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

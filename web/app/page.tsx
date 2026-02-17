@@ -82,20 +82,13 @@ export default function Home() {
             </svg>
           </div>
           <h2 className="text-base sm:text-xl font-bold text-slate-900 mb-0.5 sm:mb-1">
-            I&apos;m a Buyer
+            I&apos;m an Idiot
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
             Buy signals
           </p>
         </Link>
       </div>
-
-      {/* Disclaimer */}
-      <p className="text-[11px] text-slate-400 text-center max-w-md mb-8 leading-relaxed">
-        Djinn is a sports intelligence marketplace, not a sportsbook.
-        We do not accept bets, set odds, or match bettors.
-        You purchase analysis; what you do with it is your business.
-      </p>
 
       {/* Bottom links */}
       <div className="flex items-center gap-8 text-sm text-slate-400">
