@@ -1227,46 +1227,76 @@ function BetSection({
   onSelect: (bet: AvailableBet) => void;
   oddsFormat?: "american" | "decimal";
 }) {
+  // Group bets into pairs by line value for compact mobile display
+  const pairs: AvailableBet[][] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < bets.length; i++) {
+    if (used.has(i)) continue;
+    const pair = [bets[i]];
+    used.add(i);
+    // Find the matching opposite side with the same line
+    for (let j = i + 1; j < bets.length; j++) {
+      if (used.has(j)) continue;
+      if (bets[j].line === bets[i].line && bets[j].side !== bets[i].side) {
+        pair.push(bets[j]);
+        used.add(j);
+        break;
+      }
+    }
+    pairs.push(pair);
+  }
+
   return (
     <div>
       <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
         {title}
       </p>
-      <div className="grid grid-cols-2 gap-2">
-        {bets.map((bet, i) => {
-          const lineStr =
-            bet.market === "h2h"
-              ? ""
-              : bet.line != null
-                ? ` ${bet.line > 0 ? "+" : ""}${bet.line}`
-                : "";
-          const priceStr = formatOdds(bet.avgPrice, oddsFormat);
-          const bookLabel = bet.bookCount === 1
-            ? "1 book"
-            : `${bet.bookCount} books`;
+      <div className="space-y-2">
+        {pairs.map((pair, pi) => {
+          const lineVal = pair[0].line;
+          const lineStr = pair[0].market === "h2h"
+            ? ""
+            : lineVal != null
+              ? `${lineVal > 0 ? "+" : ""}${lineVal}`
+              : "";
 
           return (
-            <button
-              key={`${bet.side}-${bet.line}-${i}`}
-              type="button"
-              onClick={() => onSelect(bet)}
-              className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-left hover:border-genius-400 hover:bg-genius-50 transition-colors group"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-800 group-hover:text-genius-800 truncate">
-                  {bet.side}{lineStr}
-                </p>
-                <p className="text-[10px] text-slate-400 group-hover:text-genius-500">
-                  {bookLabel}
-                  {bet.bookCount > 1 && bet.minPrice !== bet.maxPrice && (
-                    <> &middot; {formatOdds(bet.minPrice, oddsFormat)} to {formatOdds(bet.maxPrice, oddsFormat)}</>
-                  )}
-                </p>
-              </div>
-              <span className="text-sm font-mono font-semibold text-slate-600 group-hover:text-genius-600 ml-2 flex-shrink-0">
-                {priceStr}
-              </span>
-            </button>
+            <div key={pi} className="flex gap-2">
+              {pair.map((bet, bi) => {
+                const priceStr = formatOdds(bet.avgPrice, oddsFormat);
+                const bookLabel = bet.bookCount === 1
+                  ? "1 book"
+                  : `${bet.bookCount} books`;
+                // Use short label: just side name for h2h, side + line for spreads/totals
+                const shortSide = bet.market === "h2h"
+                  ? bet.side
+                  : `${bet.side} ${lineStr}`;
+
+                return (
+                  <button
+                    key={`${bet.side}-${bet.line}-${bi}`}
+                    type="button"
+                    onClick={() => onSelect(bet)}
+                    className="flex-1 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-left hover:border-genius-400 hover:bg-genius-50 transition-colors group min-w-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800 group-hover:text-genius-800 break-words">
+                        {shortSide}
+                      </p>
+                      <p className="text-[10px] text-slate-400 group-hover:text-genius-500">
+                        {bookLabel}
+                        {bet.bookCount > 1 && bet.minPrice !== bet.maxPrice && (
+                          <> &middot; {formatOdds(bet.minPrice, oddsFormat)} to {formatOdds(bet.maxPrice, oddsFormat)}</>
+                        )}
+                      </p>
+                    </div>
+                    <span className="text-sm font-mono font-semibold text-slate-600 group-hover:text-genius-600 ml-2 flex-shrink-0">
+                      {priceStr}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
       </div>
