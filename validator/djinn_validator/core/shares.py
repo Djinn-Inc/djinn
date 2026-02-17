@@ -71,7 +71,7 @@ class ShareStore:
                 time.sleep(delay)
         raise RuntimeError("unreachable")
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def _create_tables(self) -> None:
         self._conn.executescript("""
@@ -79,12 +79,13 @@ class ShareStore:
                 version INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS shares (
-                signal_id TEXT PRIMARY KEY,
+                signal_id TEXT NOT NULL,
                 genius_address TEXT NOT NULL,
                 share_x INTEGER NOT NULL,
                 share_y TEXT NOT NULL,
                 encrypted_key_share BLOB NOT NULL,
-                stored_at REAL NOT NULL
+                stored_at REAL NOT NULL,
+                PRIMARY KEY (signal_id, share_x)
             );
             CREATE TABLE IF NOT EXISTS releases (
                 signal_id TEXT NOT NULL,
@@ -122,6 +123,27 @@ class ShareStore:
             # v2: add index on releases.signal_id for faster lookups
             log.info("schema_migration", from_version=max(current, 1), to_version=2)
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id)")
+            self._conn.commit()
+
+        if current < 3:
+            # v3: change PK from signal_id to (signal_id, share_x) so one validator
+            # can store multiple shares per signal (needed for single-validator testing
+            # and for future multi-share configurations)
+            log.info("schema_migration", from_version=max(current, 2), to_version=3)
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS shares_v3 (
+                    signal_id TEXT NOT NULL,
+                    genius_address TEXT NOT NULL,
+                    share_x INTEGER NOT NULL,
+                    share_y TEXT NOT NULL,
+                    encrypted_key_share BLOB NOT NULL,
+                    stored_at REAL NOT NULL,
+                    PRIMARY KEY (signal_id, share_x)
+                );
+                INSERT OR IGNORE INTO shares_v3 SELECT * FROM shares;
+                DROP TABLE shares;
+                ALTER TABLE shares_v3 RENAME TO shares;
+            """)
             self._conn.commit()
 
         self._set_schema_version(self.SCHEMA_VERSION)
