@@ -634,36 +634,34 @@ export default function CreateSignal() {
 
                   {/* Market depth visualization */}
                   {bookPrices.length > 0 && (
-                    <div className="mt-3 rounded-lg bg-white border border-genius-200 p-3">
-                      <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium mb-2">
-                        Market Depth — {bookPrices.length} {bookPrices.length === 1 ? "book" : "books"}
+                    <div className="mt-3 rounded-lg bg-white border border-genius-200 overflow-hidden">
+                      <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium px-3 pt-3 pb-1">
+                        Market Depth
                       </p>
-                      <div className="space-y-1">
-                        {bookPrices.map(({ book, price }, i) => {
-                          const american = decimalToAmerican(price);
-                          const atOrBetter = signalDecimal != null && price >= signalDecimal;
-                          return (
-                            <div
-                              key={`${book}-${i}`}
-                              className="flex items-center gap-2 text-xs"
-                            >
-                              <div
-                                className={`h-2 rounded-full ${atOrBetter ? "bg-genius-400" : "bg-slate-200"}`}
-                                style={{ width: `${Math.max(20, Math.min(100, (price / Math.max(...bookPrices.map(p => p.price))) * 100))}%` }}
-                              />
-                              <span className={`font-mono font-medium flex-shrink-0 ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>
-                                {american}
-                              </span>
-                              <span className={`truncate ${atOrBetter ? "text-genius-600" : "text-slate-400"}`}>
-                                {book}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {bookPrices.map(({ book, price }, i) => {
+                            const american = decimalToAmerican(price);
+                            const atOrBetter = signalDecimal != null && price >= signalDecimal;
+                            return (
+                              <tr
+                                key={`${book}-${i}`}
+                                className={atOrBetter ? "bg-genius-50" : ""}
+                              >
+                                <td className={`pl-3 py-1.5 font-medium ${atOrBetter ? "text-genius-700" : "text-slate-500"}`}>
+                                  {book}
+                                </td>
+                                <td className={`pr-3 py-1.5 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>
+                                  {american}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                       {signalDecimal != null && (
-                        <p className="text-[10px] text-genius-500 mt-2 border-t border-genius-100 pt-2">
-                          {bookPrices.filter(p => p.price >= signalDecimal).length} of {bookPrices.length} books at or above your signal odds
+                        <p className="text-[10px] text-genius-500 px-3 py-2 border-t border-genius-100">
+                          {bookPrices.filter(p => p.price >= signalDecimal).length}/{bookPrices.length} at or above your signal odds
                         </p>
                       )}
                     </div>
