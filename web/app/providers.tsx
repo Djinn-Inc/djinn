@@ -27,7 +27,7 @@ const config = getDefaultConfig({
   multiInjectedProviderDiscovery: false,
   wallets: [
     {
-      groupName: "Recommended",
+      groupName: "Create a Wallet (Free)",
       wallets: [coinbaseWallet],
     },
     {
