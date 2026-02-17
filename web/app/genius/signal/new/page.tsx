@@ -557,7 +557,6 @@ export default function CreateSignal() {
     const useDecimal = usesDecimalOdds(selectedSport.key);
     const oddsFormat: "american" | "decimal" = useDecimal ? "decimal" : "american";
     const signalDecimal = editOdds ? americanToDecimal(editOdds) : null;
-    const ODDS_STEP = 0.05; // decimal increment for nudge buttons
     const LINE_STEP = 0.5; // spread/total increment for nudge buttons
 
     return (
@@ -766,7 +765,7 @@ export default function CreateSignal() {
                           type="button"
                           onClick={() => {
                             const cur = isReal ? (signalDecimal ?? line.price ?? 1.91) : (line.price ?? 1.91);
-                            const next = Math.max(1.01, cur - ODDS_STEP);
+                            const next = nudgeOdds(cur, -1, useDecimal);
                             if (isReal) {
                               setEditOdds(decimalToAmerican(next));
                               setRealPick((prev) => prev ? { ...prev, price: next } : prev);
@@ -799,7 +798,7 @@ export default function CreateSignal() {
                           type="button"
                           onClick={() => {
                             const cur = isReal ? (signalDecimal ?? line.price ?? 1.91) : (line.price ?? 1.91);
-                            const next = Math.min(10, cur + ODDS_STEP);
+                            const next = nudgeOdds(cur, 1, useDecimal);
                             if (isReal) {
                               setEditOdds(decimalToAmerican(next));
                               setRealPick((prev) => prev ? { ...prev, price: next } : prev);
@@ -1270,6 +1269,34 @@ function americanToDecimal(american: string): number | null {
   if (n < 0 && n > -100) return null;
   if (n > 0) return 1 + n / 100;      // +150 → 2.50
   return 1 + 100 / Math.abs(n);        // -150 → 1.667
+}
+
+/**
+ * Nudge decimal odds by ±1 American unit or ±0.01 decimal.
+ * For American: convert to American integer, add delta, convert back.
+ * Skips the dead zone (-99..+99) automatically.
+ */
+function nudgeOdds(currentDecimal: number, delta: number, useDecimal: boolean): number {
+  if (useDecimal) {
+    return Math.max(1.01, Math.min(50, currentDecimal + delta * 0.01));
+  }
+  // Work in American space: round to nearest integer, step by 1
+  let american = 0;
+  if (currentDecimal >= 2.0) {
+    american = Math.round((currentDecimal - 1) * 100); // positive
+  } else if (currentDecimal > 1.0) {
+    american = Math.round(-100 / (currentDecimal - 1)); // negative
+  }
+  american += delta;
+  // Skip dead zone: -99..+99 are invalid American odds
+  if (american >= -99 && american <= 0) american = delta > 0 ? 100 : -100;
+  if (american > 0 && american < 100) american = delta > 0 ? 100 : -100;
+  // Clamp
+  american = Math.max(-5000, Math.min(5000, american));
+  // Convert back to decimal
+  if (american > 0) return 1 + american / 100;
+  if (american < 0) return 1 + 100 / Math.abs(american);
+  return 2.0; // fallback for zero
 }
 
 /** Cryptographically secure random integer in [0, max). Uses rejection sampling. */
