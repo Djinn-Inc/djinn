@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useCommitSignal } from "@/lib/hooks";
 import SecretModal from "@/components/SecretModal";
+import PrivateWorkspace from "@/components/PrivateWorkspace";
 import {
   generateAesKey,
   encrypt,
@@ -423,27 +424,13 @@ export default function CreateSignal() {
   }
 
   const isProcessing = step === "committing" || step === "distributing";
-
-  // ---------- Privacy banner for secret steps ----------
-  const PrivacyBanner = () => (
-    <div className="rounded-lg bg-slate-900 border border-slate-700 px-4 py-3 mb-6 flex items-center gap-3">
-      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0">
-        <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-        </svg>
-      </div>
-      <div>
-        <p className="text-sm font-medium text-white">Private workspace</p>
-        <p className="text-xs text-slate-400">Your pick and edits stay on this device. Nothing is shared until you submit.</p>
-      </div>
-    </div>
-  );
+  const isInteractiveStep = step === "browse" || step === "review" || step === "configure";
 
   // ---------- Step 1: Browse games & pick a bet ----------
   if (step === "browse") {
     return (
+      <PrivateWorkspace open onClose={() => router.push("/genius")}>
       <div className="max-w-3xl mx-auto">
-        <PrivacyBanner />
         <div className="flex items-start justify-between gap-4 mb-2">
           <h1 className="text-3xl font-bold text-slate-900">Create Signal</h1>
           {totalVolume && (
@@ -566,6 +553,7 @@ export default function CreateSignal() {
           </div>
         )}
       </div>
+      </PrivateWorkspace>
     );
   }
 
@@ -581,6 +569,7 @@ export default function CreateSignal() {
     const LINE_STEP = 0.5; // spread/total increment for nudge buttons
 
     return (
+      <PrivateWorkspace open onClose={() => router.push("/genius")}>
       <div className="max-w-2xl mx-auto">
         <button
           onClick={() => setStep("browse")}
@@ -588,8 +577,6 @@ export default function CreateSignal() {
         >
           &larr; Back to Games
         </button>
-
-        <PrivacyBanner />
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Review Lines</h1>
         <p className="text-slate-500 mb-4">
@@ -921,11 +908,13 @@ export default function CreateSignal() {
           </button>
         </div>
       </div>
+      </PrivateWorkspace>
     );
   }
 
   // ---------- Step 3: Configure & Submit ----------
   return (
+    <PrivateWorkspace open onClose={() => router.push("/genius")}>
     <div className="max-w-2xl mx-auto">
       <button
         onClick={() => setStep("review")}
@@ -933,8 +922,6 @@ export default function CreateSignal() {
       >
         &larr; Back to Review
       </button>
-
-      <PrivacyBanner />
 
       <h1 className="text-3xl font-bold text-slate-900 mb-2">Configure Signal</h1>
       <p className="text-slate-500 mb-6">
@@ -1082,6 +1069,7 @@ export default function CreateSignal() {
         </button>
       </form>
     </div>
+    </PrivateWorkspace>
   );
 }
 
