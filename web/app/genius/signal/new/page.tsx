@@ -65,6 +65,8 @@ export default function CreateSignal() {
   const [editOdds, setEditOdds] = useState("");
   // Per-book prices for depth visualization
   const [bookPrices, setBookPrices] = useState<{ book: string; price: number }[]>([]);
+  // Which line is expanded for editing (0-9 index, null = none)
+  const [expandedLine, setExpandedLine] = useState<number | null>(null);
 
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
@@ -176,6 +178,22 @@ export default function CreateSignal() {
       }
     }
     return lines;
+  };
+
+  /** Update any line (real pick or decoy) by its global 0-9 index. */
+  const updateLine = (globalIdx: number, updates: Partial<StructuredLine>) => {
+    if (globalIdx === realIndex) {
+      setRealPick((prev) => prev ? { ...prev, ...updates } : prev);
+      // Sync editOdds if price changed on the real pick
+      if (updates.price != null) {
+        setEditOdds(decimalToAmerican(updates.price));
+      }
+    } else {
+      const decoyIdx = globalIdx < realIndex ? globalIdx : globalIdx - 1;
+      setDecoyLines((prev) =>
+        prev.map((d, i) => (i === decoyIdx ? { ...d, ...updates } : d)),
+      );
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -533,6 +551,7 @@ export default function CreateSignal() {
     const sameMarketCount = allLines.filter(
       (l) => l.market === realPick?.market,
     ).length;
+    const signalDecimal = editOdds ? americanToDecimal(editOdds) : null;
 
     return (
       <div className="max-w-2xl mx-auto">
@@ -544,163 +563,195 @@ export default function CreateSignal() {
         </button>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Review Lines</h1>
-        <p className="text-slate-500 mb-6">
-          Adjust your signal below, then review the full line list. 9 decoy lines
-          are auto-generated from real odds data. Purchasers won&apos;t know which line is yours.
+        <p className="text-slate-500 mb-4">
+          Tap any line to edit it. 9 decoy lines are auto-generated from real odds data.
+          Purchasers won&apos;t know which line is yours.
         </p>
-
-        {/* ─── Editable pick ─── */}
-        {realPick && (
-          <div className="rounded-lg bg-genius-50 border-2 border-genius-300 p-4 mb-6">
-            <p className="text-xs text-genius-600 uppercase tracking-wide font-medium mb-3">
-              Your Pick
-            </p>
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-sm font-bold text-genius-800 flex-1">
-                {realPick.side} — {realPick.away_team} @ {realPick.home_team}
-              </span>
-              {marketOdds && (
-                <span className="text-xs text-genius-600 bg-genius-100 rounded px-2 py-1">
-                  Market: {decimalToAmerican(marketOdds)}
-                </span>
-              )}
-            </div>
-
-            {realPick.market !== "h2h" && (
-              <div className="flex items-center gap-3 mb-3">
-                <label htmlFor="editLine" className="text-xs text-genius-700 font-medium whitespace-nowrap">
-                  {realPick.market === "spreads" ? "Spread" : "Total"}:
-                </label>
-                <input
-                  id="editLine"
-                  type="number"
-                  step="0.5"
-                  value={realPick.line ?? ""}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val) && Number.isFinite(val)) {
-                      setRealPick({ ...realPick, line: val });
-                    }
-                  }}
-                  className="w-28 rounded-lg border border-genius-300 bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 focus:border-genius-400"
-                  aria-label={`Edit ${realPick.market === "spreads" ? "spread" : "total"} value`}
-                />
-                <span className="text-xs text-genius-500">
-                  (adjust by 0.5 increments)
-                </span>
-              </div>
-            )}
-
-            {/* Editable odds — available for ALL markets */}
-            {(() => {
-              const oddsNum = editOdds ? parseInt(editOdds, 10) : null;
-              const isValid = oddsNum === null || oddsNum >= 100 || oddsNum <= -100;
-              const signalDecimal = editOdds ? americanToDecimal(editOdds) : null;
-              return (
-                <>
-                  <div className="flex items-center gap-3">
-                    <label htmlFor="editOdds" className="text-xs text-genius-700 font-medium whitespace-nowrap">
-                      Signal Odds:
-                    </label>
-                    <input
-                      id="editOdds"
-                      type="text"
-                      value={editOdds}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        if (/^[+-]?\d*$/.test(raw)) {
-                          setEditOdds(raw);
-                        }
-                      }}
-                      placeholder="-110"
-                      className={`w-28 rounded-lg border bg-white px-3 py-1.5 text-sm font-mono text-genius-800 focus:ring-2 focus:ring-genius-400 ${
-                        !isValid ? "border-red-400" : "border-genius-300"
-                      }`}
-                      aria-label="Edit signal odds (American format)"
-                    />
-                    <span className="text-xs text-genius-500">
-                      American format (e.g. -110, +150)
-                    </span>
-                  </div>
-                  {!isValid && (
-                    <p className="text-[11px] text-red-500 mt-1">
-                      American odds must be +100 or higher, or -100 or lower.
-                    </p>
-                  )}
-                  <p className="text-[11px] text-genius-500 mt-2">
-                    The odds at which you value this signal.
-                    {realPick.market === "h2h" && " For moneyline signals, this is the key parameter."}
-                  </p>
-
-                  {/* Market depth visualization */}
-                  {bookPrices.length > 0 && (
-                    <div className="mt-3 rounded-lg bg-white border border-genius-200 overflow-hidden">
-                      <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium px-3 pt-3 pb-1">
-                        Market Depth
-                      </p>
-                      <table className="w-full text-xs">
-                        <tbody>
-                          {bookPrices.map(({ book, price }, i) => {
-                            const american = decimalToAmerican(price);
-                            const atOrBetter = signalDecimal != null && price >= signalDecimal;
-                            return (
-                              <tr
-                                key={`${book}-${i}`}
-                                className={atOrBetter ? "bg-genius-50" : ""}
-                              >
-                                <td className={`pl-3 py-1.5 font-medium ${atOrBetter ? "text-genius-700" : "text-slate-500"}`}>
-                                  {book}
-                                </td>
-                                <td className={`pr-3 py-1.5 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>
-                                  {american}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      {signalDecimal != null && (
-                        <p className="text-[10px] text-genius-500 px-3 py-2 border-t border-genius-100">
-                          {bookPrices.filter(p => p.price >= signalDecimal).length}/{bookPrices.length} at or above your signal odds
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
 
         <p className="text-xs text-slate-400 mb-3">
           {sameMarketCount}/10 lines are {realPick?.market === "h2h" ? "moneyline" : realPick?.market} — higher same-market ratio = harder to identify your signal
         </p>
 
         <div className="space-y-2 mb-6">
-          {allLines.map((line, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm ${
-                i === realIndex
-                  ? "bg-genius-50 border-2 border-genius-300 font-medium text-genius-800"
-                  : "bg-slate-50 border border-slate-200 text-slate-600"
-              }`}
-            >
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                i === realIndex
-                  ? "bg-genius-500 text-white"
-                  : "bg-slate-200 text-slate-500"
-              }`}>
-                {i + 1}
-              </span>
-              <span className="flex-1">{formatLine(line)}</span>
-              {i === realIndex && (
-                <span className="text-xs bg-genius-200 text-genius-700 rounded px-2 py-0.5">
-                  YOUR PICK
-                </span>
-              )}
-            </div>
-          ))}
+          {allLines.map((line, i) => {
+            const isReal = i === realIndex;
+            const isExpanded = expandedLine === i;
+            const sides = line.market === "totals"
+              ? ["Over", "Under"]
+              : [line.home_team, line.away_team];
+
+            return (
+              <div
+                key={i}
+                className={`rounded-lg overflow-hidden transition-all ${
+                  isReal
+                    ? "border-2 border-genius-300 bg-genius-50"
+                    : "border border-slate-200 bg-slate-50"
+                }`}
+              >
+                {/* Collapsed row — click to expand */}
+                <div
+                  className={`flex items-center gap-3 px-4 py-3 text-sm cursor-pointer ${
+                    isReal ? "font-medium text-genius-800" : "text-slate-600"
+                  }`}
+                  onClick={() => setExpandedLine(isExpanded ? null : i)}
+                >
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                    isReal ? "bg-genius-500 text-white" : "bg-slate-200 text-slate-500"
+                  }`}>
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate">{formatLine(line)}</span>
+                  {isReal && (
+                    <span className="text-xs bg-genius-200 text-genius-700 rounded px-2 py-0.5 flex-shrink-0">
+                      YOUR PICK
+                    </span>
+                  )}
+                  <svg
+                    className={`w-4 h-4 flex-shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""} ${isReal ? "text-genius-500" : "text-slate-400"}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+
+                {/* Expanded edit panel */}
+                {isExpanded && (
+                  <div className={`px-4 pb-4 pt-2 border-t space-y-3 ${isReal ? "border-genius-200" : "border-slate-200"}`}>
+                    {/* Side selector */}
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Side</p>
+                      <div className="flex gap-2">
+                        {sides.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => updateLine(i, { side: s })}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                              line.side === s
+                                ? isReal ? "bg-genius-500 text-white" : "bg-slate-700 text-white"
+                                : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Line value (spreads/totals only) */}
+                    {line.market !== "h2h" && (
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
+                          {line.market === "spreads" ? "Spread" : "Total"}
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={line.line ?? ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && Number.isFinite(val)) {
+                                updateLine(i, { line: val });
+                              }
+                            }}
+                            className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
+                          />
+                          <input
+                            type="range"
+                            min={line.market === "totals" ? 100 : -15}
+                            max={line.market === "totals" ? 300 : 15}
+                            step="0.5"
+                            value={line.line ?? 0}
+                            onChange={(e) => updateLine(i, { line: parseFloat(e.target.value) })}
+                            className="flex-1 accent-genius-500 h-2"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Odds */}
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
+                        {isReal ? "Signal Odds" : "Odds"}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="text"
+                          value={isReal ? editOdds : (line.price ? decimalToAmerican(line.price) : "")}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (!/^[+-]?\d*$/.test(raw)) return;
+                            if (isReal) {
+                              setEditOdds(raw);
+                              const dec = americanToDecimal(raw);
+                              if (dec != null) setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+                            } else {
+                              const dec = americanToDecimal(raw);
+                              if (dec != null) updateLine(i, { price: dec });
+                            }
+                          }}
+                          placeholder="-110"
+                          className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
+                        />
+                        <input
+                          type="range"
+                          min="1.1"
+                          max="10"
+                          step="0.01"
+                          value={isReal ? (signalDecimal ?? line.price ?? 1.91) : (line.price ?? 1.91)}
+                          onChange={(e) => {
+                            const dec = parseFloat(e.target.value);
+                            if (isReal) {
+                              setEditOdds(decimalToAmerican(dec));
+                              setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+                            } else {
+                              updateLine(i, { price: dec });
+                            }
+                          }}
+                          className="flex-1 accent-genius-500 h-2"
+                        />
+                      </div>
+                      {isReal && (
+                        <p className="text-[10px] text-genius-500 mt-1">
+                          The odds at which you value this signal.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Market depth — real pick only */}
+                    {isReal && bookPrices.length > 0 && (
+                      <div className="rounded-lg bg-white border border-genius-200 overflow-hidden">
+                        <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium px-3 pt-2 pb-1">
+                          Market Depth
+                        </p>
+                        <table className="w-full text-xs">
+                          <tbody>
+                            {bookPrices.map(({ book, price }, bi) => {
+                              const american = decimalToAmerican(price);
+                              const atOrBetter = signalDecimal != null && price >= signalDecimal;
+                              return (
+                                <tr key={`${book}-${bi}`} className={atOrBetter ? "bg-genius-50" : ""}>
+                                  <td className={`pl-3 py-1 font-medium ${atOrBetter ? "text-genius-700" : "text-slate-500"}`}>{book}</td>
+                                  <td className={`pr-3 py-1 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>{american}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        {signalDecimal != null && (
+                          <p className="text-[10px] text-genius-500 px-3 py-1.5 border-t border-genius-100">
+                            {bookPrices.filter(p => p.price >= signalDecimal).length}/{bookPrices.length} at or above your signal odds
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex gap-3">
