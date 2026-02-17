@@ -424,10 +424,26 @@ export default function CreateSignal() {
 
   const isProcessing = step === "committing" || step === "distributing";
 
+  // ---------- Privacy banner for secret steps ----------
+  const PrivacyBanner = () => (
+    <div className="rounded-lg bg-slate-900 border border-slate-700 px-4 py-3 mb-6 flex items-center gap-3">
+      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0">
+        <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-sm font-medium text-white">Private workspace</p>
+        <p className="text-xs text-slate-400">Your pick and edits stay on this device. Nothing is shared until you submit.</p>
+      </div>
+    </div>
+  );
+
   // ---------- Step 1: Browse games & pick a bet ----------
   if (step === "browse") {
     return (
       <div className="max-w-3xl mx-auto">
+        <PrivacyBanner />
         <div className="flex items-start justify-between gap-4 mb-2">
           <h1 className="text-3xl font-bold text-slate-900">Create Signal</h1>
           {totalVolume && (
@@ -552,21 +568,6 @@ export default function CreateSignal() {
       </div>
     );
   }
-
-  // ---------- Privacy banner for secret steps ----------
-  const PrivacyBanner = () => (
-    <div className="rounded-lg bg-slate-900 border border-slate-700 px-4 py-3 mb-6 flex items-center gap-3">
-      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0">
-        <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-        </svg>
-      </div>
-      <div>
-        <p className="text-sm font-medium text-white">Private workspace</p>
-        <p className="text-xs text-slate-400">Your pick and edits stay on this device. Nothing is shared until you submit.</p>
-      </div>
-    </div>
-  );
 
   // ---------- Step 2: Review lines ----------
   if (step === "review") {
