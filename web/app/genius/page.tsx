@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import QualityScore from "@/components/QualityScore";
-import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUsdcBalance } from "@/lib/hooks";
+import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUsdcBalance, humanizeError } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { useTrackRecordProofs } from "@/lib/hooks/useTrackRecordProofs";
@@ -34,7 +34,7 @@ export default function GeniusDashboard() {
       refreshCollateral();
       refreshWalletUsdc();
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : "Deposit failed");
+      setTxError(humanizeError(err, "Deposit failed"));
     }
   };
 
@@ -46,7 +46,7 @@ export default function GeniusDashboard() {
       setWithdrawAmount("");
       refreshCollateral();
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : "Withdraw failed");
+      setTxError(humanizeError(err, "Withdraw failed"));
     }
   };
 

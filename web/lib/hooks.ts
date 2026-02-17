@@ -519,17 +519,16 @@ export function useDepositEscrow() {
       setLoading(true);
       setError(null);
       try {
-        const usdc = getUsdcContract(signer);
-        const balance = await usdc.balanceOf(await signer.getAddress());
+        // Use read provider for pre-checks (Privy RPC is unreliable for reads)
+        const usdcRead = getUsdcContract(getReadProvider());
+        const addr = await signer.getAddress();
+        const balance = await usdcRead.balanceOf(addr);
         if (balance < amount) {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
-        // Reset allowance to 0 first to prevent ERC-20 approve race condition
-        const currentEscrowAllowance = await usdc.allowance(await signer.getAddress(), ADDRESSES.escrow);
-        if (currentEscrowAllowance > 0n) {
-          const resetTx = await usdc.approve(ADDRESSES.escrow, 0n);
-          await resetTx.wait();
-        }
+
+        // Approve and deposit (signer needed for write txs)
+        const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
         await approveTx.wait();
 
@@ -562,13 +561,8 @@ export function useDepositCollateral() {
       setLoading(true);
       setError(null);
       try {
+        // Approve and deposit (no allowance pre-check — avoids Privy RPC read failures)
         const usdc = getUsdcContract(signer);
-        // Reset allowance to 0 first to prevent ERC-20 approve race condition
-        const currentCollateralAllowance = await usdc.allowance(await signer.getAddress(), ADDRESSES.collateral);
-        if (currentCollateralAllowance > 0n) {
-          const resetTx = await usdc.approve(ADDRESSES.collateral, 0n);
-          await resetTx.wait();
-        }
         const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
         await approveTx.wait();
 
