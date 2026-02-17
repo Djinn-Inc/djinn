@@ -1,25 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useEthersProvider } from "../hooks";
+import { getReadProvider } from "../hooks";
 import { getPurchasesByBuyer } from "../events";
 import type { PurchaseEvent } from "../events";
 
 export function usePurchaseHistory(buyerAddress?: string) {
-  const provider = useEthersProvider();
   const [purchases, setPurchases] = useState<PurchaseEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !buyerAddress) {
+    if (!buyerAddress) {
       setPurchases([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const provider = getReadProvider();
       const result = await getPurchasesByBuyer(provider, buyerAddress);
       if (!cancelledRef.current) {
         setPurchases(result);
@@ -33,7 +33,7 @@ export function usePurchaseHistory(buyerAddress?: string) {
         setLoading(false);
       }
     }
-  }, [provider, buyerAddress]);
+  }, [buyerAddress]);
 
   useEffect(() => {
     cancelledRef.current = false;

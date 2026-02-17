@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
-import { useEthersProvider } from "../hooks";
+import { getReadProvider } from "../hooks";
 import { getTrackRecordContract, ADDRESSES } from "../contracts";
 
 export interface TrackRecordProofEntry {
@@ -19,23 +19,22 @@ export interface TrackRecordProofEntry {
 }
 
 export function useTrackRecordProofs(geniusAddress?: string) {
-  const provider = useEthersProvider();
   const [proofs, setProofs] = useState<TrackRecordProofEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !geniusAddress || ADDRESSES.trackRecord === ethers.ZeroAddress) {
+    if (!geniusAddress || ADDRESSES.trackRecord === ethers.ZeroAddress) {
       setProofs([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const provider = getReadProvider();
       const contract = getTrackRecordContract(provider);
       const filter = contract.filters.TrackRecordSubmitted(null, geniusAddress);
-      // Limit scan to last ~6 months on Base (~43,200 blocks/day × 180 days)
       const latestBlock = await provider.getBlockNumber();
       const fromBlock = Math.max(0, latestBlock - 7_776_000);
       const events = await contract.queryFilter(filter, fromBlock, "latest");
@@ -69,7 +68,7 @@ export function useTrackRecordProofs(geniusAddress?: string) {
         setLoading(false);
       }
     }
-  }, [provider, geniusAddress]);
+  }, [geniusAddress]);
 
   useEffect(() => {
     cancelledRef.current = false;

@@ -1,22 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useEthersProvider } from "../hooks";
+import { getReadProvider } from "../hooks";
 import { getActiveSignals, getSignalsByGenius } from "../events";
 import type { SignalEvent } from "../events";
 
 export function useActiveSignals(sport?: string, geniusAddress?: string, includeAll: boolean = false) {
-  const provider = useEthersProvider();
   const [signals, setSignals] = useState<SignalEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider) return;
     setLoading(true);
     setError(null);
     try {
+      const provider = getReadProvider();
       let result: SignalEvent[];
       if (geniusAddress) {
         result = await getSignalsByGenius(provider, geniusAddress, 0, includeAll);
@@ -40,7 +39,7 @@ export function useActiveSignals(sport?: string, geniusAddress?: string, include
         setLoading(false);
       }
     }
-  }, [provider, sport, geniusAddress, includeAll]);
+  }, [sport, geniusAddress, includeAll]);
 
   useEffect(() => {
     cancelledRef.current = false;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useEthersProvider } from "../hooks";
+import { getReadProvider } from "../hooks";
 import { getEscrowContract } from "../contracts";
 import { fetchGeniusSignals, type SubgraphSignal } from "../subgraph";
 
@@ -57,7 +57,6 @@ export function getSavedSignals(): SavedSignalData[] {
  * purchase data to produce proof-ready signal records.
  */
 export function useSettledSignals(geniusAddress: string | undefined) {
-  const provider = useEthersProvider();
   const [signals, setSignals] = useState<ProofReadySignal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +87,7 @@ export function useSettledSignals(geniusAddress: string | undefined) {
       }
 
       // Step 3: For purchases with settled outcomes, try to get odds from contract
-      const escrow = provider ? getEscrowContract(provider) : null;
+      const escrow = getEscrowContract(getReadProvider());
 
       const results: ProofReadySignal[] = [];
 
@@ -103,7 +102,7 @@ export function useSettledSignals(geniusAddress: string | undefined) {
 
             let odds = "0";
             // Try to fetch odds from on-chain Purchase struct
-            if (escrow && p.onChainPurchaseId) {
+            if (p.onChainPurchaseId) {
               try {
                 const purchase = await escrow.getPurchase(p.onChainPurchaseId);
                 odds = purchase.odds?.toString() ?? "0";
@@ -146,7 +145,7 @@ export function useSettledSignals(geniusAddress: string | undefined) {
         setLoading(false);
       }
     }
-  }, [geniusAddress, provider]);
+  }, [geniusAddress]);
 
   useEffect(() => {
     cancelledRef.current = false;

@@ -70,7 +70,21 @@ export function humanizeError(err: unknown, fallback = "Transaction failed"): st
 const EXPECTED_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532");
 
 // ---------------------------------------------------------------------------
-// Provider & signer hooks — uses Privy's wallet provider (embedded or external)
+// Read-only provider — uses public RPC for reliable reads (not Privy's RPC)
+// ---------------------------------------------------------------------------
+
+const READ_RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://sepolia.base.org";
+let _readProvider: ethers.JsonRpcProvider | null = null;
+
+export function getReadProvider(): ethers.JsonRpcProvider {
+  if (!_readProvider) {
+    _readProvider = new ethers.JsonRpcProvider(READ_RPC_URL, EXPECTED_CHAIN_ID, { staticNetwork: true });
+  }
+  return _readProvider;
+}
+
+// ---------------------------------------------------------------------------
+// Provider & signer hooks — uses Privy's wallet provider for signing
 // ---------------------------------------------------------------------------
 
 export function useEthersProvider(): ethers.BrowserProvider | null {
@@ -165,19 +179,18 @@ export function useChainId(): { chainId: number | null; isCorrectChain: boolean 
 // ---------------------------------------------------------------------------
 
 export function useWalletUsdcBalance(address: string | undefined) {
-  const provider = useEthersProvider();
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) {
+    if (!address) {
       setBalance(0n);
       return;
     }
     setLoading(true);
     try {
-      const usdc = getUsdcContract(provider);
+      const usdc = getUsdcContract(getReadProvider());
       const bal = await usdc.balanceOf(address);
       if (!cancelledRef.current) setBalance(BigInt(bal));
     } catch {
@@ -186,7 +199,7 @@ export function useWalletUsdcBalance(address: string | undefined) {
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [provider, address]);
+  }, [address]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -202,21 +215,20 @@ export function useWalletUsdcBalance(address: string | undefined) {
 // ---------------------------------------------------------------------------
 
 export function useEscrowBalance(address: string | undefined) {
-  const provider = useEthersProvider();
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) {
+    if (!address) {
       setBalance(0n);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const contract = getEscrowContract(provider);
+      const contract = getEscrowContract(getReadProvider());
       const bal = await contract.getBalance(address);
       if (!cancelledRef.current) setBalance(BigInt(bal));
     } catch (err) {
@@ -227,7 +239,7 @@ export function useEscrowBalance(address: string | undefined) {
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [provider, address]);
+  }, [address]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -243,21 +255,20 @@ export function useEscrowBalance(address: string | undefined) {
 // ---------------------------------------------------------------------------
 
 export function useCreditBalance(address: string | undefined) {
-  const provider = useEthersProvider();
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) {
+    if (!address) {
       setBalance(0n);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const contract = getCreditLedgerContract(provider);
+      const contract = getCreditLedgerContract(getReadProvider());
       const bal = await contract.balanceOf(address);
       if (!cancelledRef.current) setBalance(BigInt(bal));
     } catch (err) {
@@ -268,7 +279,7 @@ export function useCreditBalance(address: string | undefined) {
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [provider, address]);
+  }, [address]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -284,7 +295,6 @@ export function useCreditBalance(address: string | undefined) {
 // ---------------------------------------------------------------------------
 
 export function useCollateral(address: string | undefined) {
-  const provider = useEthersProvider();
   const [deposit, setDeposit] = useState<bigint>(0n);
   const [locked, setLocked] = useState<bigint>(0n);
   const [available, setAvailable] = useState<bigint>(0n);
@@ -293,7 +303,7 @@ export function useCollateral(address: string | undefined) {
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !address) {
+    if (!address) {
       setDeposit(0n);
       setLocked(0n);
       setAvailable(0n);
@@ -302,7 +312,7 @@ export function useCollateral(address: string | undefined) {
     setLoading(true);
     setError(null);
     try {
-      const contract = getCollateralContract(provider);
+      const contract = getCollateralContract(getReadProvider());
       const [d, l, a] = await Promise.all([
         contract.getDeposit(address),
         contract.getLocked(address),
@@ -321,7 +331,7 @@ export function useCollateral(address: string | undefined) {
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [provider, address]);
+  }, [address]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -337,14 +347,13 @@ export function useCollateral(address: string | undefined) {
 // ---------------------------------------------------------------------------
 
 export function useSignal(signalId: bigint | undefined) {
-  const provider = useEthersProvider();
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (!provider || signalId === undefined) {
+    if (signalId === undefined) {
       setSignal(null);
       return;
     }
@@ -352,7 +361,7 @@ export function useSignal(signalId: bigint | undefined) {
     setLoading(true);
     setError(null);
 
-    const contract = getSignalCommitmentContract(provider);
+    const contract = getSignalCommitmentContract(getReadProvider());
     const toBigInt = (v: unknown): bigint => {
       if (typeof v === "bigint") return v;
       if (typeof v === "number" || typeof v === "string") return BigInt(v);
@@ -388,7 +397,7 @@ export function useSignal(signalId: bigint | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [provider, signalId]);
+  }, [signalId]);
 
   return { signal, loading, error };
 }

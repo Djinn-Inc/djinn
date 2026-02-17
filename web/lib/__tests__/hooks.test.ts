@@ -21,6 +21,7 @@ vi.mock("../hooks", async () => {
   return {
     ...(actual as Record<string, unknown>),
     useEthersProvider: () => mockProvider,
+    getReadProvider: () => mockProvider,
   };
 });
 

@@ -1,25 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useEthersProvider } from "../hooks";
+import { getReadProvider } from "../hooks";
 import { getAuditsByGenius, getAuditsByIdiot } from "../events";
 import type { AuditEvent } from "../events";
 
 export function useAuditHistory(geniusAddress?: string) {
-  const provider = useEthersProvider();
   const [audits, setAudits] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !geniusAddress) {
+    if (!geniusAddress) {
       setAudits([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const provider = getReadProvider();
       const result = await getAuditsByGenius(provider, geniusAddress);
       if (!cancelledRef.current) {
         setAudits(result);
@@ -33,7 +33,7 @@ export function useAuditHistory(geniusAddress?: string) {
         setLoading(false);
       }
     }
-  }, [provider, geniusAddress]);
+  }, [geniusAddress]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -43,7 +43,6 @@ export function useAuditHistory(geniusAddress?: string) {
     };
   }, [refresh]);
 
-  // Compute aggregate quality score from audit history
   const aggregateQualityScore = audits.reduce(
     (sum, a) => sum + a.qualityScore,
     0n,
@@ -53,20 +52,20 @@ export function useAuditHistory(geniusAddress?: string) {
 }
 
 export function useIdiotAuditHistory(idiotAddress?: string) {
-  const provider = useEthersProvider();
   const [audits, setAudits] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!provider || !idiotAddress) {
+    if (!idiotAddress) {
       setAudits([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const provider = getReadProvider();
       const result = await getAuditsByIdiot(provider, idiotAddress);
       if (!cancelledRef.current) {
         setAudits(result);
@@ -80,7 +79,7 @@ export function useIdiotAuditHistory(idiotAddress?: string) {
         setLoading(false);
       }
     }
-  }, [provider, idiotAddress]);
+  }, [idiotAddress]);
 
   useEffect(() => {
     cancelledRef.current = false;
