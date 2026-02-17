@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
-import { useCommitSignal } from "@/lib/hooks";
+import { useCommitSignal, useCollateral, useDepositCollateral, useWalletUsdcBalance } from "@/lib/hooks";
 import SecretModal from "@/components/SecretModal";
 import PrivateWorkspace from "@/components/PrivateWorkspace";
 import {
@@ -47,6 +47,13 @@ export default function CreateSignal() {
   const { signals: existingSignals } = useActiveSignals(undefined, address);
   const signalCount = existingSignals.length;
   const MAX_PROOF_SIGNALS = 20;
+
+  // Collateral for inline deposit on configure step
+  const { deposit: collateralDeposit, available: collateralAvailable, refresh: refreshCollateral } = useCollateral(address);
+  const { deposit: depositCollateral, loading: depositCollateralLoading } = useDepositCollateral();
+  const { balance: walletUsdc } = useWalletUsdcBalance(address);
+  const [inlineDepositAmount, setInlineDepositAmount] = useState("");
+  const [inlineDepositError, setInlineDepositError] = useState<string | null>(null);
 
   // Wizard step
   const [step, setStep] = useState<WizardStep>("browse");
@@ -1060,6 +1067,62 @@ export default function CreateSignal() {
             {step === "committing" ? "Typically 10\u201330 seconds" : "A few seconds"}
           </p>
         </SecretModal>
+
+        {/* Collateral check — genius needs enough to cover SLA */}
+        {(() => {
+          const maxNotionalUsdc = parseFloat(maxNotional) || 0;
+          const slaPct = parseFloat(slaMultiplier) || 100;
+          const requiredCollateral = BigInt(Math.round(maxNotionalUsdc * (slaPct / 100) * 1e6));
+          const hasEnough = collateralAvailable >= requiredCollateral;
+
+          if (!hasEnough) {
+            const needed = Number(requiredCollateral - collateralAvailable) / 1e6;
+            const walletHasUsdc = walletUsdc > 0n;
+            return (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 mb-4">
+                <p className="text-sm font-medium text-amber-800 mb-1">
+                  Collateral needed: ${needed.toLocaleString("en-US")} USDC more
+                </p>
+                <p className="text-xs text-amber-600 mb-3">
+                  At ${maxNotionalUsdc.toLocaleString()} max notional with {slaPct}% SLA, you need ${(Number(requiredCollateral) / 1e6).toLocaleString()} in available collateral.
+                  {walletHasUsdc ? ` You have $${(Number(walletUsdc) / 1e6).toLocaleString()} in your wallet.` : ""}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    placeholder="Amount (USDC)"
+                    className="input flex-1 text-sm"
+                    value={inlineDepositAmount}
+                    onChange={(e) => setInlineDepositAmount(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={depositCollateralLoading || !inlineDepositAmount}
+                    className="btn-primary text-sm whitespace-nowrap"
+                    onClick={async () => {
+                      setInlineDepositError(null);
+                      try {
+                        const { parseUsdc } = await import("@/lib/types");
+                        await depositCollateral(parseUsdc(inlineDepositAmount));
+                        setInlineDepositAmount("");
+                        refreshCollateral();
+                      } catch (err) {
+                        const { humanizeError } = await import("@/lib/hooks");
+                        setInlineDepositError(humanizeError(err, "Deposit failed"));
+                      }
+                    }}
+                  >
+                    {depositCollateralLoading ? "Depositing..." : "Deposit Collateral"}
+                  </button>
+                </div>
+                {inlineDepositError && (
+                  <p className="text-xs text-red-600 mt-2">{inlineDepositError}</p>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         <button
           type="submit"
