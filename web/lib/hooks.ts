@@ -96,14 +96,13 @@ export function useEthersProvider(): ethers.BrowserProvider | null {
       setProvider(null);
       return;
     }
-    // Wrap walletClient.request as an EIP-1193 provider so all JSON-RPC calls
-    // (including eth_sendTransaction) route through the wallet's signing flow
-    // (Coinbase Smart Wallet popup, MetaMask extension, etc.)
-    const eip1193 = {
-      request: ({ method, params }: { method: string; params?: unknown[] }) =>
-        walletClient.request({ method, params } as never),
+    const { chain, transport } = walletClient;
+    const network = {
+      chainId: chain.id,
+      name: chain.name,
+      ensAddress: chain.contracts?.ensRegistry?.address,
     };
-    const ethProvider = new ethers.BrowserProvider(eip1193, EXPECTED_CHAIN_ID);
+    const ethProvider = new ethers.BrowserProvider(transport, network);
     setProvider(ethProvider);
   }, [walletClient]);
 
@@ -111,22 +110,20 @@ export function useEthersProvider(): ethers.BrowserProvider | null {
 }
 
 export function useEthersSigner(): ethers.Signer | null {
+  const { data: walletClient } = useWalletClient();
   const provider = useEthersProvider();
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    if (provider) {
-      provider.getSigner().then((s) => {
-        if (!cancelled) setSigner(s);
-      }).catch(() => {
-        if (!cancelled) setSigner(null);
-      });
-    } else {
+    if (!provider || !walletClient) {
       setSigner(null);
+      return;
     }
-    return () => { cancelled = true; };
-  }, [provider]);
+    // Create signer directly with the account address — avoids getSigner()
+    // which can fail with smart contract wallets (Coinbase Smart Wallet)
+    const s = new ethers.JsonRpcSigner(provider, walletClient.account.address);
+    setSigner(s);
+  }, [provider, walletClient]);
 
   return signer;
 }
