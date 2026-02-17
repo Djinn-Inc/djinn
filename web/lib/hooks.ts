@@ -96,13 +96,14 @@ export function useEthersProvider(): ethers.BrowserProvider | null {
       setProvider(null);
       return;
     }
-    const { chain, transport } = walletClient;
-    const network = {
-      chainId: chain.id,
-      name: chain.name,
-      ensAddress: chain.contracts?.ensRegistry?.address,
-    };
-    const ethProvider = new ethers.BrowserProvider(transport, network);
+    // Pass walletClient itself as the EIP-1193 provider — its request()
+    // method routes signing through the wallet (Coinbase Smart Wallet popup,
+    // MetaMask extension, etc.). Using walletClient.transport only gives
+    // read-only RPC access and cannot sign transactions.
+    const ethProvider = new ethers.BrowserProvider(
+      walletClient as unknown as ethers.Eip1193Provider,
+      EXPECTED_CHAIN_ID,
+    );
     setProvider(ethProvider);
   }, [walletClient]);
 
@@ -110,20 +111,23 @@ export function useEthersProvider(): ethers.BrowserProvider | null {
 }
 
 export function useEthersSigner(): ethers.Signer | null {
-  const { data: walletClient } = useWalletClient();
   const provider = useEthersProvider();
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
 
   useEffect(() => {
-    if (!provider || !walletClient) {
+    let cancelled = false;
+    if (provider) {
+      provider.getSigner().then((s) => {
+        if (!cancelled) setSigner(s);
+      }).catch((err) => {
+        console.error("[useEthersSigner] getSigner failed:", err);
+        if (!cancelled) setSigner(null);
+      });
+    } else {
       setSigner(null);
-      return;
     }
-    // Create signer directly with the account address — avoids getSigner()
-    // which can fail with smart contract wallets (Coinbase Smart Wallet)
-    const s = new ethers.JsonRpcSigner(provider, walletClient.account.address);
-    setSigner(s);
-  }, [provider, walletClient]);
+    return () => { cancelled = true; };
+  }, [provider]);
 
   return signer;
 }
