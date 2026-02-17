@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useCommitSignal } from "@/lib/hooks";
+import SecretModal from "@/components/SecretModal";
 import {
   generateAesKey,
   encrypt,
@@ -1040,15 +1041,17 @@ export default function CreateSignal() {
           </div>
         )}
 
-        {isProcessing && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4" aria-live="polite">
-            <p className="text-sm text-blue-600">
-              {step === "committing"
-                ? "Encrypting and committing signal on-chain... (typically 10\u201330s)"
-                : "Distributing key shares to validators... (a few seconds)"}
-            </p>
-          </div>
-        )}
+        <SecretModal
+          open={isProcessing}
+          title={step === "committing" ? "Encrypting & Committing Signal" : "Distributing Key Shares"}
+          message={step === "committing"
+            ? "Your pick is being encrypted locally, then the encrypted blob is committed on-chain. Nobody can see your pick."
+            : "Splitting your encryption key into shares and distributing them to validators. Your full key never leaves this device."}
+        >
+          <p className="text-xs text-slate-400">
+            {step === "committing" ? "Typically 10\u201330 seconds" : "A few seconds"}
+          </p>
+        </SecretModal>
 
         <button
           type="submit"

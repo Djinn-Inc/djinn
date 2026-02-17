@@ -11,6 +11,7 @@ import {
 import type { TrackRecordProofResult } from "@/lib/zkproof";
 import { useSubmitTrackRecord } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/types";
+import SecretModal from "@/components/SecretModal";
 import {
   useSettledSignals,
   getSavedSignals,
@@ -370,13 +371,13 @@ export default function TrackRecordPage() {
               </div>
             )}
 
-            {state === "generating" && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4" aria-live="polite">
-                <p className="text-xs text-blue-600">
-                  Generating Groth16 proof... This may take a few seconds.
-                </p>
-              </div>
-            )}
+            <SecretModal
+              open={state === "generating"}
+              title="Generating Zero-Knowledge Proof"
+              message="Your signal preimages and outcomes are being used to generate a Groth16 proof. Only aggregate statistics are revealed — individual picks stay secret."
+            >
+              <p className="text-xs text-slate-400">This may take 10–30 seconds</p>
+            </SecretModal>
 
             <button
               onClick={handleGenerateFromSelected}

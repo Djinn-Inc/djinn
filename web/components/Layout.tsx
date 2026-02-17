@@ -14,12 +14,19 @@ const NAV_LINKS = [
   { href: "/about", label: "About" },
 ] as const;
 
+const IS_TESTNET = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532") !== 8453;
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+      {IS_TESTNET && (
+        <div className="bg-amber-500 text-white text-center text-xs font-medium py-1.5 px-4">
+          Testnet &mdash; Base Sepolia. Not real money.
+        </div>
+      )}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">

@@ -19,6 +19,9 @@ import type { Signal, CommitParams } from "./types";
 // ---------------------------------------------------------------------------
 
 const REVERT_PATTERNS: [RegExp, string][] = [
+  [/missing revert data/i, "Contract not deployed. The protocol contracts need to be deployed before you can transact."],
+  [/could not detect network/i, "Cannot connect to the blockchain. Check your network connection."],
+  [/CALL_EXCEPTION.*data=null/i, "Contract not deployed. The protocol contracts need to be deployed before you can transact."],
   [/Insufficient collateral/i, "You don't have enough collateral deposited"],
   [/Insufficient balance/i, "Insufficient USDC balance"],
   [/Insufficient escrow/i, "Not enough funds in your escrow account"],
