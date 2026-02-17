@@ -649,28 +649,26 @@ export default function CreateSignal() {
                     {!isReal && (
                       <div>
                         <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Game</p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600 flex-1 truncate">
-                            {line.away_team} @ {line.home_team}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const others = events.filter((ev) => ev.id !== line.event_id);
-                              if (others.length === 0) return;
-                              const ev = others[cryptoRandomInt(others.length)];
-                              updateLine(i, {
-                                event_id: ev.id,
-                                home_team: ev.home_team,
-                                away_team: ev.away_team,
-                                sport: ev.sport_key,
-                              });
-                            }}
-                            className="rounded-lg px-3 py-1.5 text-xs font-medium bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors"
-                          >
-                            Change Game
-                          </button>
-                        </div>
+                        <select
+                          value={line.event_id}
+                          onChange={(e) => {
+                            const ev = events.find((ev) => ev.id === e.target.value);
+                            if (!ev) return;
+                            updateLine(i, {
+                              event_id: ev.id,
+                              home_team: ev.home_team,
+                              away_team: ev.away_team,
+                              sport: ev.sport_key,
+                            });
+                          }}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-genius-400"
+                        >
+                          {events.map((ev) => (
+                            <option key={ev.id} value={ev.id}>
+                              {ev.away_team} @ {ev.home_team}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     )}
 

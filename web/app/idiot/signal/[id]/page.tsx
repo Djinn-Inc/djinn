@@ -447,7 +447,8 @@ export default function PurchaseSignal() {
                   {formatBps(signal.slaMultiplierBps)}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Genius risks {formatBps(signal.slaMultiplierBps)} of your notional if wrong
+                  Genius risks {formatBps(signal.slaMultiplierBps)} of your notional if wrong.
+                  If the signal is correct, the Genius keeps your fee.
                 </p>
               </div>
               <div>

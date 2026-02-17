@@ -54,8 +54,7 @@ export default function Leaderboard() {
 
       {!configured && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-sm text-amber-700">
-          Subgraph not configured. Leaderboard data will appear once the
-          subgraph is deployed and NEXT_PUBLIC_SUBGRAPH_URL is set.
+          The leaderboard is being set up. Check back soon to see Genius rankings.
         </div>
       )}
 
@@ -135,9 +134,13 @@ export default function Leaderboard() {
                 >
                   <td className="py-4 text-slate-500 font-mono">{i + 1}</td>
                   <td className="py-4">
-                    <span className="font-mono text-slate-900">
+                    <button
+                      className="font-mono text-slate-900 hover:text-genius-600 transition-colors cursor-pointer"
+                      title="Copy full address"
+                      onClick={() => navigator.clipboard.writeText(entry.address)}
+                    >
                       {truncateAddress(entry.address)}
-                    </span>
+                    </button>
                   </td>
                   <td className="py-4">
                     <QualityScore score={entry.qualityScore} size="sm" />

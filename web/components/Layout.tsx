@@ -9,7 +9,7 @@ import WalletButton from "./WalletButton";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/genius", label: "Genius" },
-  { href: "/idiot", label: "Idiot" },
+  { href: "/idiot", label: "Buyer" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/about", label: "About" },
 ] as const;
@@ -198,6 +198,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 Bittensor Subnet 103.
                 <br />
                 Settled in USDC on Base.
+              </p>
+              <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">
+                Djinn sells information, not bets.
               </p>
             </div>
             <div>
