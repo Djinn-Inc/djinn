@@ -390,10 +390,10 @@ export default function PurchaseSignal() {
   return (
     <div className="max-w-3xl mx-auto">
       <button
-        onClick={() => router.back()}
+        onClick={() => router.push("/idiot")}
         className="text-sm text-slate-500 hover:text-slate-900 mb-6 transition-colors"
       >
-        &larr; Back
+        &larr; Back to Dashboard
       </button>
 
       <div className="grid md:grid-cols-3 gap-6">
