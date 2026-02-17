@@ -69,18 +69,18 @@ export default function GeniusDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Genius Dashboard</h1>
           <p className="text-slate-500 mt-1">
             Manage your signals, collateral, and track record
           </p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/genius/track-record" className="btn-secondary">
-            Track Record Proof
+        <div className="flex gap-3 flex-shrink-0">
+          <Link href="/genius/track-record" className="btn-secondary text-sm">
+            Track Record
           </Link>
-          <Link href="/genius/signal/new" className="btn-primary">
+          <Link href="/genius/signal/new" className="btn-primary text-sm">
             Create Signal
           </Link>
         </div>
@@ -211,7 +211,8 @@ export default function GeniusDashboard() {
               ) : audits.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-500 py-8">
-                    No audit history yet
+                    No audit history yet. Audits happen automatically after every 10
+                    signals settle between you and a buyer.
                   </td>
                 </tr>
               ) : (
@@ -275,10 +276,16 @@ export default function GeniusDashboard() {
             <p className="text-center text-red-500 py-8">{proofsError}</p>
           </div>
         ) : proofs.length === 0 ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">
-              No verified track record proofs yet. Generate and submit a proof to build your on-chain reputation.
+          <div className="card text-center py-8">
+            <p className="text-slate-500 mb-3">
+              No verified track record proofs yet.
             </p>
+            <Link
+              href="/genius/track-record"
+              className="text-sm text-genius-500 hover:text-genius-600 font-medium transition-colors"
+            >
+              Generate your first proof to build your on-chain reputation &rarr;
+            </Link>
           </div>
         ) : (
           <div className="space-y-3">

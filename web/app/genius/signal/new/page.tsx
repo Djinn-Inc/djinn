@@ -981,8 +981,9 @@ export default function CreateSignal() {
             required
           />
           <p className="text-xs text-slate-500 mt-1">
-            If your pick is wrong, you owe the buyer this % of their notional from your collateral.
-            100% = full notional at risk. Higher = more buyer protection.
+            If your pick is wrong, you pay the buyer up to this % of their stake
+            from your locked collateral. 100% means the buyer gets their full
+            stake back. Higher = more buyer protection but more risk for you.
           </p>
         </div>
 
@@ -1043,8 +1044,8 @@ export default function CreateSignal() {
           <div className="rounded-lg bg-blue-50 border border-blue-200 p-4" aria-live="polite">
             <p className="text-sm text-blue-600">
               {step === "committing"
-                ? "Encrypting and committing signal on-chain..."
-                : "Distributing key shares to validators..."}
+                ? "Encrypting and committing signal on-chain... (typically 10\u201330s)"
+                : "Distributing key shares to validators... (a few seconds)"}
             </p>
           </div>
         )}

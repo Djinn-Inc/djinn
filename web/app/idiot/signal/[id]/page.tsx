@@ -120,8 +120,8 @@ export default function PurchaseSignal() {
 
     const buyerAddress = user?.wallet?.address;
     if (!buyerAddress) {
-      setStepError("Wallet address not available");
-      setStep("error");
+      setStepError("Wallet not connected. Please connect your wallet and try again.");
+      setStep("idle");
       purchaseInFlight.current = false;
       return;
     }
@@ -150,7 +150,7 @@ export default function PurchaseSignal() {
         setStepError(
           "No lines are currently available at this sportsbook. Try another sportsbook or check back later.",
         );
-        setStep("error");
+        setStep("idle");
         return;
       }
 
@@ -197,9 +197,9 @@ export default function PurchaseSignal() {
           .map((r) => r.reason?.message || "unknown")
           .join("; ");
         setStepError(
-          failedMsg || "Signal not available at this sportsbook (MPC check failed)",
+          failedMsg || "Signal not available at this sportsbook. Try selecting a different sportsbook.",
         );
-        setStep("error");
+        setStep("idle");
         return;
       }
 
@@ -210,12 +210,12 @@ export default function PurchaseSignal() {
       const oddsNum = parseFloat(odds);
       if (isNaN(notionalNum) || !Number.isFinite(notionalNum) || notionalNum <= 0) {
         setStepError("Invalid notional amount");
-        setStep("error");
+        setStep("idle");
         return;
       }
       if (isNaN(oddsNum) || !Number.isFinite(oddsNum) || oddsNum < 1.01 || oddsNum > 10000) {
         setStepError("Invalid odds (must be between 1.01 and 10,000)");
-        setStep("error");
+        setStep("idle");
         return;
       }
 
@@ -268,8 +268,9 @@ export default function PurchaseSignal() {
           }
           setDecryptedPick(parsed);
         } catch (decryptErr) {
+          console.warn("Decryption error:", decryptErr);
           setStepError(
-            `Signal purchased but decryption failed: ${decryptErr instanceof Error ? decryptErr.message : "unknown error"}. The key share may need Shamir reconstruction.`,
+            "Your signal was purchased successfully, but the encryption key is still being reconstructed. The real pick will appear once enough key shares arrive (usually within seconds). Refresh the page to check.",
           );
         }
       }
@@ -277,7 +278,7 @@ export default function PurchaseSignal() {
       setStep("complete");
     } catch (err) {
       setStepError(err instanceof Error ? err.message : "Purchase failed");
-      setStep("error");
+      setStep("idle");
     } finally {
       purchaseInFlight.current = false;
     }
@@ -380,10 +381,10 @@ export default function PurchaseSignal() {
     step === "decrypting";
 
   const stepLabel: Record<string, string> = {
-    checking_lines: "Checking line availability with miner...",
-    purchasing_validator: "Verifying signal availability with validator (MPC)...",
-    purchasing_chain: "Executing on-chain purchase...",
-    decrypting: "Decrypting signal...",
+    checking_lines: "Checking line availability...",
+    purchasing_validator: "Verifying signal with validators...",
+    purchasing_chain: "Processing on-chain purchase... (10\u201330s)",
+    decrypting: "Decrypting your signal...",
   };
 
   return (

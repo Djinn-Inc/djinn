@@ -288,7 +288,7 @@ export default function IdiotDashboard() {
               ) : purchases.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-500 py-8">
-                    No purchases yet
+                    No purchases yet. Browse available signals above to get started.
                   </td>
                 </tr>
               ) : (
@@ -342,7 +342,8 @@ export default function IdiotDashboard() {
               ) : audits.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center text-slate-500 py-8">
-                    No settlements yet
+                    No settlements yet. Settlements happen after every 10 signals
+                    in a Genius-Idiot pair are resolved.
                   </td>
                 </tr>
               ) : (
