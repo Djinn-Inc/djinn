@@ -639,6 +639,35 @@ export default function CreateSignal() {
                       </div>
                     </div>
 
+                    {/* Change game — decoys only */}
+                    {!isReal && (
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Game</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-600 flex-1 truncate">
+                            {line.away_team} @ {line.home_team}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const others = events.filter((ev) => ev.id !== line.event_id);
+                              if (others.length === 0) return;
+                              const ev = others[cryptoRandomInt(others.length)];
+                              updateLine(i, {
+                                event_id: ev.id,
+                                home_team: ev.home_team,
+                                away_team: ev.away_team,
+                                sport: ev.sport_key,
+                              });
+                            }}
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors"
+                          >
+                            Change Game
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Line value (spreads/totals only) */}
                     {line.market !== "h2h" && (
                       <div>
