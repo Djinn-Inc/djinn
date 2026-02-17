@@ -483,23 +483,32 @@ export function useDepositEscrow() {
         // Use read provider for pre-checks
         const usdcRead = getUsdcContract(getReadProvider());
         const addr = await signer.getAddress();
+        console.log("[escrow-deposit] signer address:", addr);
         const balance = await usdcRead.balanceOf(addr);
+        console.log("[escrow-deposit] USDC balance:", balance.toString());
         if (balance < amount) {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
 
-        // Approve and deposit (signer needed for write txs)
+        console.log("[escrow-deposit] approving", amount.toString(), "to", ADDRESSES.escrow);
         const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
+        console.log("[escrow-deposit] approve tx:", approveTx.hash);
         await approveTx.wait();
+        console.log("[escrow-deposit] approve confirmed");
 
         const escrow = getEscrowContract(signer);
+        console.log("[escrow-deposit] calling escrow.deposit", amount.toString());
         const tx = await escrow.deposit(amount);
+        console.log("[escrow-deposit] deposit tx:", tx.hash);
         const receipt = await tx.wait();
         if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
+        console.log("[escrow-deposit] deposit confirmed");
         return tx.hash as string;
       } catch (err) {
-        setError(humanizeError(err, "Deposit failed"));
+        console.error("[escrow-deposit] FAILED:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`Deposit failed: ${msg}`);
         throw err;
       } finally {
         setLoading(false);
@@ -522,18 +531,28 @@ export function useDepositCollateral() {
       setLoading(true);
       setError(null);
       try {
-        // Approve and deposit
+        const addr = await signer.getAddress();
+        console.log("[collateral-deposit] signer address:", addr);
+
+        console.log("[collateral-deposit] approving", amount.toString(), "to", ADDRESSES.collateral);
         const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
+        console.log("[collateral-deposit] approve tx:", approveTx.hash);
         await approveTx.wait();
+        console.log("[collateral-deposit] approve confirmed");
 
         const collateral = getCollateralContract(signer);
+        console.log("[collateral-deposit] calling collateral.deposit", amount.toString());
         const tx = await collateral.deposit(amount);
+        console.log("[collateral-deposit] deposit tx:", tx.hash);
         const receipt = await tx.wait();
         if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
+        console.log("[collateral-deposit] deposit confirmed");
         return tx.hash as string;
       } catch (err) {
-        setError(humanizeError(err, "Deposit failed"));
+        console.error("[collateral-deposit] FAILED:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`Deposit failed: ${msg}`);
         throw err;
       } finally {
         setLoading(false);
