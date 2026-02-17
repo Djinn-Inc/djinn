@@ -33,7 +33,7 @@ test.describe("Signal creation page", () => {
   }) => {
     await page.goto("/genius/signal/new");
 
-    // Without Privy auth, events won't load (fetch is gated on authenticated)
+    // Without wallet connected, events won't load (fetch is gated on authenticated)
     // But the page structure should still render
     await expect(page.getByText("Create Signal")).toBeVisible();
   });

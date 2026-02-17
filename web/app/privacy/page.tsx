@@ -67,29 +67,14 @@ export default function Privacy() {
       </p>
 
       <h2 className="text-xl font-semibold text-slate-900 mt-10 mb-3">
-        3. Authentication Provider (Privy)
+        3. Wallet Connection
       </h2>
       <p>
-        Djinn uses{" "}
-        <a href="https://privy.io" target="_blank" rel="noopener noreferrer" className="text-slate-900 underline">
-          Privy
-        </a>{" "}
-        for wallet creation and authentication. If you sign in using email or social
-        login, Privy may collect:
-      </p>
-      <ul className="list-disc list-inside space-y-1 text-slate-600">
-        <li>Email address (if you use email login)</li>
-        <li>Social login identifiers (if you use social login)</li>
-        <li>Device and browser information for authentication purposes</li>
-      </ul>
-      <p>
-        Privy processes this data under its own{" "}
-        <a href="https://privy.io/privacy" target="_blank" rel="noopener noreferrer" className="text-slate-900 underline">
-          privacy policy
-        </a>.
-        Djinn does not have direct access to your email, passwords, or Privy account
-        details. If you connect with a self-custody wallet (e.g., MetaMask), Privy
-        does not collect email or social login data.
+        Djinn uses standard wallet connection protocols (WalletConnect, Coinbase Smart
+        Wallet, MetaMask) for authentication. When you connect your wallet, no personal
+        information is collected by Djinn. Your wallet address is used solely to identify
+        your on-chain activity. If you use Coinbase Smart Wallet, Coinbase processes
+        wallet creation data under its own privacy policy.
       </p>
 
       <h2 className="text-xl font-semibold text-slate-900 mt-10 mb-3">
@@ -113,7 +98,7 @@ export default function Privacy() {
       </h2>
       <p>
         The Djinn website does not set first-party cookies. Our authentication
-        provider (Privy) may set cookies necessary for authentication functionality.
+        wallet connection providers may set cookies necessary for authentication functionality.
         We do not use cookies for analytics, advertising, or tracking.
       </p>
 
@@ -137,7 +122,7 @@ export default function Privacy() {
       <p>Djinn integrates with the following third-party services:</p>
       <ul className="list-disc list-inside space-y-1 text-slate-600">
         <li>
-          <strong>Privy:</strong> Authentication and wallet creation
+          <strong>WalletConnect / Coinbase Smart Wallet:</strong> Wallet connection and authentication
         </li>
         <li>
           <strong>Base (Coinbase L2):</strong> Blockchain for smart contract execution
@@ -162,8 +147,8 @@ export default function Privacy() {
       </h2>
       <p>
         Djinn does not operate servers that store user data. On-chain data is permanent
-        and immutable by nature. Local storage data persists until you clear it. Privy
-        retains authentication data per its own retention policies.
+        and immutable by nature. Local storage data persists until you clear it.
+        Wallet providers retain their own data per their respective retention policies.
       </p>
 
       <h2 className="text-xl font-semibold text-slate-900 mt-10 mb-3">
@@ -171,11 +156,8 @@ export default function Privacy() {
       </h2>
       <p>
         Because Djinn collects minimal data, most traditional data rights (access,
-        correction, deletion) apply primarily to data held by Privy. For Privy-related
-        data requests, contact{" "}
-        <a href="https://privy.io" target="_blank" rel="noopener noreferrer" className="text-slate-900 underline">
-          Privy directly
-        </a>.
+        correction, deletion) apply primarily to data held by your wallet provider.
+        Contact your wallet provider directly for data requests.
       </p>
       <p>
         On-chain data cannot be modified or deleted due to the immutable nature of

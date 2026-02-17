@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import {
   generateTrackRecordProof,
   proofToSolidityCalldata,
@@ -27,8 +27,7 @@ const OUTCOME_MAP: Record<string, bigint> = {
 };
 
 export default function TrackRecordPage() {
-  const { authenticated, user } = usePrivy();
-  const address = user?.wallet?.address;
+  const { isConnected, address } = useAccount();
   const router = useRouter();
   const [state, setState] = useState<ProofState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -76,7 +75,7 @@ export default function TrackRecordPage() {
     setSelectedIds(new Set(ids));
   };
 
-  if (!authenticated) {
+  if (!isConnected) {
     return (
       <div className="text-center py-20">
         <h1 className="text-3xl font-bold text-slate-900 mb-4">

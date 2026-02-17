@@ -3,10 +3,10 @@ import type { NextRequest } from "next/server";
 
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://auth.privy.io https://challenges.cloudflare.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' https://auth.privy.io https://*.base.org wss://*.base.org https://api.the-odds-api.com",
-  "frame-src https://auth.privy.io https://challenges.cloudflare.com",
+  "connect-src 'self' https://*.base.org wss://*.base.org https://api.the-odds-api.com https://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.com wss://*.walletconnect.org",
+  "frame-src https://challenges.cloudflare.com",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "worker-src 'self' blob:",

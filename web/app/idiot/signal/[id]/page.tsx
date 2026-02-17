@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
 import { getValidatorClient, getValidatorClients, getMinerClient } from "@/lib/api";
 import { decrypt, fromHex, bigIntToKey, reconstructSecret } from "@/lib/crypto";
@@ -32,7 +32,7 @@ type PurchaseStep =
 export default function PurchaseSignal() {
   const params = useParams();
   const router = useRouter();
-  const { authenticated, user } = usePrivy();
+  const { isConnected, address } = useAccount();
   let signalId: bigint | undefined;
   try {
     signalId = params.id ? BigInt(params.id as string) : undefined;
@@ -65,7 +65,7 @@ export default function PurchaseSignal() {
   const [availableIndices, setAvailableIndices] = useState<number[]>([]);
   const purchaseInFlight = useRef(false);
 
-  if (!authenticated) {
+  if (!isConnected) {
     return (
       <div className="text-center py-20">
         <h1 className="text-3xl font-bold text-slate-900 mb-4">
@@ -118,7 +118,7 @@ export default function PurchaseSignal() {
     if (purchaseInFlight.current) return;
     purchaseInFlight.current = true;
 
-    const buyerAddress = user?.wallet?.address;
+    const buyerAddress = address;
     if (!buyerAddress) {
       setStepError("Wallet not connected. Please connect your wallet and try again.");
       setStep("idle");

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import { useCommitSignal, useCollateral, useDepositCollateral, useWalletUsdcBalance } from "@/lib/hooks";
 import SecretModal from "@/components/SecretModal";
 import PrivateWorkspace from "@/components/PrivateWorkspace";
@@ -40,10 +40,9 @@ type WizardStep = "browse" | "review" | "configure" | "committing" | "distributi
 
 export default function CreateSignal() {
   const router = useRouter();
-  const { authenticated, user } = usePrivy();
+  const { isConnected, address } = useAccount();
   const { commit, loading: commitLoading, error: commitError } =
     useCommitSignal();
-  const address = user?.wallet?.address;
   const { signals: existingSignals } = useActiveSignals(undefined, address);
   const signalCount = existingSignals.length;
   const MAX_PROOF_SIGNALS = 20;
@@ -146,10 +145,10 @@ export default function CreateSignal() {
   }, []);
 
   useEffect(() => {
-    if (authenticated) {
+    if (isConnected) {
       fetchEvents(selectedSport);
     }
-  }, [selectedSport, authenticated, fetchEvents]);
+  }, [selectedSport, isConnected, fetchEvents]);
 
   // Fetch platform-wide liquidity once
   useEffect(() => {
@@ -219,7 +218,7 @@ export default function CreateSignal() {
       return;
     }
 
-    const geniusAddress = user?.wallet?.address;
+    const geniusAddress = address;
     if (!geniusAddress) {
       setStepError("Wallet address not available");
       return;
@@ -372,7 +371,7 @@ export default function CreateSignal() {
     }
   };
 
-  if (!authenticated) {
+  if (!isConnected) {
     return (
       <div className="text-center py-20">
         <h1 className="text-3xl font-bold text-slate-900 mb-4">

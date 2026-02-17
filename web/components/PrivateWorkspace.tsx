@@ -11,7 +11,7 @@ interface PrivateWorkspaceProps {
 /**
  * Full-screen modal overlay for private/local-only workflows (signal creation, ZKP).
  * Dark backdrop with lock branding in header/footer. Content renders inside a
- * white floating card — visually distinct from the main site, like Privy's login popup.
+ * white floating card — visually distinct from the main site, like a wallet-connect popup.
  */
 export default function PrivateWorkspace({ open, onClose, children }: PrivateWorkspaceProps) {
   useEffect(() => {

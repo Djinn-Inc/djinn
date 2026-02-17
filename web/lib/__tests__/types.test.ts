@@ -48,7 +48,7 @@ describe("formatUsdc", () => {
   });
 
   it("handles large amounts", () => {
-    expect(formatUsdc(1_000_000_000_000n)).toBe("1000000");
+    expect(formatUsdc(1_000_000_000_000n)).toBe("1,000,000");
   });
 });
 

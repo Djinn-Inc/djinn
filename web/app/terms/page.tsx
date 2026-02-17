@@ -72,8 +72,8 @@ export default function Terms() {
         4. Accounts and Wallets
       </h2>
       <p>
-        You connect to Djinn using a blockchain wallet, either self-custodied or created
-        via our authentication provider (Privy). You are solely responsible for the
+        You connect to Djinn using a blockchain wallet (e.g. Coinbase Smart Wallet,
+        MetaMask, or any WalletConnect-compatible wallet). You are solely responsible for the
         security of your wallet, private keys, and any credentials associated with your
         account. Djinn never has access to your private keys.
       </p>

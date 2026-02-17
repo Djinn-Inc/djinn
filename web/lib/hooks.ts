@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
-import { useWallets } from "@privy-io/react-auth";
+import { useAccount, useWalletClient } from "wagmi";
 import {
   getSignalCommitmentContract,
   getEscrowContract,
@@ -70,7 +70,7 @@ export function humanizeError(err: unknown, fallback = "Transaction failed"): st
 const EXPECTED_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532");
 
 // ---------------------------------------------------------------------------
-// Read-only provider — uses public RPC for reliable reads (not Privy's RPC)
+// Read-only provider — uses public RPC for reliable reads
 // ---------------------------------------------------------------------------
 
 const READ_RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://sepolia.base.org";
@@ -84,36 +84,22 @@ export function getReadProvider(): ethers.JsonRpcProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Provider & signer hooks — uses Privy's wallet provider for signing
+// Provider & signer hooks — uses wagmi wallet client for signing
 // ---------------------------------------------------------------------------
 
 export function useEthersProvider(): ethers.BrowserProvider | null {
-  const { wallets } = useWallets();
+  const { data: walletClient } = useWalletClient();
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
 
-  // Use the first connected Ethereum wallet from Privy
-  const activeWallet = useMemo(
-    () => wallets.find((w) => w.walletClientType !== "solana"),
-    [wallets],
-  );
-
   useEffect(() => {
-    let cancelled = false;
-    if (!activeWallet) {
+    if (!walletClient) {
       setProvider(null);
       return;
     }
-    activeWallet.getEthereumProvider().then((ethProvider) => {
-      if (cancelled) return;
-      setProvider(new ethers.BrowserProvider(ethProvider as ethers.Eip1193Provider));
-    }).catch((err: unknown) => {
-      if (!cancelled) {
-        console.debug("Failed to get Privy ethereum provider:", err);
-        setProvider(null);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [activeWallet]);
+    // wagmi's walletClient.transport exposes an EIP-1193 provider
+    const ethProvider = new ethers.BrowserProvider(walletClient.transport, EXPECTED_CHAIN_ID);
+    setProvider(ethProvider);
+  }, [walletClient]);
 
   return provider;
 }
@@ -125,30 +111,15 @@ export function useEthersSigner(): ethers.Signer | null {
   useEffect(() => {
     let cancelled = false;
     if (provider) {
-      provider.getSigner().then(async (s) => {
-        if (cancelled) return;
-        // Verify the wallet is connected to the expected chain
-        const network = await s.provider.getNetwork();
-        if (Number(network.chainId) !== EXPECTED_CHAIN_ID) {
-          console.warn(
-            `[Djinn] Wrong network: connected to chain ${network.chainId}, expected ${EXPECTED_CHAIN_ID}. Transactions will be blocked.`
-          );
-          setSigner(null);
-          return;
-        }
-        setSigner(s);
-      }).catch((err: unknown) => {
-        // Expected when wallet not connected; log unexpected errors
-        if (err instanceof Error && !err.message.includes("unknown account")) {
-          console.debug("getSigner failed:", err.message);
-        }
+      provider.getSigner().then((s) => {
+        if (!cancelled) setSigner(s);
+      }).catch(() => {
+        if (!cancelled) setSigner(null);
       });
     } else {
       setSigner(null);
     }
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [provider]);
 
   return signer;
@@ -156,21 +127,8 @@ export function useEthersSigner(): ethers.Signer | null {
 
 /** Check if the wallet is on the expected chain. */
 export function useChainId(): { chainId: number | null; isCorrectChain: boolean } {
-  const provider = useEthersProvider();
-  const [chainId, setChainId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (provider) {
-      provider.getNetwork().then((network) => {
-        if (!cancelled) setChainId(Number(network.chainId));
-      }).catch(() => {
-        // Wallet not connected
-      });
-    }
-    return () => { cancelled = true; };
-  }, [provider]);
-
+  const { chainId: wagmiChainId } = useAccount();
+  const chainId = wagmiChainId ? Number(wagmiChainId) : null;
   return { chainId, isCorrectChain: chainId === EXPECTED_CHAIN_ID };
 }
 
@@ -519,7 +477,7 @@ export function useDepositEscrow() {
       setLoading(true);
       setError(null);
       try {
-        // Use read provider for pre-checks (Privy RPC is unreliable for reads)
+        // Use read provider for pre-checks
         const usdcRead = getUsdcContract(getReadProvider());
         const addr = await signer.getAddress();
         const balance = await usdcRead.balanceOf(addr);
@@ -561,7 +519,7 @@ export function useDepositCollateral() {
       setLoading(true);
       setError(null);
       try {
-        // Approve and deposit (no allowance pre-check — avoids Privy RPC read failures)
+        // Approve and deposit
         const usdc = getUsdcContract(signer);
         const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
         await approveTx.wait();

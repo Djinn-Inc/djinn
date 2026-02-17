@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
@@ -10,8 +10,7 @@ import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function IdiotDashboard() {
-  const { authenticated, user } = usePrivy();
-  const address = user?.wallet?.address;
+  const { isConnected, address } = useAccount();
   const { balance: escrowBalance, loading: escrowLoading, refresh: refreshEscrow } =
     useEscrowBalance(address);
   const { balance: walletUsdc, loading: walletUsdcLoading, refresh: refreshWalletUsdc } = useWalletUsdcBalance(address);
@@ -54,7 +53,7 @@ export default function IdiotDashboard() {
     }
   };
 
-  if (!authenticated) {
+  if (!isConnected) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <div className="w-16 h-16 rounded-full bg-idiot-100 flex items-center justify-center mb-6">

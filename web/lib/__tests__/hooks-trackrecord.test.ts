@@ -25,7 +25,7 @@ vi.mock("../contracts", () => ({
 }));
 
 // Mock the provider hook
-const mockProvider = { getBlockNumber: vi.fn() };
+const mockProvider = { getBlockNumber: vi.fn().mockResolvedValue(1000) };
 vi.mock("../hooks", async () => {
   const actual = await vi.importActual("../hooks");
   return {
