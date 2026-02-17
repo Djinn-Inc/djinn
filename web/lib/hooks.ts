@@ -624,6 +624,7 @@ export function useSubmitTrackRecord() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [step, setStep] = useState<"idle" | "committing" | "waiting" | "submitting">("idle");
 
   const submit = useCallback(
     async (
@@ -638,6 +639,27 @@ export function useSubmitTrackRecord() {
       setTxHash(null);
       try {
         const contract = getTrackRecordContract(signer);
+
+        // Step 1: Compute proof hash matching contract's keccak256(abi.encodePacked(_pA, _pB, _pC, _pubSignals))
+        setStep("committing");
+        const { ethers } = await import("ethers");
+        const allValues = [...pA, ...pB[0], ...pB[1], ...pC, ...pubSignals];
+        const types = allValues.map(() => "uint256");
+        const proofHash = ethers.solidityPackedKeccak256(types, allValues);
+        const commitTx = await contract.commitProof(proofHash);
+        const commitReceipt = await commitTx.wait();
+        if (commitReceipt && commitReceipt.status === 0) throw new Error("Commit transaction reverted on-chain");
+
+        // Step 2: Wait for next block (commit-reveal requires submission in a later block)
+        setStep("waiting");
+        await new Promise<void>((resolve) => {
+          const provider = signer.provider!;
+          const handler = () => { provider.off("block", handler); resolve(); };
+          provider.on("block", handler);
+        });
+
+        // Step 3: Submit the proof
+        setStep("submitting");
         const gas = await estimateGas(contract, "submit", [pA, pB, pC, pubSignals]);
         const tx = await contract.submit(pA, pB, pC, pubSignals, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
         setTxHash(tx.hash);
@@ -649,10 +671,11 @@ export function useSubmitTrackRecord() {
         throw err;
       } finally {
         setLoading(false);
+        setStep("idle");
       }
     },
     [signer]
   );
 
-  return { submit, loading, error, txHash };
+  return { submit, loading, error, txHash, step };
 }

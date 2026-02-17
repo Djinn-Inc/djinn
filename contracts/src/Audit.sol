@@ -259,6 +259,15 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
             revert AlreadySettled(genius, idiot, cycle);
         }
 
+        // All outcomes must be finalized before settlement
+        AccountState memory state = account.getAccountState(genius, idiot);
+        for (uint256 i; i < state.purchaseIds.length; ++i) {
+            Outcome outcome = account.getOutcome(genius, idiot, state.purchaseIds[i]);
+            if (outcome == Outcome.Pending) {
+                revert OutcomesNotFinalized(genius, idiot);
+            }
+        }
+
         int256 score = computeScore(genius, idiot);
         _settle(genius, idiot, cycle, score, false);
     }

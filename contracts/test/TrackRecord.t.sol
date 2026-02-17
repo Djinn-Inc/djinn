@@ -260,6 +260,21 @@ contract TrackRecordTest is Test {
         trackRecord.submit(pA, pB, pC, pubSignals);
     }
 
+    function test_submit_reverts_commitExpired() public {
+        (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC) = _defaultProof();
+        uint256[106] memory pubSignals = _buildPubSignals(5, 100e6, 50e6, 3, 1, 1);
+
+        bytes32 proofHash = keccak256(abi.encodePacked(pA, pB, pC, pubSignals));
+        uint256 commitBlock = block.number;
+        vm.prank(genius1);
+        trackRecord.commitProof(proofHash);
+        // Advance past the expiry window (256 blocks + 1)
+        vm.roll(commitBlock + 257);
+        vm.expectRevert(abi.encodeWithSelector(TrackRecord.CommitExpired.selector, commitBlock, block.number));
+        vm.prank(genius1);
+        trackRecord.submit(pA, pB, pC, pubSignals);
+    }
+
     // ─── View Tests
     // ────────────────────────────────────────────────────────
 

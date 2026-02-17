@@ -333,7 +333,7 @@ contract Account is Ownable {
     /// @param idiot The Idiot address
     /// @return key The keccak256 hash of the pair
     function _accountKey(address genius, address idiot) internal pure returns (bytes32 key) {
-        return keccak256(abi.encodePacked(genius, idiot));
+        return keccak256(abi.encode(genius, idiot));
     }
 
     /// @dev Validates that genius and idiot addresses are non-zero and different

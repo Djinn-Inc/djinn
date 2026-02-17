@@ -89,6 +89,10 @@ contract TrackRecord is Ownable {
     error InvalidSignalCount(uint256 count);
     error ProofNotCommitted();
     error CommitTooRecent(uint256 commitBlock, uint256 currentBlock);
+    error CommitExpired(uint256 commitBlock, uint256 currentBlock);
+
+    /// @notice Maximum blocks between commit and submit (prevents strategic delay)
+    uint256 public constant COMMIT_EXPIRY_BLOCKS = 256;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -156,6 +160,7 @@ contract TrackRecord is Ownable {
         uint256 commitBlock = proofCommitments[msg.sender][proofHash];
         if (commitBlock == 0) revert ProofNotCommitted();
         if (commitBlock >= block.number) revert CommitTooRecent(commitBlock, block.number);
+        if (block.number - commitBlock > COMMIT_EXPIRY_BLOCKS) revert CommitExpired(commitBlock, block.number);
 
         // Clear commitment to prevent reuse
         delete proofCommitments[msg.sender][proofHash];
