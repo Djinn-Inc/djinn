@@ -17,7 +17,7 @@ const activeChain = CHAIN_ID === 8453 ? base : baseSepolia;
 
 coinbaseWallet.preference = "smartWalletOnly";
 
-const config = getDefaultConfig({
+export const wagmiConfig = getDefaultConfig({
   appName: "Djinn",
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "djinn-dev",
   chains: [activeChain],
@@ -41,7 +41,7 @@ const queryClient = new QueryClient();
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
           modalSize="compact"

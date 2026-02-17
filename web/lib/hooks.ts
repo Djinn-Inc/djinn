@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { useAccount, useWalletClient } from "wagmi";
+import { encodeFunctionData, parseAbi, type Hex } from "viem";
+import { waitForTransactionReceipt } from "@wagmi/core";
+import { wagmiConfig } from "../app/providers";
 import {
   getSignalCommitmentContract,
   getEscrowContract,
@@ -404,6 +407,29 @@ export async function estimateGas(
 }
 
 // ---------------------------------------------------------------------------
+// Viem ABI fragments for write operations
+// ---------------------------------------------------------------------------
+
+const ERC20_ABI = parseAbi([
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address owner) view returns (uint256)",
+]);
+
+const ESCROW_ABI = parseAbi([
+  "function deposit(uint256 amount)",
+]);
+
+const COLLATERAL_ABI = parseAbi([
+  "function deposit(uint256 amount)",
+]);
+
+/** Wait for a tx hash to be confirmed, throw if reverted. */
+async function waitForTx(hash: Hex): Promise<void> {
+  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
+  if (receipt.status === "reverted") throw new Error("Transaction reverted on-chain");
+}
+
+// ---------------------------------------------------------------------------
 // Transaction hooks
 // ---------------------------------------------------------------------------
 
@@ -474,41 +500,50 @@ export function usePurchaseSignal() {
 }
 
 export function useDepositEscrow() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const deposit = useCallback(
     async (amount: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       try {
-        // Use read provider for pre-checks
+        const usdcAddr = ADDRESSES.usdc as Hex;
+        const escrowAddr = ADDRESSES.escrow as Hex;
+
+        // Pre-check balance via read provider
         const usdcRead = getUsdcContract(getReadProvider());
-        const addr = await signer.getAddress();
-        console.log("[escrow-deposit] signer address:", addr);
-        const balance = await usdcRead.balanceOf(addr);
-        console.log("[escrow-deposit] USDC balance:", balance.toString());
+        const balance = await usdcRead.balanceOf(address);
         if (balance < amount) {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
 
-        console.log("[escrow-deposit] approving", amount.toString(), "to", ADDRESSES.escrow);
-        const usdc = getUsdcContract(signer);
-        const approveTx = await usdc.approve(ADDRESSES.escrow, amount);
-        console.log("[escrow-deposit] approve tx:", approveTx.hash);
-        await approveTx.wait();
-        console.log("[escrow-deposit] approve confirmed");
+        // Approve USDC spend — uses walletClient.writeContract (viem native)
+        console.log("[escrow-deposit] approving", amount.toString());
+        const approveHash = await walletClient.writeContract({
+          address: usdcAddr,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          args: [escrowAddr, amount],
+        });
+        console.log("[escrow-deposit] approve tx:", approveHash);
+        await waitForTx(approveHash);
 
-        const escrow = getEscrowContract(signer);
-        console.log("[escrow-deposit] calling escrow.deposit", amount.toString());
-        const tx = await escrow.deposit(amount);
-        console.log("[escrow-deposit] deposit tx:", tx.hash);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        console.log("[escrow-deposit] deposit confirmed");
-        return tx.hash as string;
+        // Deposit into escrow
+        console.log("[escrow-deposit] depositing", amount.toString());
+        const depositHash = await walletClient.writeContract({
+          address: escrowAddr,
+          abi: ESCROW_ABI,
+          functionName: "deposit",
+          args: [amount],
+        });
+        console.log("[escrow-deposit] deposit tx:", depositHash);
+        await waitForTx(depositHash);
+
+        return depositHash;
       } catch (err) {
         console.error("[escrow-deposit] FAILED:", err);
         const msg = err instanceof Error ? err.message : String(err);
@@ -518,41 +553,50 @@ export function useDepositEscrow() {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { deposit, loading, error };
 }
 
 export function useDepositCollateral() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const deposit = useCallback(
     async (amount: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       try {
-        const addr = await signer.getAddress();
-        console.log("[collateral-deposit] signer address:", addr);
+        const usdcAddr = ADDRESSES.usdc as Hex;
+        const collateralAddr = ADDRESSES.collateral as Hex;
 
-        console.log("[collateral-deposit] approving", amount.toString(), "to", ADDRESSES.collateral);
-        const usdc = getUsdcContract(signer);
-        const approveTx = await usdc.approve(ADDRESSES.collateral, amount);
-        console.log("[collateral-deposit] approve tx:", approveTx.hash);
-        await approveTx.wait();
-        console.log("[collateral-deposit] approve confirmed");
+        // Approve USDC spend
+        console.log("[collateral-deposit] approving", amount.toString());
+        const approveHash = await walletClient.writeContract({
+          address: usdcAddr,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          args: [collateralAddr, amount],
+        });
+        console.log("[collateral-deposit] approve tx:", approveHash);
+        await waitForTx(approveHash);
 
-        const collateral = getCollateralContract(signer);
-        console.log("[collateral-deposit] calling collateral.deposit", amount.toString());
-        const tx = await collateral.deposit(amount);
-        console.log("[collateral-deposit] deposit tx:", tx.hash);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        console.log("[collateral-deposit] deposit confirmed");
-        return tx.hash as string;
+        // Deposit into collateral
+        console.log("[collateral-deposit] depositing", amount.toString());
+        const depositHash = await walletClient.writeContract({
+          address: collateralAddr,
+          abi: COLLATERAL_ABI,
+          functionName: "deposit",
+          args: [amount],
+        });
+        console.log("[collateral-deposit] deposit tx:", depositHash);
+        await waitForTx(depositHash);
+
+        return depositHash;
       } catch (err) {
         console.error("[collateral-deposit] FAILED:", err);
         const msg = err instanceof Error ? err.message : String(err);
@@ -562,7 +606,7 @@ export function useDepositCollateral() {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { deposit, loading, error };
