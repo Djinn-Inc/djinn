@@ -5,7 +5,7 @@ import { useEthersProvider } from "../hooks";
 import { getActiveSignals, getSignalsByGenius } from "../events";
 import type { SignalEvent } from "../events";
 
-export function useActiveSignals(sport?: string, geniusAddress?: string) {
+export function useActiveSignals(sport?: string, geniusAddress?: string, includeAll: boolean = false) {
   const provider = useEthersProvider();
   const [signals, setSignals] = useState<SignalEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export function useActiveSignals(sport?: string, geniusAddress?: string) {
     try {
       let result: SignalEvent[];
       if (geniusAddress) {
-        result = await getSignalsByGenius(provider, geniusAddress);
+        result = await getSignalsByGenius(provider, geniusAddress, 0, includeAll);
       } else {
         result = await getActiveSignals(provider);
       }
@@ -40,7 +40,7 @@ export function useActiveSignals(sport?: string, geniusAddress?: string) {
         setLoading(false);
       }
     }
-  }, [provider, sport, geniusAddress]);
+  }, [provider, sport, geniusAddress, includeAll]);
 
   useEffect(() => {
     cancelledRef.current = false;

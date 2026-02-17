@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import QualityScore from "@/components/QualityScore";
-import { useCollateral, useDepositCollateral, useWithdrawCollateral } from "@/lib/hooks";
+import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUsdcBalance } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { useTrackRecordProofs } from "@/lib/hooks/useTrackRecordProofs";
@@ -14,9 +14,10 @@ export default function GeniusDashboard() {
   const { authenticated, user } = usePrivy();
   const address = user?.wallet?.address;
   const { deposit, locked, available, loading, refresh: refreshCollateral } = useCollateral(address);
+  const { balance: walletUsdc, loading: walletUsdcLoading, refresh: refreshWalletUsdc } = useWalletUsdcBalance(address);
   const { deposit: depositCollateral, loading: depositLoading } = useDepositCollateral();
   const { withdraw: withdrawCollateral, loading: withdrawLoading } = useWithdrawCollateral();
-  const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address);
+  const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address, true);
   const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
   const { proofs, loading: proofsLoading, error: proofsError } = useTrackRecordProofs(address);
 
@@ -31,6 +32,7 @@ export default function GeniusDashboard() {
       await depositCollateral(parseUsdc(depositAmount));
       setDepositAmount("");
       refreshCollateral();
+      refreshWalletUsdc();
     } catch (err) {
       setTxError(err instanceof Error ? err.message : "Deposit failed");
     }
@@ -87,19 +89,20 @@ export default function GeniusDashboard() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="card">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            Quality Score
+            Wallet USDC
           </p>
-          <div className="mt-3">
-            <QualityScore score={Number(aggregateQualityScore)} size="md" />
-          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-2">
+            {walletUsdcLoading ? "..." : `$${formatUsdc(walletUsdc)}`}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Available to deposit</p>
         </div>
 
         <div className="card">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            Total Collateral
+            Collateral
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-2">
             {loading ? "..." : `$${formatUsdc(deposit)}`}
@@ -109,12 +112,12 @@ export default function GeniusDashboard() {
 
         <div className="card">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            Locked Collateral
+            Locked
           </p>
           <p className="text-2xl font-bold text-genius-500 mt-2">
             {loading ? "..." : `$${formatUsdc(locked)}`}
           </p>
-          <p className="text-xs text-slate-500 mt-1">Backing active signals</p>
+          <p className="text-xs text-slate-500 mt-1">Backing signals</p>
         </div>
 
         <div className="card">
@@ -126,31 +129,29 @@ export default function GeniusDashboard() {
           </p>
           <p className="text-xs text-slate-500 mt-1">Free to withdraw</p>
         </div>
+
+        <div className="card">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
+            Quality Score
+          </p>
+          <div className="mt-3">
+            <QualityScore score={Number(aggregateQualityScore)} size="md" />
+          </div>
+        </div>
       </div>
 
-      {/* Active Signals */}
+      {/* My Signals */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-slate-900">
-            Active Signals
+            My Signals
           </h2>
           {!signalsLoading && mySignals.length > 0 && (
             <span className="text-xs text-slate-500">
-              {mySignals.length} / 20 (proof limit)
+              {mySignals.filter((s) => s.expiresAt > BigInt(Math.floor(Date.now() / 1000))).length} active &middot; {mySignals.length} total
             </span>
           )}
         </div>
-        {!signalsLoading && mySignals.length >= 18 && (
-          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${
-            mySignals.length >= 20
-              ? "bg-red-50 text-red-700 border border-red-200"
-              : "bg-amber-50 text-amber-700 border border-amber-200"
-          }`}>
-            {mySignals.length >= 20
-              ? "You have reached the 20-signal proof limit. To generate a new track record proof, you will need to batch your signals into multiple proofs."
-              : `Approaching the 20-signal proof limit (${mySignals.length}/20). Track record proofs cover up to 20 signals each.`}
-          </div>
-        )}
         {signalsLoading ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">Loading signals...</p>
@@ -158,27 +159,44 @@ export default function GeniusDashboard() {
         ) : mySignals.length === 0 ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">
-              No active signals. Create your first signal to start building your
+              No signals yet. Create your first signal to start building your
               track record.
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {mySignals.map((s) => (
-              <div key={s.signalId} className="card flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
-                    {s.sport} &middot; Signal #{truncateAddress(s.signalId)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Fee: {formatBps(s.maxPriceBps)} &middot; SLA: {formatBps(s.slaMultiplierBps)} &middot; Max: ${formatUsdc(s.maxNotional)} &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}
-                  </p>
+            {[...mySignals].sort((a, b) => Number(b.expiresAt) - Number(a.expiresAt)).map((s) => {
+              const now = BigInt(Math.floor(Date.now() / 1000));
+              const isActive = s.expiresAt > now;
+              const isExpired = !isActive;
+              return (
+                <div key={s.signalId} className={`card flex items-center justify-between ${isExpired ? "opacity-70" : ""}`}>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">
+                      {s.sport} &middot; Signal #{truncateAddress(s.signalId)}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Fee: {formatBps(s.maxPriceBps)} &middot; SLA: {formatBps(s.slaMultiplierBps)} &middot; Max: ${formatUsdc(s.maxNotional)}
+                      {isActive && (
+                        <> &middot; Expires: {new Date(Number(s.expiresAt) * 1000).toLocaleString()}</>
+                      )}
+                      {isExpired && (
+                        <> &middot; Expired: {new Date(Number(s.expiresAt) * 1000).toLocaleDateString()}</>
+                      )}
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200 shrink-0 ml-2">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 shrink-0 ml-2">
+                      Expired
+                    </span>
+                  )}
                 </div>
-                <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200">
-                  Active
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

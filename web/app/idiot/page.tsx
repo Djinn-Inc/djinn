@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow } from "@/lib/hooks";
+import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
@@ -14,6 +14,7 @@ export default function IdiotDashboard() {
   const address = user?.wallet?.address;
   const { balance: escrowBalance, loading: escrowLoading, refresh: refreshEscrow } =
     useEscrowBalance(address);
+  const { balance: walletUsdc, loading: walletUsdcLoading, refresh: refreshWalletUsdc } = useWalletUsdcBalance(address);
   const { balance: creditBalance, loading: creditLoading } =
     useCreditBalance(address);
   const { deposit: depositEscrow, loading: depositLoading } = useDepositEscrow();
@@ -35,6 +36,7 @@ export default function IdiotDashboard() {
       await depositEscrow(parseUsdc(depositAmount));
       setDepositAmount("");
       refreshEscrow();
+      refreshWalletUsdc();
     } catch (err) {
       setTxError(err instanceof Error ? err.message : "Deposit failed");
     }
@@ -83,15 +85,25 @@ export default function IdiotDashboard() {
       </div>
 
       {/* Balances */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="card">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            USDC Balance
+            Wallet USDC
+          </p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">
+            {walletUsdcLoading ? "..." : `$${formatUsdc(walletUsdc)}`}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Available to deposit</p>
+        </div>
+
+        <div className="card">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
+            Escrow Balance
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-2">
             {escrowLoading ? "..." : `$${formatUsdc(escrowBalance)}`}
           </p>
-          <p className="text-xs text-slate-500 mt-1">USDC available for purchases</p>
+          <p className="text-xs text-slate-500 mt-1">Ready for purchases</p>
         </div>
 
         <div className="card">
@@ -102,7 +114,7 @@ export default function IdiotDashboard() {
             {creditLoading ? "..." : formatUsdc(creditBalance)}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Credits offset purchase fees
+            Offset purchase fees
           </p>
         </div>
 
@@ -269,43 +281,37 @@ export default function IdiotDashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="pb-3 font-medium">ID</th>
                 <th className="pb-3 font-medium">Signal</th>
                 <th className="pb-3 font-medium">Notional</th>
-                <th className="pb-3 font-medium">USDC Paid</th>
-                <th className="pb-3 font-medium">Credits Used</th>
-                <th className="pb-3 font-medium">Total Fee</th>
+                <th className="pb-3 font-medium">Fee Paid</th>
+                <th className="pb-3 font-medium">Status</th>
                 <th className="pb-3 font-medium">Date</th>
               </tr>
             </thead>
             <tbody>
               {purchasesLoading ? (
                 <tr>
-                  <td colSpan={7} className="text-center text-slate-500 py-8">
+                  <td colSpan={5} className="text-center text-slate-500 py-8">
                     Loading...
                   </td>
                 </tr>
               ) : purchases.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center text-slate-500 py-8">
+                  <td colSpan={5} className="text-center text-slate-500 py-8">
                     No purchases yet. Browse available signals above to get started.
                   </td>
                 </tr>
               ) : (
-                purchases.map((p) => (
+                [...purchases].reverse().map((p) => (
                   <tr key={p.purchaseId} className="border-b border-slate-100">
-                    <td className="py-3">#{p.purchaseId}</td>
                     <td className="py-3">{truncateAddress(p.signalId)}</td>
                     <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
-                    <td className="py-3">${formatUsdc(BigInt(p.usdcPaid))}</td>
-                    <td className="py-3">
-                      {BigInt(p.creditUsed) > 0n ? (
-                        <span className="text-idiot-500">{formatUsdc(BigInt(p.creditUsed))}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
                     <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
+                    <td className="py-3">
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700">
+                        Pending
+                      </span>
+                    </td>
                     <td className="py-3 text-slate-500">Block {p.blockNumber}</td>
                   </tr>
                 ))

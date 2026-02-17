@@ -158,6 +158,43 @@ export function useChainId(): { chainId: number | null; isCorrectChain: boolean 
 }
 
 // ---------------------------------------------------------------------------
+// Wallet USDC balance hook — raw USDC in the user's wallet (not deposited)
+// ---------------------------------------------------------------------------
+
+export function useWalletUsdcBalance(address: string | undefined) {
+  const provider = useEthersProvider();
+  const [balance, setBalance] = useState<bigint>(0n);
+  const [loading, setLoading] = useState(false);
+  const cancelledRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    if (!provider || !address) {
+      setBalance(0n);
+      return;
+    }
+    setLoading(true);
+    try {
+      const usdc = getUsdcContract(provider);
+      const bal = await usdc.balanceOf(address);
+      if (!cancelledRef.current) setBalance(BigInt(bal));
+    } catch {
+      // Silently fail — wallet balance is informational
+      if (!cancelledRef.current) setBalance(0n);
+    } finally {
+      if (!cancelledRef.current) setLoading(false);
+    }
+  }, [provider, address]);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    refresh();
+    return () => { cancelledRef.current = true; };
+  }, [refresh]);
+
+  return { balance, loading, refresh };
+}
+
+// ---------------------------------------------------------------------------
 // Escrow balance hook
 // ---------------------------------------------------------------------------
 

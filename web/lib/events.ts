@@ -219,6 +219,8 @@ export async function getSignalsByGenius(
   provider: ethers.Provider,
   geniusAddress: string,
   fromBlock: number = 0,
+  /** When true, returns all signals including expired/settled ones. */
+  includeAll: boolean = false,
 ): Promise<SignalEvent[]> {
   const cacheKey = `signals:genius:${geniusAddress.toLowerCase()}`;
   const cached = signalCache.get(cacheKey);
@@ -231,6 +233,7 @@ export async function getSignalsByGenius(
   const filter = contract.filters.SignalCommitted(null, geniusAddress);
 
   if (cached && signalCache.isFresh(cacheKey)) {
+    if (includeAll) return cached.events;
     const now = BigInt(Math.floor(Date.now() / 1000));
     return cached.events.filter((s) => s.expiresAt > now);
   }
@@ -244,6 +247,7 @@ export async function getSignalsByGenius(
     signalCache.set(cacheKey, all, getMaxBlock(parsed, fromBlock));
   }
 
+  if (includeAll) return all;
   const now = BigInt(Math.floor(Date.now() / 1000));
   return all.filter((s) => s.expiresAt > now);
 }
