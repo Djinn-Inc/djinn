@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
+import { useWallets } from "@privy-io/react-auth";
 import {
   getSignalCommitmentContract,
   getEscrowContract,
@@ -66,19 +67,36 @@ export function humanizeError(err: unknown, fallback = "Transaction failed"): st
 const EXPECTED_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532");
 
 // ---------------------------------------------------------------------------
-// Provider hook — returns an ethers BrowserProvider from the user's wallet
+// Provider & signer hooks — uses Privy's wallet provider (embedded or external)
 // ---------------------------------------------------------------------------
 
 export function useEthersProvider(): ethers.BrowserProvider | null {
+  const { wallets } = useWallets();
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
 
+  // Use the first connected Ethereum wallet from Privy
+  const activeWallet = useMemo(
+    () => wallets.find((w) => w.walletClientType !== "solana"),
+    [wallets],
+  );
+
   useEffect(() => {
-    const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : null;
-    const ethereum = w?.ethereum as ethers.Eip1193Provider | undefined;
-    if (ethereum) {
-      setProvider(new ethers.BrowserProvider(ethereum));
+    let cancelled = false;
+    if (!activeWallet) {
+      setProvider(null);
+      return;
     }
-  }, []);
+    activeWallet.getEthereumProvider().then((ethProvider) => {
+      if (cancelled) return;
+      setProvider(new ethers.BrowserProvider(ethProvider as ethers.Eip1193Provider));
+    }).catch((err: unknown) => {
+      if (!cancelled) {
+        console.debug("Failed to get Privy ethereum provider:", err);
+        setProvider(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [activeWallet]);
 
   return provider;
 }
@@ -108,6 +126,8 @@ export function useEthersSigner(): ethers.Signer | null {
           console.debug("getSigner failed:", err.message);
         }
       });
+    } else {
+      setSigner(null);
     }
     return () => {
       cancelled = true;
