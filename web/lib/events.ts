@@ -17,6 +17,9 @@ import {
 /** Max blocks per queryFilter call to avoid RPC rate limits. */
 const BLOCK_CHUNK_SIZE = 9_999;
 
+/** Block number when contracts were first deployed. Avoids scanning from genesis. */
+const DEPLOY_BLOCK = Number(process.env.NEXT_PUBLIC_DEPLOY_BLOCK ?? "0");
+
 /** Cache TTL in milliseconds (30 seconds). */
 const CACHE_TTL_MS = 30_000;
 
@@ -183,7 +186,7 @@ function parseSignalEvents(
 
 export async function getActiveSignals(
   provider: ethers.Provider,
-  fromBlock: number = 0,
+  fromBlock: number = DEPLOY_BLOCK,
 ): Promise<SignalEvent[]> {
   const cacheKey = `signals:active`;
   const cached = signalCache.get(cacheKey);
@@ -270,7 +273,7 @@ export interface PurchaseEvent {
 export async function getPurchasesByBuyer(
   provider: ethers.Provider,
   buyerAddress: string,
-  fromBlock: number = 0,
+  fromBlock: number = DEPLOY_BLOCK,
 ): Promise<PurchaseEvent[]> {
   const cacheKey = `purchases:buyer:${buyerAddress.toLowerCase()}`;
   const cached = purchaseCache.get(cacheKey);
@@ -335,7 +338,7 @@ export interface AuditEvent {
 export async function getAuditsByGenius(
   provider: ethers.Provider,
   geniusAddress: string,
-  fromBlock: number = 0,
+  fromBlock: number = DEPLOY_BLOCK,
 ): Promise<AuditEvent[]> {
   const cacheKey = `audits:genius:${geniusAddress.toLowerCase()}`;
   const cached = auditCache.get(cacheKey);
@@ -409,7 +412,7 @@ export async function getAuditsByGenius(
 export async function getAuditsByIdiot(
   provider: ethers.Provider,
   idiotAddress: string,
-  fromBlock: number = 0,
+  fromBlock: number = DEPLOY_BLOCK,
 ): Promise<AuditEvent[]> {
   const cacheKey = `audits:idiot:${idiotAddress.toLowerCase()}`;
   const cached = auditCache.get(cacheKey);

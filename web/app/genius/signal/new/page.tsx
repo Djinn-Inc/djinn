@@ -333,7 +333,7 @@ export default function CreateSignal() {
       const failed = results.filter((r) => r.status === "rejected").length;
       if (succeeded < SHAMIR_THRESHOLD) {
         throw new Error(
-          `Only ${succeeded}/${SHAMIR_TOTAL_SHARES} shares stored (need ${SHAMIR_THRESHOLD}). ${failed} failed.`,
+          `Key distribution failed: ${succeeded} of ${SHAMIR_THRESHOLD} required validators responded. This usually means the validator network is offline. Please try again later.`,
         );
       }
       if (failed > 0) {

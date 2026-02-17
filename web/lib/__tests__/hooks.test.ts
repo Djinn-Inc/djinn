@@ -101,7 +101,7 @@ describe("useActiveSignals", () => {
     expect(mockGetSignalsByGenius).toHaveBeenCalledWith(
       mockProvider,
       "0xGenius1",
-      0,
+      undefined,
       false,
     );
     expect(result.current.signals).toHaveLength(1);

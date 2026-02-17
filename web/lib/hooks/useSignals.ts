@@ -7,7 +7,7 @@ import type { SignalEvent } from "../events";
 
 export function useActiveSignals(sport?: string, geniusAddress?: string, includeAll: boolean = false) {
   const [signals, setSignals] = useState<SignalEvent[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
@@ -18,7 +18,7 @@ export function useActiveSignals(sport?: string, geniusAddress?: string, include
       const provider = getReadProvider();
       let result: SignalEvent[];
       if (geniusAddress) {
-        result = await getSignalsByGenius(provider, geniusAddress, 0, includeAll);
+        result = await getSignalsByGenius(provider, geniusAddress, undefined, includeAll);
       } else {
         result = await getActiveSignals(provider);
       }
