@@ -65,10 +65,25 @@ export default function CreateSignal() {
   // Odds: market reference and genius's signal odds (American format string)
   const [marketOdds, setMarketOdds] = useState<number | null>(null);
   const [editOdds, setEditOdds] = useState("");
-  // Per-book prices for depth visualization
-  const [bookPrices, setBookPrices] = useState<{ book: string; price: number }[]>([]);
   // Which line is expanded for editing (0-9 index, null = none)
   const [expandedLine, setExpandedLine] = useState<number | null>(null);
+
+  // Per-book prices derived from current realPick side/line (updates when side changes)
+  const bookPrices = useMemo(() => {
+    if (!selectedBet || !realPick) return [];
+    const prices: { book: string; price: number }[] = [];
+    for (const bk of selectedBet.event.bookmakers) {
+      for (const mkt of bk.markets) {
+        if (mkt.key !== realPick.market) continue;
+        for (const outcome of mkt.outcomes) {
+          if (outcome.name === realPick.side && (outcome.point ?? null) === (realPick.line ?? null)) {
+            prices.push({ book: bk.title, price: outcome.price });
+          }
+        }
+      }
+    }
+    return prices.sort((a, b) => b.price - a.price);
+  }, [selectedBet, realPick]);
 
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
@@ -141,23 +156,11 @@ export default function CreateSignal() {
     setMarketOdds(bet.avgPrice);
     setEditOdds(decimalToAmerican(bet.avgPrice));
     setSelectedSportsbooks(bet.books);
-    // Extract per-book prices for depth visualization
-    const prices: { book: string; price: number }[] = [];
-    for (const bk of bet.event.bookmakers) {
-      for (const mkt of bk.markets) {
-        if (mkt.key !== bet.market) continue;
-        for (const outcome of mkt.outcomes) {
-          if (outcome.name === bet.side && (outcome.point ?? null) === bet.line) {
-            prices.push({ book: bk.title, price: outcome.price });
-          }
-        }
-      }
-    }
-    setBookPrices(prices.sort((a, b) => b.price - a.price));
     const decoys = generateDecoys(pick, events, 9);
     setDecoyLines(decoys);
     const pos = cryptoRandomInt(10);
     setRealIndex(pos);
+    setExpandedLine(pos);
     setStep("review");
   };
 
@@ -832,7 +835,7 @@ export default function CreateSignal() {
                               const displayOdds = formatOdds(price, oddsFormat);
                               const isBest = hasRange && price === bestPrice;
                               const isWorst = hasRange && price === worstPrice;
-                              const atOrBetter = signalDecimal != null && price >= signalDecimal;
+                              const atOrBetter = signalDecimal != null && price >= signalDecimal - 0.001;
                               return (
                                 <tr
                                   key={`${book}-${bi}`}
@@ -861,7 +864,7 @@ export default function CreateSignal() {
                         </table>
                         {signalDecimal != null && (
                           <p className="text-[10px] text-genius-500 px-3 py-1.5 border-t border-genius-100">
-                            {bookPrices.filter(p => p.price >= signalDecimal).length}/{bookPrices.length} at or above your signal odds
+                            {bookPrices.filter(p => p.price >= signalDecimal - 0.001).length}/{bookPrices.length} at or above your signal odds
                           </p>
                         )}
                       </div>
