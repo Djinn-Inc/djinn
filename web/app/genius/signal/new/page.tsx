@@ -354,10 +354,11 @@ export default function CreateSignal() {
 
       setStep("success");
     } catch (err) {
-      setStepError(
-        err instanceof Error ? err.message : "Signal creation failed",
-      );
-      setStep("error");
+      const msg = err instanceof Error ? err.message : "Signal creation failed";
+      setStepError(msg);
+      // Stay on configure page for recoverable errors (wallet, validation)
+      // so the user can fix and retry without losing their settings
+      setStep("configure");
     }
   };
 
@@ -840,15 +841,24 @@ export default function CreateSignal() {
                                 <tr
                                   key={`${book}-${bi}`}
                                   className={`cursor-pointer transition-colors hover:bg-genius-100 ${
-                                    isBest ? "bg-green-50" : isWorst ? "bg-red-50" : atOrBetter ? "bg-genius-50" : ""
+                                    isBest ? "bg-green-50" : isWorst ? "bg-red-50" : ""
                                   }`}
                                   onClick={() => {
                                     setEditOdds(decimalToAmerican(price));
                                     setRealPick((prev) => prev ? { ...prev, price } : prev);
                                   }}
                                 >
-                                  <td className={`pl-3 py-1.5 font-medium ${
-                                    isBest ? "text-green-700" : isWorst ? "text-red-600" : atOrBetter ? "text-genius-700" : "text-slate-500"
+                                  <td className="w-5 pl-2.5 py-1.5">
+                                    {atOrBetter ? (
+                                      <svg className="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <span className="w-3.5 h-3.5 block" />
+                                    )}
+                                  </td>
+                                  <td className={`py-1.5 font-medium ${
+                                    isBest ? "text-green-700" : isWorst ? "text-red-600" : "text-slate-500"
                                   }`}>
                                     {book}
                                     {isBest && <span className="ml-1.5 text-[9px] font-semibold text-green-600 uppercase">Best</span>}
@@ -907,7 +917,7 @@ export default function CreateSignal() {
 
       <h1 className="text-3xl font-bold text-slate-900 mb-2">Configure Signal</h1>
       <p className="text-slate-500 mb-6">
-        Set your pricing, expiration, and available sportsbooks.
+        Set your pricing and expiration.
       </p>
 
       {realPick && (
@@ -916,6 +926,9 @@ export default function CreateSignal() {
           <p className="text-sm font-bold text-genius-800">{formatLine(realPick)}</p>
           <p className="text-xs text-genius-600 mt-1">
             + 9 decoy lines from {selectedSport.label}
+            {selectedSportsbooks.length > 0 && (
+              <> &middot; {selectedSportsbooks.length} sportsbook{selectedSportsbooks.length !== 1 ? "s" : ""}</>
+            )}
           </p>
         </div>
       )}
@@ -1019,22 +1032,6 @@ export default function CreateSignal() {
             return null;
           })()}
         </div>
-
-        {selectedSportsbooks.length > 0 && (
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1.5">Available Sportsbooks (auto-detected)</p>
-            <div className="flex flex-wrap gap-2">
-              {selectedSportsbooks.map((book) => (
-                <span
-                  key={book}
-                  className="rounded-lg px-3 py-1.5 text-sm bg-slate-100 text-slate-600"
-                >
-                  {book}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
 
         {(commitError || stepError) && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4" role="alert">
