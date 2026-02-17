@@ -3,6 +3,7 @@ import { Inter, Cinzel } from "next/font/google";
 import Providers from "./providers";
 import Layout from "@/components/Layout";
 import BetaGate from "@/components/BetaGate";
+import ServiceWorker from "@/components/ServiceWorker";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -15,6 +16,8 @@ export const metadata: Metadata = {
   title: "Djinn | Sports Intelligence Marketplace",
   description:
     "Analysts sell encrypted predictions. Buyers purchase access. Signals stay secret forever. Track records are cryptographically verifiable. Built on Bittensor Subnet 103, settled in USDC on Base.",
+  manifest: "/manifest.json",
+  themeColor: "#0f172a",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
@@ -45,6 +48,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} ${cinzel.variable}`}>
+        <ServiceWorker />
         <BetaGate>
           <Providers>
             <Layout>{children}</Layout>

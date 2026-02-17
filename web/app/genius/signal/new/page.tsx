@@ -22,6 +22,8 @@ import {
   extractBets,
   betToLine,
   formatLine,
+  formatOdds,
+  usesDecimalOdds,
   serializeLine,
   type OddsEvent,
   type AvailableBet,
@@ -537,6 +539,7 @@ export default function CreateSignal() {
                 key={event.id}
                 event={event}
                 onSelectBet={handleSelectBet}
+                oddsFormat={usesDecimalOdds(selectedSport.key) ? "decimal" : "american"}
               />
             ))}
           </div>
@@ -551,7 +554,11 @@ export default function CreateSignal() {
     const sameMarketCount = allLines.filter(
       (l) => l.market === realPick?.market,
     ).length;
+    const useDecimal = usesDecimalOdds(selectedSport.key);
+    const oddsFormat: "american" | "decimal" = useDecimal ? "decimal" : "american";
     const signalDecimal = editOdds ? americanToDecimal(editOdds) : null;
+    const ODDS_STEP = 0.05; // decimal increment for nudge buttons
+    const LINE_STEP = 0.5; // spread/total increment for nudge buttons
 
     return (
       <div className="max-w-2xl mx-auto">
@@ -601,7 +608,7 @@ export default function CreateSignal() {
                   }`}>
                     {i + 1}
                   </span>
-                  <span className="flex-1 min-w-0 truncate">{formatLine(line)}</span>
+                  <span className="flex-1 min-w-0 truncate">{formatLine(line, oddsFormat)}</span>
                   {isReal && (
                     <span className="text-xs bg-genius-200 text-genius-700 rounded px-2 py-0.5 flex-shrink-0">
                       YOUR PICK
@@ -674,7 +681,7 @@ export default function CreateSignal() {
                         <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
                           {line.market === "spreads" ? "Spread" : "Total"}
                         </p>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <input
                             type="number"
                             step="0.5"
@@ -685,8 +692,15 @@ export default function CreateSignal() {
                                 updateLine(i, { line: val });
                               }
                             }}
-                            className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
+                            className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
                           />
+                          <button
+                            type="button"
+                            onClick={() => updateLine(i, { line: (line.line ?? 0) - LINE_STEP })}
+                            className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold text-sm flex-shrink-0 flex items-center justify-center"
+                          >
+                            &minus;
+                          </button>
                           <input
                             type="range"
                             min={line.market === "totals" ? 100 : -15}
@@ -696,6 +710,13 @@ export default function CreateSignal() {
                             onChange={(e) => updateLine(i, { line: parseFloat(e.target.value) })}
                             className="flex-1 accent-genius-500 h-2"
                           />
+                          <button
+                            type="button"
+                            onClick={() => updateLine(i, { line: (line.line ?? 0) + LINE_STEP })}
+                            className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold text-sm flex-shrink-0 flex items-center justify-center"
+                          >
+                            +
+                          </button>
                         </div>
                       </div>
                     )}
@@ -703,27 +724,60 @@ export default function CreateSignal() {
                     {/* Odds */}
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
-                        {isReal ? "Signal Odds" : "Odds"}
+                        {isReal ? "Signal Odds" : "Odds"}{useDecimal ? " (decimal)" : " (American)"}
                       </p>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <input
                           type="text"
-                          value={isReal ? editOdds : (line.price ? decimalToAmerican(line.price) : "")}
+                          value={
+                            useDecimal
+                              ? (isReal ? (signalDecimal?.toFixed(2) ?? line.price?.toFixed(2) ?? "") : (line.price?.toFixed(2) ?? ""))
+                              : (isReal ? editOdds : (line.price ? decimalToAmerican(line.price) : ""))
+                          }
                           onChange={(e) => {
                             const raw = e.target.value;
-                            if (!/^[+-]?\d*$/.test(raw)) return;
-                            if (isReal) {
-                              setEditOdds(raw);
-                              const dec = americanToDecimal(raw);
-                              if (dec != null) setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+                            if (useDecimal) {
+                              if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
+                              const dec = parseFloat(raw);
+                              if (!isNaN(dec) && dec >= 1.01) {
+                                if (isReal) {
+                                  setEditOdds(decimalToAmerican(dec));
+                                  setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+                                } else {
+                                  updateLine(i, { price: dec });
+                                }
+                              }
                             } else {
-                              const dec = americanToDecimal(raw);
-                              if (dec != null) updateLine(i, { price: dec });
+                              if (!/^[+-]?\d*$/.test(raw)) return;
+                              if (isReal) {
+                                setEditOdds(raw);
+                                const dec = americanToDecimal(raw);
+                                if (dec != null) setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+                              } else {
+                                const dec = americanToDecimal(raw);
+                                if (dec != null) updateLine(i, { price: dec });
+                              }
                             }
                           }}
-                          placeholder="-110"
-                          className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
+                          placeholder={useDecimal ? "1.91" : "-110"}
+                          className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-mono focus:ring-2 focus:ring-genius-400"
                         />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cur = isReal ? (signalDecimal ?? line.price ?? 1.91) : (line.price ?? 1.91);
+                            const next = Math.max(1.01, cur - ODDS_STEP);
+                            if (isReal) {
+                              setEditOdds(decimalToAmerican(next));
+                              setRealPick((prev) => prev ? { ...prev, price: next } : prev);
+                            } else {
+                              updateLine(i, { price: next });
+                            }
+                          }}
+                          className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold text-sm flex-shrink-0 flex items-center justify-center"
+                        >
+                          &minus;
+                        </button>
                         <input
                           type="range"
                           min="1.1"
@@ -741,6 +795,22 @@ export default function CreateSignal() {
                           }}
                           className="flex-1 accent-genius-500 h-2"
                         />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cur = isReal ? (signalDecimal ?? line.price ?? 1.91) : (line.price ?? 1.91);
+                            const next = Math.min(10, cur + ODDS_STEP);
+                            if (isReal) {
+                              setEditOdds(decimalToAmerican(next));
+                              setRealPick((prev) => prev ? { ...prev, price: next } : prev);
+                            } else {
+                              updateLine(i, { price: next });
+                            }
+                          }}
+                          className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold text-sm flex-shrink-0 flex items-center justify-center"
+                        >
+                          +
+                        </button>
                       </div>
                       {isReal && (
                         <p className="text-[10px] text-genius-500 mt-1">
@@ -758,12 +828,12 @@ export default function CreateSignal() {
                         <table className="w-full text-xs">
                           <tbody>
                             {bookPrices.map(({ book, price }, bi) => {
-                              const american = decimalToAmerican(price);
+                              const displayOdds = formatOdds(price, oddsFormat);
                               const atOrBetter = signalDecimal != null && price >= signalDecimal;
                               return (
                                 <tr key={`${book}-${bi}`} className={atOrBetter ? "bg-genius-50" : ""}>
                                   <td className={`pl-3 py-1 font-medium ${atOrBetter ? "text-genius-700" : "text-slate-500"}`}>{book}</td>
-                                  <td className={`pr-3 py-1 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>{american}</td>
+                                  <td className={`pr-3 py-1 text-right font-mono font-semibold ${atOrBetter ? "text-genius-700" : "text-slate-400"}`}>{displayOdds}</td>
                                 </tr>
                               );
                             })}
@@ -1003,9 +1073,11 @@ function timeUntil(dateStr: string): { text: string; isLive: boolean } {
 function EventCard({
   event,
   onSelectBet,
+  oddsFormat = "american",
 }: {
   event: OddsEvent;
   onSelectBet: (bet: AvailableBet) => void;
+  oddsFormat?: "american" | "decimal";
 }) {
   const [expanded, setExpanded] = useState(false);
   const bets = extractBets(event);
@@ -1029,7 +1101,7 @@ function EventCard({
   const mlPreview = mlBets.length >= 2
     ? mlBets.slice(0, 2).map((b) => {
         const last = b.side.split(" ").pop();
-        return `${last} ${decimalToAmerican(b.avgPrice)}`;
+        return `${last} ${formatOdds(b.avgPrice, oddsFormat)}`;
       })
     : null;
 
@@ -1103,13 +1175,13 @@ function EventCard({
       {expanded && (
         <div className="mt-4 pt-4 border-t border-slate-100 space-y-4">
           {spreadBets.length > 0 && (
-            <BetSection title="Spread" bets={spreadBets} onSelect={onSelectBet} />
+            <BetSection title="Spread" bets={spreadBets} onSelect={onSelectBet} oddsFormat={oddsFormat} />
           )}
           {totalBets.length > 0 && (
-            <BetSection title="Total" bets={totalBets} onSelect={onSelectBet} />
+            <BetSection title="Total" bets={totalBets} onSelect={onSelectBet} oddsFormat={oddsFormat} />
           )}
           {mlBets.length > 0 && (
-            <BetSection title="Moneyline" bets={mlBets} onSelect={onSelectBet} />
+            <BetSection title="Moneyline" bets={mlBets} onSelect={onSelectBet} oddsFormat={oddsFormat} />
           )}
           {bets.length === 0 && (
             <p className="text-xs text-slate-400">No odds available for this game</p>
@@ -1124,10 +1196,12 @@ function BetSection({
   title,
   bets,
   onSelect,
+  oddsFormat = "american",
 }: {
   title: string;
   bets: AvailableBet[];
   onSelect: (bet: AvailableBet) => void;
+  oddsFormat?: "american" | "decimal";
 }) {
   return (
     <div>
@@ -1142,7 +1216,7 @@ function BetSection({
               : bet.line != null
                 ? ` ${bet.line > 0 ? "+" : ""}${bet.line}`
                 : "";
-          const priceStr = decimalToAmerican(bet.avgPrice);
+          const priceStr = formatOdds(bet.avgPrice, oddsFormat);
           const bookLabel = bet.bookCount === 1
             ? "1 book"
             : `${bet.bookCount} books`;
@@ -1161,7 +1235,7 @@ function BetSection({
                 <p className="text-[10px] text-slate-400 group-hover:text-genius-500">
                   {bookLabel}
                   {bet.bookCount > 1 && bet.minPrice !== bet.maxPrice && (
-                    <> &middot; {decimalToAmerican(bet.minPrice)} to {decimalToAmerican(bet.maxPrice)}</>
+                    <> &middot; {formatOdds(bet.minPrice, oddsFormat)} to {formatOdds(bet.maxPrice, oddsFormat)}</>
                   )}
                 </p>
               </div>

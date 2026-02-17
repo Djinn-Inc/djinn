@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   formatLine,
+  formatOdds,
+  usesDecimalOdds,
   parseLine,
   serializeLine,
   toCandidateLine,
@@ -129,6 +131,65 @@ describe("formatLine", () => {
 
   it("formats moneyline", () => {
     expect(formatLine(ML_LINE)).toBe("Los Angeles Lakers ML — Lakers vs Celtics");
+  });
+
+  it("formats with decimal odds", () => {
+    expect(
+      formatLine({ ...LAKERS_LINE, price: 1.91 }, "decimal"),
+    ).toBe("Los Angeles Lakers -3.5 (1.91) — Lakers vs Celtics");
+  });
+
+  it("formats with american odds", () => {
+    expect(
+      formatLine({ ...LAKERS_LINE, price: 1.91 }, "american"),
+    ).toBe("Los Angeles Lakers -3.5 (-110) — Lakers vs Celtics");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatOdds
+// ---------------------------------------------------------------------------
+
+describe("formatOdds", () => {
+  it("formats as American by default", () => {
+    expect(formatOdds(1.91)).toBe("-110");
+    expect(formatOdds(2.5)).toBe("+150");
+  });
+
+  it("formats as decimal", () => {
+    expect(formatOdds(1.91, "decimal")).toBe("1.91");
+    expect(formatOdds(2.5, "decimal")).toBe("2.50");
+  });
+
+  it("handles even odds", () => {
+    expect(formatOdds(1.0, "american")).toBe("EVEN");
+    expect(formatOdds(1.0, "decimal")).toBe("1.00");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// usesDecimalOdds
+// ---------------------------------------------------------------------------
+
+describe("usesDecimalOdds", () => {
+  it("returns false for US sports", () => {
+    expect(usesDecimalOdds("basketball_nba")).toBe(false);
+    expect(usesDecimalOdds("americanfootball_nfl")).toBe(false);
+    expect(usesDecimalOdds("baseball_mlb")).toBe(false);
+    expect(usesDecimalOdds("icehockey_nhl")).toBe(false);
+  });
+
+  it("returns true for soccer", () => {
+    expect(usesDecimalOdds("soccer_epl")).toBe(true);
+    expect(usesDecimalOdds("soccer_spain_la_liga")).toBe(true);
+    expect(usesDecimalOdds("soccer_usa_mls")).toBe(true);
+  });
+
+  it("returns true for non-US sports", () => {
+    expect(usesDecimalOdds("mma_mixed_martial_arts")).toBe(true);
+    expect(usesDecimalOdds("tennis_atp_french_open")).toBe(true);
+    expect(usesDecimalOdds("golf_pga_championship_winner")).toBe(true);
+    expect(usesDecimalOdds("boxing_boxing")).toBe(true);
   });
 });
 

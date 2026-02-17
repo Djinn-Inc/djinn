@@ -122,10 +122,25 @@ function toAmerican(decimal: number): string {
   return "EVEN";
 }
 
+/** Format decimal odds for display — American (-110) or decimal (1.91). */
+export function formatOdds(decimal: number, format: "american" | "decimal" = "american"): string {
+  if (format === "decimal") return decimal.toFixed(2);
+  return toAmerican(decimal);
+}
+
+/** Whether a sport conventionally uses decimal odds (non-US sports). */
+export function usesDecimalOdds(sportKey: string): boolean {
+  return sportKey.startsWith("soccer_") ||
+    sportKey.startsWith("mma_") ||
+    sportKey.startsWith("tennis_") ||
+    sportKey.startsWith("golf_") ||
+    sportKey.startsWith("boxing_");
+}
+
 /** Convert a StructuredLine into a human-readable display string. */
-export function formatLine(line: StructuredLine): string {
+export function formatLine(line: StructuredLine, oddsFormat: "american" | "decimal" = "american"): string {
   const teams = abbreviateTeam(line.home_team) + " vs " + abbreviateTeam(line.away_team);
-  const oddsStr = line.price ? ` (${toAmerican(line.price)})` : "";
+  const oddsStr = line.price ? ` (${formatOdds(line.price, oddsFormat)})` : "";
   switch (line.market) {
     case "spreads": {
       const spread = line.line != null ? (line.line > 0 ? `+${line.line}` : `${line.line}`) : "";
