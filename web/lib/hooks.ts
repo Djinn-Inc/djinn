@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { useAccount, useWalletClient } from "wagmi";
-import { encodeFunctionData, parseAbi, type Hex } from "viem";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { parseAbi, keccak256, encodePacked, type Hex } from "viem";
+import { waitForTransactionReceipt, getBlockNumber } from "@wagmi/core";
 import { wagmiConfig } from "../app/providers";
 import {
   getSignalCommitmentContract,
   getEscrowContract,
   getCollateralContract,
   getCreditLedgerContract,
-  getTrackRecordContract,
   getUsdcContract,
   ADDRESSES,
 } from "./contracts";
@@ -417,10 +416,22 @@ const ERC20_ABI = parseAbi([
 
 const ESCROW_ABI = parseAbi([
   "function deposit(uint256 amount)",
+  "function withdraw(uint256 amount)",
+  "function purchase(uint256 signalId, uint256 notional, uint256 odds) returns (uint256 purchaseId)",
 ]);
 
 const COLLATERAL_ABI = parseAbi([
   "function deposit(uint256 amount)",
+  "function withdraw(uint256 amount)",
+]);
+
+const SIGNAL_COMMITMENT_VIEM_ABI = parseAbi([
+  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p)",
+]);
+
+const TRACK_RECORD_VIEM_ABI = parseAbi([
+  "function commitProof(bytes32 commitHash)",
+  "function submit(uint256[2] _pA, uint256[2][2] _pB, uint256[2] _pC, uint256[106] _pubSignals) returns (uint256 recordId)",
 ]);
 
 /** Wait for a tx hash to be confirmed, throw if reverted. */
@@ -434,66 +445,93 @@ async function waitForTx(hash: Hex): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function useCommitSignal() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
   const commit = useCallback(
     async (params: CommitParams) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       setTxHash(null);
       try {
-        const contract = getSignalCommitmentContract(signer);
-        const gas = await estimateGas(contract, "commit", [params]);
-        const tx = await contract.commit(params, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
-        setTxHash(tx.hash);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        return tx.hash as string;
+        const signalCommitmentAddr = ADDRESSES.signalCommitment as Hex;
+
+        console.log("[commit-signal] committing signal", params.signalId.toString());
+        const hash = await walletClient.writeContract({
+          address: signalCommitmentAddr,
+          abi: SIGNAL_COMMITMENT_VIEM_ABI,
+          functionName: "commit",
+          args: [{
+            signalId: params.signalId,
+            encryptedBlob: params.encryptedBlob as Hex,
+            commitHash: params.commitHash as Hex,
+            sport: params.sport,
+            maxPriceBps: params.maxPriceBps,
+            slaMultiplierBps: params.slaMultiplierBps,
+            maxNotional: params.maxNotional,
+            expiresAt: params.expiresAt,
+            decoyLines: params.decoyLines,
+            availableSportsbooks: params.availableSportsbooks,
+          }],
+        });
+        console.log("[commit-signal] tx:", hash);
+        setTxHash(hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[commit-signal] FAILED:", err);
         setError(humanizeError(err));
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { commit, loading, error, txHash };
 }
 
 export function usePurchaseSignal() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
   const purchase = useCallback(
     async (signalId: bigint, notional: bigint, odds: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       setTxHash(null);
       try {
-        const contract = getEscrowContract(signer);
-        const gas = await estimateGas(contract, "purchase", [signalId, notional, odds]);
-        const tx = await contract.purchase(signalId, notional, odds, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
-        setTxHash(tx.hash);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        return receipt;
+        const escrowAddr = ADDRESSES.escrow as Hex;
+
+        console.log("[purchase-signal] purchasing signal", signalId.toString());
+        const hash = await walletClient.writeContract({
+          address: escrowAddr,
+          abi: ESCROW_ABI,
+          functionName: "purchase",
+          args: [signalId, notional, odds],
+        });
+        console.log("[purchase-signal] tx:", hash);
+        setTxHash(hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[purchase-signal] FAILED:", err);
         setError(humanizeError(err));
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { purchase, loading, error, txHash };
@@ -617,58 +655,74 @@ export function useDepositCollateral() {
 // ---------------------------------------------------------------------------
 
 export function useWithdrawEscrow() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const withdraw = useCallback(
     async (amount: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       try {
-        const escrow = getEscrowContract(signer);
-        const tx = await escrow.withdraw(amount);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        return tx.hash as string;
+        const escrowAddr = ADDRESSES.escrow as Hex;
+        console.log("[escrow-withdraw] withdrawing", amount.toString());
+        const hash = await walletClient.writeContract({
+          address: escrowAddr,
+          abi: ESCROW_ABI,
+          functionName: "withdraw",
+          args: [amount],
+        });
+        console.log("[escrow-withdraw] tx:", hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[escrow-withdraw] FAILED:", err);
         setError(humanizeError(err, "Withdraw failed"));
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { withdraw, loading, error };
 }
 
 export function useWithdrawCollateral() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const withdraw = useCallback(
     async (amount: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       try {
-        const collateral = getCollateralContract(signer);
-        const tx = await collateral.withdraw(amount);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        return tx.hash as string;
+        const collateralAddr = ADDRESSES.collateral as Hex;
+        console.log("[collateral-withdraw] withdrawing", amount.toString());
+        const hash = await walletClient.writeContract({
+          address: collateralAddr,
+          abi: COLLATERAL_ABI,
+          functionName: "withdraw",
+          args: [amount],
+        });
+        console.log("[collateral-withdraw] tx:", hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[collateral-withdraw] FAILED:", err);
         setError(humanizeError(err, "Withdraw failed"));
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { withdraw, loading, error };
@@ -679,28 +733,37 @@ export function useWithdrawCollateral() {
 // ---------------------------------------------------------------------------
 
 export function useApproveUsdc() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const approve = useCallback(
     async (spender: string, amount: bigint) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       try {
-        const usdc = getUsdcContract(signer);
-        const tx = await usdc.approve(spender, amount);
-        await tx.wait();
-        return tx.hash as string;
+        const usdcAddr = ADDRESSES.usdc as Hex;
+        console.log("[approve-usdc] approving", spender, amount.toString());
+        const hash = await walletClient.writeContract({
+          address: usdcAddr,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          args: [spender as Hex, amount],
+        });
+        console.log("[approve-usdc] tx:", hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[approve-usdc] FAILED:", err);
         setError(humanizeError(err, "Approval failed"));
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { approve, loading, error };
@@ -711,7 +774,8 @@ export function useApproveUsdc() {
 // ---------------------------------------------------------------------------
 
 export function useSubmitTrackRecord() {
-  const signer = useEthersSigner();
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -724,40 +788,53 @@ export function useSubmitTrackRecord() {
       pC: [bigint, bigint],
       pubSignals: bigint[],
     ) => {
-      if (!signer) throw new Error("Wallet not connected");
+      if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
       setError(null);
       setTxHash(null);
       try {
-        const contract = getTrackRecordContract(signer);
+        const trackRecordAddr = ADDRESSES.trackRecord as Hex;
 
         // Step 1: Compute proof hash matching contract's keccak256(abi.encodePacked(_pA, _pB, _pC, _pubSignals))
         setStep("committing");
-        const { ethers } = await import("ethers");
         const allValues = [...pA, ...pB[0], ...pB[1], ...pC, ...pubSignals];
-        const types = allValues.map(() => "uint256");
-        const proofHash = ethers.solidityPackedKeccak256(types, allValues);
-        const commitTx = await contract.commitProof(proofHash);
-        const commitReceipt = await commitTx.wait();
-        if (commitReceipt && commitReceipt.status === 0) throw new Error("Commit transaction reverted on-chain");
+        const types = allValues.map(() => "uint256" as const);
+        const proofHash = keccak256(encodePacked(types, allValues));
+
+        console.log("[track-record] committing proof hash");
+        const commitHash = await walletClient.writeContract({
+          address: trackRecordAddr,
+          abi: TRACK_RECORD_VIEM_ABI,
+          functionName: "commitProof",
+          args: [proofHash as Hex],
+        });
+        console.log("[track-record] commit tx:", commitHash);
+        await waitForTx(commitHash);
 
         // Step 2: Wait for next block (commit-reveal requires submission in a later block)
         setStep("waiting");
-        await new Promise<void>((resolve) => {
-          const provider = signer.provider!;
-          const handler = () => { provider.off("block", handler); resolve(); };
-          provider.on("block", handler);
-        });
+        const startBlock = await getBlockNumber(wagmiConfig);
+        let currentBlock = startBlock;
+        while (currentBlock <= startBlock) {
+          await new Promise(r => setTimeout(r, 2000));
+          currentBlock = await getBlockNumber(wagmiConfig);
+        }
 
         // Step 3: Submit the proof
         setStep("submitting");
-        const gas = await estimateGas(contract, "submit", [pA, pB, pC, pubSignals]);
-        const tx = await contract.submit(pA, pB, pC, pubSignals, gas ? { gasLimit: gas.gasLimit * 12n / 10n } : {});
-        setTxHash(tx.hash);
-        const receipt = await tx.wait();
-        if (receipt && receipt.status === 0) throw new Error("Transaction reverted on-chain");
-        return receipt;
+        console.log("[track-record] submitting proof");
+        const hash = await walletClient.writeContract({
+          address: trackRecordAddr,
+          abi: TRACK_RECORD_VIEM_ABI,
+          functionName: "submit",
+          args: [pA, pB, pC, pubSignals as readonly bigint[] & { length: 106 }],
+        });
+        console.log("[track-record] submit tx:", hash);
+        setTxHash(hash);
+        await waitForTx(hash);
+        return hash;
       } catch (err) {
+        console.error("[track-record] FAILED:", err);
         setError(humanizeError(err, "Track record submission failed"));
         throw err;
       } finally {
@@ -765,7 +842,7 @@ export function useSubmitTrackRecord() {
         setStep("idle");
       }
     },
-    [signer]
+    [walletClient, address]
   );
 
   return { submit, loading, error, txHash, step };

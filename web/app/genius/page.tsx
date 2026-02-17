@@ -23,13 +23,16 @@ export default function GeniusDashboard() {
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
 
   const handleDeposit = async () => {
     if (!depositAmount) return;
     setTxError(null);
+    setTxSuccess(null);
     try {
       await depositCollateral(parseUsdc(depositAmount));
       setDepositAmount("");
+      setTxSuccess(`Deposited ${depositAmount} USDC collateral`);
       refreshCollateral();
       refreshWalletUsdc();
     } catch (err) {
@@ -40,10 +43,13 @@ export default function GeniusDashboard() {
   const handleWithdraw = async () => {
     if (!withdrawAmount) return;
     setTxError(null);
+    setTxSuccess(null);
     try {
       await withdrawCollateral(parseUsdc(withdrawAmount));
       setWithdrawAmount("");
+      setTxSuccess(`Withdrew ${withdrawAmount} USDC collateral`);
       refreshCollateral();
+      refreshWalletUsdc();
     } catch (err) {
       setTxError(humanizeError(err, "Withdraw failed"));
     }
@@ -337,13 +343,18 @@ export default function GeniusDashboard() {
           Collateral Management
         </h2>
         <div className="card">
+          {txSuccess && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 mb-4" role="status">
+              <p className="text-xs text-green-700">{txSuccess}</p>
+            </div>
+          )}
           {txError && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
               <p className="text-xs text-red-600">{txError}</p>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
+            <form onSubmit={(e) => { e.preventDefault(); handleDeposit(); }}>
               <label htmlFor="depositCollateral" className="label">Deposit USDC Collateral</label>
               <div className="flex gap-2">
                 <input
@@ -355,15 +366,15 @@ export default function GeniusDashboard() {
                   onChange={(e) => setDepositAmount(e.target.value)}
                 />
                 <button
+                  type="submit"
                   className="btn-primary whitespace-nowrap"
                   disabled={depositLoading || !depositAmount}
-                  onClick={handleDeposit}
                 >
                   {depositLoading ? "Depositing..." : "Deposit"}
                 </button>
               </div>
-            </div>
-            <div>
+            </form>
+            <form onSubmit={(e) => { e.preventDefault(); handleWithdraw(); }}>
               <label htmlFor="withdrawCollateral" className="label">Withdraw Available Collateral</label>
               <div className="flex gap-2">
                 <input
@@ -375,14 +386,14 @@ export default function GeniusDashboard() {
                   onChange={(e) => setWithdrawAmount(e.target.value)}
                 />
                 <button
+                  type="submit"
                   className="btn-secondary whitespace-nowrap"
                   disabled={withdrawLoading || !withdrawAmount}
-                  onClick={handleWithdraw}
                 >
                   {withdrawLoading ? "Withdrawing..." : "Withdraw"}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </section>

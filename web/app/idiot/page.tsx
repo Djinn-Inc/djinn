@@ -25,14 +25,17 @@ export default function IdiotDashboard() {
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
   const [sportFilter, setSportFilter] = useState("");
   const { signals, loading: signalsLoading } = useActiveSignals(sportFilter || undefined);
 
   const handleDeposit = async () => {
     if (!depositAmount) return;
     setTxError(null);
+    setTxSuccess(null);
     try {
       await depositEscrow(parseUsdc(depositAmount));
+      setTxSuccess(`Deposited ${depositAmount} USDC to escrow`);
       setDepositAmount("");
       refreshEscrow();
       refreshWalletUsdc();
@@ -44,10 +47,13 @@ export default function IdiotDashboard() {
   const handleWithdraw = async () => {
     if (!withdrawAmount) return;
     setTxError(null);
+    setTxSuccess(null);
     try {
       await withdrawEscrow(parseUsdc(withdrawAmount));
+      setTxSuccess(`Withdrew ${withdrawAmount} USDC from escrow`);
       setWithdrawAmount("");
       refreshEscrow();
+      refreshWalletUsdc();
     } catch (err) {
       setTxError(err instanceof Error ? err.message : "Withdraw failed");
     }
@@ -134,13 +140,18 @@ export default function IdiotDashboard() {
           Balance Management
         </h2>
         <div className="card">
+          {txSuccess && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 mb-4" role="status">
+              <p className="text-xs text-green-700">{txSuccess}</p>
+            </div>
+          )}
           {txError && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
               <p className="text-xs text-red-600">{txError}</p>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
+            <form onSubmit={(e) => { e.preventDefault(); handleDeposit(); }}>
               <label htmlFor="depositEscrow" className="label">Deposit USDC</label>
               <div className="flex gap-2">
                 <input
@@ -152,9 +163,9 @@ export default function IdiotDashboard() {
                   onChange={(e) => setDepositAmount(e.target.value)}
                 />
                 <button
+                  type="submit"
                   className="btn-primary whitespace-nowrap"
                   disabled={depositLoading || !depositAmount}
-                  onClick={handleDeposit}
                 >
                   {depositLoading ? "Depositing..." : "Deposit"}
                 </button>
@@ -162,8 +173,8 @@ export default function IdiotDashboard() {
               <p className="text-xs text-slate-500 mt-1">
                 Deposits require USDC approval first
               </p>
-            </div>
-            <div>
+            </form>
+            <form onSubmit={(e) => { e.preventDefault(); handleWithdraw(); }}>
               <label htmlFor="withdrawEscrow" className="label">Withdraw USDC</label>
               <div className="flex gap-2">
                 <input
@@ -175,9 +186,9 @@ export default function IdiotDashboard() {
                   onChange={(e) => setWithdrawAmount(e.target.value)}
                 />
                 <button
+                  type="submit"
                   className="btn-secondary whitespace-nowrap"
                   disabled={withdrawLoading || !withdrawAmount}
-                  onClick={handleWithdraw}
                 >
                   {withdrawLoading ? "Withdrawing..." : "Withdraw"}
                 </button>
@@ -185,7 +196,7 @@ export default function IdiotDashboard() {
               <p className="text-xs text-slate-500 mt-1">
                 Withdraw available balance
               </p>
-            </div>
+            </form>
           </div>
         </div>
       </section>
