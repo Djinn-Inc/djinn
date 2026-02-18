@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import QualityScore from "@/components/QualityScore";
-import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUsdcBalance, humanizeError } from "@/lib/hooks";
+import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUsdcBalance, useEarlyExit, useAccountState, humanizeError } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { useTrackRecordProofs } from "@/lib/hooks/useTrackRecordProofs";
+import { useSettledSignals } from "@/lib/hooks/useSettledSignals";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
 export default function GeniusDashboard() {
@@ -19,6 +20,8 @@ export default function GeniusDashboard() {
   const { signals: mySignals, loading: signalsLoading } = useActiveSignals(undefined, address, true);
   const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
   const { proofs, loading: proofsLoading, error: proofsError } = useTrackRecordProofs(address);
+  const { signals: settledSignals } = useSettledSignals(address);
+  const proofableCount = settledSignals.filter((s) => s.purchases.length > 0).length;
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -84,8 +87,13 @@ export default function GeniusDashboard() {
           </p>
         </div>
         <div className="flex gap-3 flex-shrink-0">
-          <Link href="/genius/track-record" className="btn-secondary text-sm">
+          <Link href="/genius/track-record" className="btn-secondary text-sm relative">
             Track Record
+            {proofableCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-genius-500 text-white text-[10px] flex items-center justify-center font-bold">
+                {proofableCount > 9 ? "9+" : proofableCount}
+              </span>
+            )}
           </Link>
           <Link href="/genius/signal/new" className="btn-primary text-sm">
             Create Signal
@@ -337,6 +345,9 @@ export default function GeniusDashboard() {
         )}
       </section>
 
+      {/* Early Exit */}
+      <EarlyExitSection role="genius" myAddress={address} />
+
       {/* Collateral Management */}
       <section>
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
@@ -398,5 +409,109 @@ export default function GeniusDashboard() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Early Exit Section — shared by genius and idiot dashboards
+// ---------------------------------------------------------------------------
+
+function EarlyExitSection({
+  role,
+  myAddress,
+}: {
+  role: "genius" | "idiot";
+  myAddress: string | undefined;
+}) {
+  const [counterparty, setCounterparty] = useState("");
+  const { earlyExit, loading, error, txHash } = useEarlyExit();
+  const [success, setSuccess] = useState(false);
+
+  const genius = role === "genius" ? myAddress : counterparty;
+  const idiot = role === "idiot" ? myAddress : counterparty;
+  const { signalCount, isAuditReady, loading: stateLoading } = useAccountState(
+    genius || undefined,
+    idiot || undefined,
+  );
+
+  const handleEarlyExit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myAddress || !counterparty) return;
+    setSuccess(false);
+    try {
+      const g = role === "genius" ? myAddress : counterparty;
+      const i = role === "idiot" ? myAddress : counterparty;
+      await earlyExit(g, i);
+      setSuccess(true);
+    } catch {
+      // error is set in the hook
+    }
+  };
+
+  const otherRole = role === "genius" ? "Idiot" : "Genius";
+
+  return (
+    <section className="mb-8">
+      <h2 className="text-xl font-semibold text-slate-900 mb-4">
+        Early Exit
+      </h2>
+      <div className="card">
+        <p className="text-sm text-slate-500 mb-4">
+          End a relationship early (before 10 signals settle). All outstanding
+          damages are settled in Djinn Credits only &mdash; no USDC movement.
+          All signal outcomes must be finalized first.
+        </p>
+        <form onSubmit={handleEarlyExit} className="space-y-3">
+          <div>
+            <label htmlFor="earlyExitCounterparty" className="label">
+              {otherRole} Address
+            </label>
+            <input
+              id="earlyExitCounterparty"
+              type="text"
+              placeholder="0x..."
+              className="input"
+              value={counterparty}
+              onChange={(e) => { setCounterparty(e.target.value); setSuccess(false); }}
+            />
+          </div>
+
+          {counterparty.length === 42 && !stateLoading && (
+            <div className="rounded-lg bg-slate-50 p-3 text-sm">
+              <span className="text-slate-500">Signals in current cycle: </span>
+              <span className="font-medium text-slate-900">{signalCount}</span>
+              {isAuditReady && (
+                <span className="text-amber-600 ml-2">(10 reached — use normal audit instead)</span>
+              )}
+              {signalCount === 0 && (
+                <span className="text-slate-400 ml-2">(no active relationship)</span>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3" role="alert">
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3" role="status">
+              <p className="text-xs text-green-700">
+                Early exit completed. Damages settled in Djinn Credits.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || !counterparty || isAuditReady || signalCount === 0}
+            className="btn-secondary"
+          >
+            {loading ? "Processing..." : "Trigger Early Exit"}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }

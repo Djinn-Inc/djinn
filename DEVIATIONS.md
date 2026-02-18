@@ -173,18 +173,18 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Why:** The validator MPC was built independently from the web client. The web → validator share distribution API (`POST /v1/signal`) sends `encrypted_key_share` but not `encrypted_index_share` as shown in the whitepaper API reference (Appendix A).
 **Impact:** The miner executability check works (client-side, non-MPC), but the privacy-preserving MPC executability check cannot run. This is the gap between the validator protocol and the web client integration. Needs: (1) Shamir-split the realIndex in the browser, (2) send index shares alongside key shares to validators.
 
-## DEV-017: Per-Sport Track Records Not Implemented [TODO]
+## DEV-017: Per-Sport Track Records — Client-Side Filter [PARTIAL]
 
 **Whitepaper Section:** Section 5 (Discovery), Section 6 (Track Record Metrics)
 **Whitepaper Says:** "Track records are displayed per sport... Sport-level track records receive individual ZK proofs."
-**What we did:** Track record proofs are computed as a single aggregate across all sports. The leaderboard shows aggregate QS, signals, audits, ROI — no per-sport breakdown.
-**Why:** The ZK circuit generates a single proof over the full signal set. Per-sport would require either: (a) running the circuit multiple times with sport-filtered subsets, or (b) a circuit that outputs per-sport aggregates (more public inputs → larger verifier).
-**Impact:** Buyers cannot see sport-specific performance, which the whitepaper identifies as important for decision-making.
+**What we did:** Added a sport filter dropdown on the track record proof generation page so geniuses can generate proofs for a single sport. The ZK circuit itself remains sport-agnostic — it proves aggregate stats over whatever signals are selected. Separate proofs per sport are possible by filtering and running the circuit multiple times.
+**Why:** Full per-sport ZK circuit outputs would require redesigning the circuit's public outputs. Client-side filtering achieves the same result more simply.
+**Impact:** Geniuses can now generate sport-specific proofs. The leaderboard still shows aggregate stats (not per-sport breakdown).
 
-## DEV-018: Track Record Metrics Missing from Discovery [TODO]
+## DEV-018: Per-Outcome Metrics Added to Subgraph + Leaderboard [RESOLVED]
 
 **Whitepaper Section:** Section 5 (Discovery)
-**Whitepaper Says:** Buyers should see: "Purchase success rate", "Proof coverage percentage", "favorable rate, unfavorable rate, void rate"
-**What we did:** The signal browse / leaderboard shows: quality score, signal count, audit count, ROI. Missing: favorable rate, unfavorable rate, void rate, purchase success rate, proof coverage %.
-**Why:** The subgraph schema tracks aggregateQualityScore and totalAudits but doesn't expose per-outcome breakdowns. Adding these requires subgraph schema changes.
-**Impact:** Buyers have less information to make purchase decisions. Core metrics for evaluating genius quality are missing from the browse UX.
+**Whitepaper Says:** Buyers should see: "favorable rate, unfavorable rate, void rate"
+**What we did:** Added `totalFavorable`, `totalUnfavorable`, `totalVoid` fields to the Genius subgraph entity. Added a Win Rate column to the leaderboard showing W/L/V counts. The idiot signal browse also shows genius ROI. Subgraph mappings increment per-outcome counters on OutcomeUpdated events.
+**Remaining:** Purchase success rate and proof coverage % are not yet shown (would need additional subgraph queries).
+**Impact:** Buyers can now see win rate and outcome breakdown for each genius in the leaderboard.

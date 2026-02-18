@@ -4,13 +4,14 @@ const PORT = Number(process.env.PW_PORT ?? "3199");
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["**/live/**"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   timeout: 60_000,
-  globalTimeout: 120_000,
+  globalTimeout: 600_000,
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",

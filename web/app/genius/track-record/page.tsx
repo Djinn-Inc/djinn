@@ -40,6 +40,7 @@ export default function TrackRecordPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { submit: submitOnChain, loading: submitLoading } = useSubmitTrackRecord();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sportFilter, setSportFilter] = useState("");
 
   // Fetch settled signals (merges localStorage + subgraph + on-chain data)
   const {
@@ -49,11 +50,21 @@ export default function TrackRecordPage() {
     refresh,
   } = useSettledSignals(address);
 
-  // Filter to signals that have at least one settled purchase
+  // Filter to signals that have at least one settled purchase, optionally by sport
   const proofableSignals = useMemo(
-    () => settledSignals.filter((s) => s.purchases.length > 0),
-    [settledSignals],
+    () => settledSignals.filter((s) => {
+      if (s.purchases.length === 0) return false;
+      if (sportFilter && s.sport !== sportFilter) return false;
+      return true;
+    }),
+    [settledSignals, sportFilter],
   );
+
+  // Unique sports for the filter dropdown
+  const availableSports = useMemo(() => {
+    const sports = new Set(settledSignals.filter((s) => s.purchases.length > 0).map((s) => s.sport));
+    return Array.from(sports).sort();
+  }, [settledSignals]);
 
   const savedCount = getSavedSignals(address).length;
 
@@ -417,9 +428,24 @@ export default function TrackRecordPage() {
             {!signalsLoading && proofableSignals.length > 0 && (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-slate-400">
-                    {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs text-slate-400">
+                      {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
+                    </p>
+                    {availableSports.length > 1 && (
+                      <select
+                        className="input w-auto text-xs py-1"
+                        value={sportFilter}
+                        onChange={(e) => { setSportFilter(e.target.value); setSelectedIds(new Set()); }}
+                        aria-label="Filter by sport"
+                      >
+                        <option value="">All Sports</option>
+                        {availableSports.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={selectAll}

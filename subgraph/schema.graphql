@@ -128,6 +128,12 @@ type Genius @entity {
   trackRecordProofs: [TrackRecordProof!]! @derivedFrom(field: "genius")
   "Number of verified track record proofs"
   totalTrackRecordProofs: BigInt!
+  "Total favorable outcomes across all purchases"
+  totalFavorable: BigInt!
+  "Total unfavorable outcomes across all purchases"
+  totalUnfavorable: BigInt!
+  "Total void outcomes across all purchases"
+  totalVoid: BigInt!
 }
 
 """

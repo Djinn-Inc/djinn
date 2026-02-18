@@ -32,6 +32,7 @@ test.describe("Leaderboard page", () => {
     await expect(page.getByRole("columnheader", { name: /Audits/i })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: /ROI/i })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: /Proofs/i })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Win Rate/i })).toBeVisible();
   });
 });
 

@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
-import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance } from "@/lib/hooks";
+import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance, useEarlyExit, useAccountState, humanizeError } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
@@ -44,13 +44,15 @@ export default function IdiotDashboard() {
   const router = useRouter();
 
   const geniusScoreMap = useMemo(() => {
-    const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number; proofCount: number }>();
+    const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number; proofCount: number; favCount: number; unfavCount: number }>();
     for (const entry of leaderboard) {
       map.set(entry.address.toLowerCase(), {
         qualityScore: entry.qualityScore,
         totalSignals: entry.totalSignals,
         roi: entry.roi,
         proofCount: entry.proofCount,
+        favCount: entry.favCount,
+        unfavCount: entry.unfavCount,
       });
     }
     return map;
@@ -581,6 +583,7 @@ export default function IdiotDashboard() {
                 <th className="pb-3 font-medium">Signal</th>
                 <th className="pb-3 font-medium">Notional</th>
                 <th className="pb-3 font-medium">Fee Paid</th>
+                <th className="pb-3 font-medium">Credits Used</th>
                 <th className="pb-3 font-medium">Status</th>
                 <th className="pb-3 font-medium">Date</th>
               </tr>
@@ -588,13 +591,13 @@ export default function IdiotDashboard() {
             <tbody>
               {purchasesLoading ? (
                 <tr>
-                  <td colSpan={5} className="text-center text-slate-500 py-8">
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
                     Loading...
                   </td>
                 </tr>
               ) : purchases.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center text-slate-500 py-8">
+                  <td colSpan={6} className="text-center text-slate-500 py-8">
                     No purchases yet. Browse available signals above to get started.
                   </td>
                 </tr>
@@ -604,6 +607,13 @@ export default function IdiotDashboard() {
                     <td className="py-3">{truncateAddress(p.signalId)}</td>
                     <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
                     <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
+                    <td className="py-3">
+                      {p.creditUsed > 0n ? (
+                        <span className="text-idiot-500">{formatUsdc(p.creditUsed)}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
                     <td className="py-3">
                       <span className="rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700">
                         Pending
@@ -617,6 +627,9 @@ export default function IdiotDashboard() {
           </table>
         </div>
       </section>
+
+      {/* Early Exit */}
+      <EarlyExitSection role="idiot" myAddress={address} />
 
       {/* Audit History */}
       <section>
@@ -686,5 +699,109 @@ export default function IdiotDashboard() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Early Exit Section
+// ---------------------------------------------------------------------------
+
+function EarlyExitSection({
+  role,
+  myAddress,
+}: {
+  role: "genius" | "idiot";
+  myAddress: string | undefined;
+}) {
+  const [counterparty, setCounterparty] = useState("");
+  const { earlyExit, loading, error } = useEarlyExit();
+  const [success, setSuccess] = useState(false);
+
+  const genius = role === "genius" ? myAddress : counterparty;
+  const idiot = role === "idiot" ? myAddress : counterparty;
+  const { signalCount, isAuditReady, loading: stateLoading } = useAccountState(
+    genius || undefined,
+    idiot || undefined,
+  );
+
+  const handleEarlyExit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myAddress || !counterparty) return;
+    setSuccess(false);
+    try {
+      const g = role === "genius" ? myAddress : counterparty;
+      const i = role === "idiot" ? myAddress : counterparty;
+      await earlyExit(g, i);
+      setSuccess(true);
+    } catch {
+      // error is set in the hook
+    }
+  };
+
+  const otherRole = role === "genius" ? "Idiot" : "Genius";
+
+  return (
+    <section className="mb-8">
+      <h2 className="text-xl font-semibold text-slate-900 mb-4">
+        Early Exit
+      </h2>
+      <div className="card">
+        <p className="text-sm text-slate-500 mb-4">
+          End a relationship early (before 10 signals settle). All outstanding
+          damages are settled in Djinn Credits only &mdash; no USDC movement.
+          All signal outcomes must be finalized first.
+        </p>
+        <form onSubmit={handleEarlyExit} className="space-y-3">
+          <div>
+            <label htmlFor="earlyExitCounterparty" className="label">
+              {otherRole} Address
+            </label>
+            <input
+              id="earlyExitCounterparty"
+              type="text"
+              placeholder="0x..."
+              className="input"
+              value={counterparty}
+              onChange={(e) => { setCounterparty(e.target.value); setSuccess(false); }}
+            />
+          </div>
+
+          {counterparty.length === 42 && !stateLoading && (
+            <div className="rounded-lg bg-slate-50 p-3 text-sm">
+              <span className="text-slate-500">Signals in current cycle: </span>
+              <span className="font-medium text-slate-900">{signalCount}</span>
+              {isAuditReady && (
+                <span className="text-amber-600 ml-2">(10 reached — use normal audit instead)</span>
+              )}
+              {signalCount === 0 && (
+                <span className="text-slate-400 ml-2">(no active relationship)</span>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3" role="alert">
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3" role="status">
+              <p className="text-xs text-green-700">
+                Early exit completed. Damages settled in Djinn Credits.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || !counterparty || isAuditReady || signalCount === 0}
+            className="btn-secondary"
+          >
+            {loading ? "Processing..." : "Trigger Early Exit"}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }

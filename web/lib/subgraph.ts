@@ -22,6 +22,9 @@ export interface SubgraphGeniusEntry {
   collateralDeposited: string;
   totalSlashed: string;
   totalTrackRecordProofs: string;
+  totalFavorable?: string;
+  totalUnfavorable?: string;
+  totalVoid?: string;
 }
 
 export interface SubgraphTrackRecordProof {
@@ -102,6 +105,9 @@ export async function fetchLeaderboard(
       collateralDeposited
       totalSlashed
       totalTrackRecordProofs
+      totalFavorable
+      totalUnfavorable
+      totalVoid
     }
   }`);
 

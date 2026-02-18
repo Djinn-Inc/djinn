@@ -435,6 +435,10 @@ const TRACK_RECORD_VIEM_ABI = parseAbi([
   "function submit(uint256[2] _pA, uint256[2][2] _pB, uint256[2] _pC, uint256[106] _pubSignals) returns (uint256 recordId)",
 ]);
 
+const AUDIT_VIEM_ABI = parseAbi([
+  "function earlyExit(address genius, address idiot)",
+]);
+
 /** Wait for a tx hash to be confirmed, throw if reverted. */
 async function waitForTx(hash: Hex): Promise<void> {
   const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
@@ -847,4 +851,90 @@ export function useSubmitTrackRecord() {
   );
 
   return { submit, loading, error, txHash, step };
+}
+
+// ---------------------------------------------------------------------------
+// Early exit hook — either party can trigger before 10 signals
+// ---------------------------------------------------------------------------
+
+export function useEarlyExit() {
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  const earlyExit = useCallback(
+    async (genius: string, idiot: string) => {
+      if (!walletClient || !address) throw new Error("Wallet not connected");
+      setLoading(true);
+      setError(null);
+      setTxHash(null);
+      try {
+        const auditAddr = ADDRESSES.audit as Hex;
+        console.log("[early-exit] triggering", genius, idiot);
+        const hash = await walletClient.writeContract({
+          address: auditAddr,
+          abi: AUDIT_VIEM_ABI,
+          functionName: "earlyExit",
+          args: [genius as Hex, idiot as Hex],
+        });
+        console.log("[early-exit] tx:", hash);
+        setTxHash(hash);
+        await waitForTx(hash);
+        return hash;
+      } catch (err) {
+        console.error("[early-exit] FAILED:", err);
+        setError(humanizeError(err, "Early exit failed"));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [walletClient, address],
+  );
+
+  return { earlyExit, loading, error, txHash };
+}
+
+// ---------------------------------------------------------------------------
+// Account state hook — check signal count for a genius-idiot pair
+// ---------------------------------------------------------------------------
+
+export function useAccountState(genius?: string, idiot?: string) {
+  const [signalCount, setSignalCount] = useState<number>(0);
+  const [isAuditReady, setIsAuditReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!genius || !idiot) return;
+    setLoading(true);
+    try {
+      const provider = getReadProvider();
+      const account = new ethers.Contract(
+        ADDRESSES.account,
+        [
+          "function getSignalCount(address genius, address idiot) view returns (uint256)",
+          "function isAuditReady(address genius, address idiot) view returns (bool)",
+        ],
+        provider,
+      );
+      const [count, ready] = await Promise.all([
+        account.getSignalCount(genius, idiot),
+        account.isAuditReady(genius, idiot),
+      ]);
+      setSignalCount(Number(count));
+      setIsAuditReady(ready);
+    } catch {
+      // Silently fail — account may not exist yet
+    } finally {
+      setLoading(false);
+    }
+  }, [genius, idiot]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { signalCount, isAuditReady, loading, refresh };
 }

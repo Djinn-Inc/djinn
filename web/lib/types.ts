@@ -55,6 +55,9 @@ export interface GeniusLeaderboardEntry {
   auditCount: number;
   roi: number;
   proofCount: number;
+  favCount: number;
+  unfavCount: number;
+  voidCount: number;
 }
 
 export interface CommitParams {

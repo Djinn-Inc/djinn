@@ -243,6 +243,21 @@ export default function CreateSignal() {
     }
 
     try {
+      // Pre-flight: check that enough validators are reachable
+      const preflightValidators = getValidatorClients();
+      const healthChecks = await Promise.allSettled(
+        preflightValidators.map((v) => v.health()),
+      );
+      const healthyCount = healthChecks.filter(
+        (r) => r.status === "fulfilled" && r.value.status === "ok",
+      ).length;
+      if (healthyCount < SHAMIR_THRESHOLD) {
+        setStepError(
+          `Only ${healthyCount} of ${SHAMIR_THRESHOLD} required validators are reachable. Try again in a moment.`,
+        );
+        return;
+      }
+
       setStep("committing");
 
       const aesKey = generateAesKey();

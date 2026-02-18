@@ -20,6 +20,9 @@ function toLeaderboardEntry(g: SubgraphGeniusEntry): GeniusLeaderboardEntry {
     auditCount: Number(g.totalAudits),
     roi,
     proofCount: Number(g.totalTrackRecordProofs || 0),
+    favCount: Number(g.totalFavorable || 0),
+    unfavCount: Number(g.totalUnfavorable || 0),
+    voidCount: Number(g.totalVoid || 0),
   };
 }
 

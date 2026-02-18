@@ -804,6 +804,7 @@ export default function PurchaseSignal() {
                     </div>
                     <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-200">
                       If the pick is wrong, you receive a share of the genius&apos;s locked collateral. If correct, the genius keeps their collateral and earns your fee.
+                      {" "}Any Djinn Credits in your account are applied automatically to reduce the USDC portion of the fee.
                     </p>
                   </div>
                 )}

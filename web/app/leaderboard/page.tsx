@@ -5,7 +5,13 @@ import QualityScore from "@/components/QualityScore";
 import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { truncateAddress } from "@/lib/types";
 
-type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi" | "proofCount";
+type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi" | "proofCount" | "winRate";
+
+function getWinRate(entry: { favCount: number; unfavCount: number }): number {
+  const total = entry.favCount + entry.unfavCount;
+  if (total === 0) return 0;
+  return (entry.favCount / total) * 100;
+}
 
 export default function Leaderboard() {
   const { data, loading, error, configured } = useLeaderboard();
@@ -14,6 +20,9 @@ export default function Leaderboard() {
 
   const sorted = [...data].sort((a, b) => {
     const multiplier = sortDesc ? -1 : 1;
+    if (sortBy === "winRate") {
+      return (getWinRate(a) - getWinRate(b)) * multiplier;
+    }
     return (a[sortBy] - b[sortBy]) * multiplier;
   });
 
@@ -120,18 +129,28 @@ export default function Leaderboard() {
               >
                 Proofs{sortIndicator("proofCount")}
               </th>
+              <th
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
+                onClick={() => handleSort("winRate")}
+                onKeyDown={sortKeyHandler("winRate")}
+                aria-sort={ariaSort("winRate")}
+                tabIndex={0}
+                role="columnheader"
+              >
+                Win Rate{sortIndicator("winRate")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="text-center text-slate-500 py-12">
+                <td colSpan={8} className="text-center text-slate-500 py-12">
                   Loading leaderboard...
                 </td>
               </tr>
             ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center text-slate-500 py-12">
+                <td colSpan={8} className="text-center text-slate-500 py-12">
                   No leaderboard data available. Genius rankings will appear
                   after signals are committed and audited on-chain.
                 </td>
@@ -168,6 +187,18 @@ export default function Leaderboard() {
                     </span>
                   </td>
                   <td className="py-4 text-slate-900">{entry.proofCount}</td>
+                  <td className="py-4">
+                    {entry.favCount + entry.unfavCount > 0 ? (
+                      <span className="text-slate-900">
+                        {getWinRate(entry).toFixed(0)}%
+                        <span className="text-xs text-slate-400 ml-1">
+                          ({entry.favCount}W/{entry.unfavCount}L{entry.voidCount > 0 ? `/${entry.voidCount}V` : ""})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

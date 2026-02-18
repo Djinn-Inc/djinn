@@ -58,6 +58,9 @@ function getOrCreateGenius(address: string, timestamp: BigInt): Genius {
     genius.collateralLocked = BigInt.zero();
     genius.totalSlashed = BigInt.zero();
     genius.totalTrackRecordProofs = BigInt.zero();
+    genius.totalFavorable = BigInt.zero();
+    genius.totalUnfavorable = BigInt.zero();
+    genius.totalVoid = BigInt.zero();
     genius.createdAt = timestamp;
   }
   return genius;
@@ -170,6 +173,38 @@ export function handleOutcomeUpdated(event: OutcomeUpdated): void {
   let purchase = Purchase.load(purchaseId);
   if (purchase == null) return;
 
-  purchase.outcome = outcomeToString(event.params.outcome);
+  let oldOutcome = purchase.outcome;
+  let newOutcome = outcomeToString(event.params.outcome);
+  purchase.outcome = newOutcome;
   purchase.save();
+
+  // Update per-outcome aggregate counts on the Genius entity
+  let genius = Genius.load(purchase.genius);
+  if (genius != null) {
+    // Decrement old outcome count (if transitioning from a non-Pending state)
+    if (oldOutcome == "Favorable") {
+      genius.totalFavorable = genius.totalFavorable.gt(BigInt.zero())
+        ? genius.totalFavorable.minus(BigInt.fromI32(1))
+        : BigInt.zero();
+    } else if (oldOutcome == "Unfavorable") {
+      genius.totalUnfavorable = genius.totalUnfavorable.gt(BigInt.zero())
+        ? genius.totalUnfavorable.minus(BigInt.fromI32(1))
+        : BigInt.zero();
+    } else if (oldOutcome == "Void") {
+      genius.totalVoid = genius.totalVoid.gt(BigInt.zero())
+        ? genius.totalVoid.minus(BigInt.fromI32(1))
+        : BigInt.zero();
+    }
+
+    // Increment new outcome count
+    if (newOutcome == "Favorable") {
+      genius.totalFavorable = genius.totalFavorable.plus(BigInt.fromI32(1));
+    } else if (newOutcome == "Unfavorable") {
+      genius.totalUnfavorable = genius.totalUnfavorable.plus(BigInt.fromI32(1));
+    } else if (newOutcome == "Void") {
+      genius.totalVoid = genius.totalVoid.plus(BigInt.fromI32(1));
+    }
+
+    genius.save();
+  }
 }
