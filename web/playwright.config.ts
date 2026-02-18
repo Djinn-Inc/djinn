@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3199;
+const PORT = Number(process.env.PW_PORT ?? "3199");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -22,7 +22,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm build && pnpm start -p ${PORT}`,
+    command: `NEXT_PUBLIC_E2E_TEST=true pnpm build && pnpm start -p ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

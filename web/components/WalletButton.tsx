@@ -1,8 +1,26 @@
 "use client";
 
+import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
+const IS_E2E = process.env.NEXT_PUBLIC_E2E_TEST === "true";
+
+function E2EWalletButton() {
+  const { address, isConnected } = useAccount();
+  if (!isConnected) return null;
+  return (
+    <span
+      data-testid="wallet-address"
+      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+    >
+      {address?.slice(0, 6)}...{address?.slice(-4)}
+    </span>
+  );
+}
+
 export default function WalletButton() {
+  if (IS_E2E) return <E2EWalletButton />;
+
   return (
     <ConnectButton.Custom>
       {({
