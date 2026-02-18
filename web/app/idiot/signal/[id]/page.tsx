@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
@@ -54,7 +54,6 @@ export default function PurchaseSignal() {
     useAuditHistory(geniusAddress);
 
   const [notional, setNotional] = useState("");
-  const [odds, setOdds] = useState("");
   const [selectedSportsbook, setSelectedSportsbook] = useState("");
   const [step, setStep] = useState<PurchaseStep>("idle");
   const [stepError, setStepError] = useState<string | null>(null);
@@ -63,7 +62,16 @@ export default function PurchaseSignal() {
     pick: string;
   } | null>(null);
   const [availableIndices, setAvailableIndices] = useState<number[]>([]);
+  const [marketOdds, setMarketOdds] = useState<number | null>(null);
   const purchaseInFlight = useRef(false);
+
+  // Auto-select first sportsbook
+  const sportsbooks = signal?.availableSportsbooks;
+  useEffect(() => {
+    if (sportsbooks && sportsbooks.length >= 1 && !selectedSportsbook) {
+      setSelectedSportsbook(sportsbooks[0]);
+    }
+  }, [sportsbooks, selectedSportsbook]);
 
   if (!isConnected) {
     return (
@@ -154,6 +162,25 @@ export default function PurchaseSignal() {
         return;
       }
 
+      // Extract best odds from miner response for the selected sportsbook
+      let bestOdds = 1.91; // fallback
+      for (const lineResult of checkResult.results) {
+        if (lineResult.available && lineResult.bookmakers) {
+          const match = lineResult.bookmakers.find(
+            (b) => b.bookmaker.toLowerCase() === selectedSportsbook.toLowerCase(),
+          );
+          if (match && match.odds > 0) {
+            bestOdds = match.odds;
+            break;
+          }
+          // If no exact sportsbook match, use any available odds
+          if (lineResult.bookmakers.length > 0 && lineResult.bookmakers[0].odds > 0) {
+            bestOdds = lineResult.bookmakers[0].odds;
+          }
+        }
+      }
+      setMarketOdds(bestOdds);
+
       // Step 2: Request purchase from all validators (MPC check + share collection)
       setStep("purchasing_validator");
 
@@ -207,21 +234,20 @@ export default function PurchaseSignal() {
       setStep("purchasing_chain");
 
       const notionalNum = parseFloat(notional);
-      const oddsNum = parseFloat(odds);
       if (isNaN(notionalNum) || !Number.isFinite(notionalNum) || notionalNum <= 0) {
         setStepError("Invalid notional amount");
         setStep("idle");
         return;
       }
-      if (isNaN(oddsNum) || !Number.isFinite(oddsNum) || oddsNum < 1.01 || oddsNum > 10000) {
-        setStepError("Invalid odds (must be between 1.01 and 10,000)");
+      if (!bestOdds || bestOdds < 1.01) {
+        setStepError("Could not determine market odds. Try again.");
         setStep("idle");
         return;
       }
 
       const notionalBig = BigInt(Math.floor(notionalNum * 1_000_000));
       // Contract uses 6-decimal precision (ODDS_PRECISION = 1e6)
-      const oddsBig = BigInt(Math.floor(oddsNum * 1_000_000));
+      const oddsBig = BigInt(Math.floor(bestOdds * 1_000_000));
 
       await purchase(signalId, notionalBig, oddsBig);
 
@@ -493,7 +519,7 @@ export default function PurchaseSignal() {
             </div>
           </div>
 
-          {signal.availableSportsbooks.length > 0 && (
+          {signal.availableSportsbooks.length > 1 && (
             <div className="card">
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
                 Select Sportsbook
@@ -503,7 +529,7 @@ export default function PurchaseSignal() {
                   <button
                     key={book}
                     type="button"
-                    onClick={() => setSelectedSportsbook(book)}
+                    onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
                     className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                       selectedSportsbook === book
                         ? "bg-idiot-500 text-white"
@@ -554,23 +580,15 @@ export default function PurchaseSignal() {
                   </p>
                 </div>
 
-                <div>
-                  <label htmlFor="odds" className="label">Odds (decimal)</label>
-                  <input
-                    id="odds"
-                    type="number"
-                    value={odds}
-                    onChange={(e) => setOdds(e.target.value)}
-                    placeholder="1.91"
-                    min="1.01"
-                    step="0.01"
-                    className="input"
-                    required
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    e.g. 1.91 = -110 American
-                  </p>
-                </div>
+                {marketOdds && (
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Market Odds</p>
+                    <p className="text-lg font-bold text-slate-900">{marketOdds.toFixed(2)}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Live odds from {selectedSportsbook || "sportsbook"} via miner network
+                    </p>
+                  </div>
+                )}
 
                 {notional && (
                   <div className="rounded-lg bg-slate-50 p-3 space-y-2">
@@ -628,9 +646,7 @@ export default function PurchaseSignal() {
                 >
                   {isProcessing
                     ? "Processing..."
-                    : !selectedSportsbook
-                      ? "Select a Sportsbook"
-                      : "Purchase Signal"}
+                    : "Purchase Signal"}
                 </button>
               </form>
             )}

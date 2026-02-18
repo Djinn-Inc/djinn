@@ -10,10 +10,12 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   timeout: 60_000,
+  globalTimeout: 120_000,
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
     navigationTimeout: 30_000,
+    actionTimeout: 15_000,
   },
   projects: [
     {
