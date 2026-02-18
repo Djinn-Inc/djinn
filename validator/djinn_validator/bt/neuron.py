@@ -57,13 +57,13 @@ class DjinnValidator:
             return False
 
         try:
-            self.wallet = bt.wallet(
+            self.wallet = bt.Wallet(
                 name=self._wallet_name,
                 hotkey=self._hotkey_name,
             )
             log.info("wallet_loaded", coldkey=self.wallet.coldkeypub.ss58_address)
 
-            self.subtensor = bt.subtensor(network=self.network)
+            self.subtensor = bt.Subtensor(network=self.network)
             log.info("subtensor_connected", network=self.network)
 
             self.metagraph = self.subtensor.metagraph(self.netuid)
@@ -125,17 +125,15 @@ class DjinnValidator:
         vals = [weights[uid] for uid in uids]
 
         try:
-            import torch
-
             result = self.subtensor.set_weights(
                 netuid=self.netuid,
                 wallet=self.wallet,
-                uids=torch.tensor(uids, dtype=torch.int64),
-                weights=torch.tensor(vals, dtype=torch.float32),
+                uids=uids,
+                weights=vals,
                 wait_for_inclusion=True,
             )
             log.info("weights_set", uids=uids, success=result)
-            return bool(result)
+            return bool(result.success if hasattr(result, 'success') else result)
         except Exception as e:
             log.error("set_weights_failed", error=str(e))
             return False

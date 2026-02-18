@@ -62,14 +62,14 @@ class DjinnMiner:
 
         try:
             # Wallet
-            self.wallet = bt.wallet(
+            self.wallet = bt.Wallet(
                 name=self._wallet_name,
                 hotkey=self._hotkey_name,
             )
             log.info("wallet_loaded", hotkey=self.wallet.hotkey.ss58_address)
 
             # Subtensor connection
-            self.subtensor = bt.subtensor(network=self.network)
+            self.subtensor = bt.Subtensor(network=self.network)
             log.info("subtensor_connected", network=self.network)
 
             # Metagraph
@@ -112,7 +112,7 @@ class DjinnMiner:
         if bt is None or self.wallet is None:
             return
 
-        self.axon = bt.axon(
+        self.axon = bt.Axon(
             wallet=self.wallet,
             port=self._axon_port,
             external_ip=self._external_ip,
