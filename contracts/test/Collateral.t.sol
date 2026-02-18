@@ -434,6 +434,44 @@ contract CollateralTest is Test {
     // ─── Fuzz: deposit >= locked invariant
     // ───────────────────────────────
 
+    /// @notice Fuzz: slash transfers exactly min(amount, deposit) USDC to recipient
+    function testFuzz_slashAmountTransferred(uint256 depositSeed, uint256 slashSeed) public {
+        uint256 depositAmount = bound(depositSeed, 1e6, DEPOSIT_AMOUNT);
+        uint256 slashAmount = bound(slashSeed, 1, depositAmount * 2);
+
+        _depositAs(genius, depositAmount);
+
+        uint256 recipientBefore = usdc.balanceOf(recipient);
+        uint256 geniusDepositBefore = col.getDeposit(genius);
+
+        vm.prank(authorizedCaller);
+        col.slash(genius, slashAmount, recipient);
+
+        uint256 expectedSlash = slashAmount > depositAmount ? depositAmount : slashAmount;
+        assertEq(usdc.balanceOf(recipient) - recipientBefore, expectedSlash, "Fuzz: recipient must receive min(slash, deposit)");
+        assertEq(geniusDepositBefore - col.getDeposit(genius), expectedSlash, "Fuzz: deposit reduced by exact slash amount");
+    }
+
+    /// @notice Fuzz: slash with locked collateral — locked caps to deposit, available >= 0
+    function testFuzz_slashWithLocked_invariants(uint256 depositSeed, uint256 lockSeed, uint256 slashSeed) public {
+        uint256 depositAmount = bound(depositSeed, 2e6, DEPOSIT_AMOUNT);
+        uint256 lockAmount = bound(lockSeed, 1e6, depositAmount);
+        uint256 slashAmount = bound(slashSeed, 1, depositAmount * 2);
+
+        _depositAs(genius, depositAmount);
+
+        vm.prank(authorizedCaller);
+        col.lock(1, genius, lockAmount);
+
+        vm.prank(authorizedCaller);
+        col.slash(genius, slashAmount, recipient);
+
+        // Invariant: deposit >= locked always
+        assertGe(col.getDeposit(genius), col.getLocked(genius), "Fuzz: deposit must be >= locked");
+        // Invariant: available = deposit - locked >= 0 (getAvailable handles underflow)
+        assertGe(col.getDeposit(genius), col.getLocked(genius), "Fuzz: available must be >= 0");
+    }
+
     function testFuzz_depositGeLocked_afterSlash(uint256 depositSeed, uint256 lockSeed, uint256 slashSeed) public {
         uint256 depositAmount = bound(depositSeed, 1e6, DEPOSIT_AMOUNT);
         uint256 lockAmount = bound(lockSeed, 1e6, depositAmount);

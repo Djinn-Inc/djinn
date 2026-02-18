@@ -411,6 +411,66 @@ contract AuditFuzzTest is Test {
         assertTrue(loss <= int256(notional) * 3, "Fuzz: loss must be <= 3x notional when sla <= 30000");
     }
 
+    // ─── Fuzz: Settlement USDC conservation
+    // ─────────────────────────────────────────
+
+    /// @notice Fuzz end-to-end settlement: total USDC in system is conserved.
+    ///         After settlement, idiot's USDC received + genius's remaining collateral
+    ///         + treasury fee == initial USDC deposited
+    function testFuzz_settlement_usdcConservation(uint256 notionalSeed, uint256 slaSeed) public {
+        uint256 notional = bound(notionalSeed, 1e6, 1e10);
+        uint256 sla = bound(slaSeed, 10_000, 30_000);
+        uint256 odds = 1_910_000;
+
+        uint256 totalUsdcFeesPaid = 0;
+        uint256 totalCollateralDeposited = 0;
+
+        for (uint256 i; i < 10; i++) {
+            uint256 sigId = i + 1;
+            _createSignal(sigId, sla);
+
+            uint256 lockAmount = (notional * sla) / 10_000;
+            _depositGeniusCollateral(lockAmount);
+            totalCollateralDeposited += lockAmount;
+
+            uint256 fee = (notional * MAX_PRICE_BPS) / 10_000;
+            _depositIdiotEscrow(fee);
+            totalUsdcFeesPaid += fee;
+
+            vm.prank(idiot);
+            uint256 purchaseId = escrow.purchase(sigId, notional, odds);
+
+            // All unfavorable — maximum damages scenario
+            account.recordOutcome(genius, idiot, purchaseId, Outcome.Unfavorable);
+            escrow.setOutcome(purchaseId, Outcome.Unfavorable);
+        }
+
+        // Extra collateral for protocol fee
+        uint256 extraForProtocolFee = (10 * notional * 50) / 10_000;
+        _depositGeniusCollateral(extraForProtocolFee);
+        totalCollateralDeposited += extraForProtocolFee;
+
+        uint256 totalUsdcInSystem = totalUsdcFeesPaid + totalCollateralDeposited;
+
+        audit.trigger(genius, idiot);
+
+        // After settlement, all USDC is distributed among:
+        // 1. Idiot (tranche A refund — sent directly via slash, appears in idiot's wallet)
+        // 2. Genius (remaining collateral)
+        // 3. Treasury (protocol fee)
+        // 4. Escrow contract (any remaining idiot balance, should be 0 since all fees consumed)
+        uint256 idiotWallet = usdc.balanceOf(idiot);
+        uint256 geniusCollateral = collateral.getDeposit(genius);
+        uint256 treasuryBalance = usdc.balanceOf(treasury);
+        uint256 escrowBalance = usdc.balanceOf(address(escrow));
+        uint256 collateralBalance = usdc.balanceOf(address(collateral));
+
+        // Total USDC accounted for (collateral contract holds genius deposits + escrow holds idiot deposits)
+        uint256 totalAfter = idiotWallet + collateralBalance + treasuryBalance + escrowBalance;
+
+        assertEq(totalAfter, totalUsdcInSystem, "Fuzz: USDC conservation violated - USDC created or destroyed");
+    }
+
     // ─── Fuzz: Tranche invariant
     // ─────────────────────────────────────────
 

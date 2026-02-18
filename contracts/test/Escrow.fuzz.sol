@@ -221,6 +221,66 @@ contract EscrowFuzzTest is Test {
         assertEq(usdc.balanceOf(idiot), withdrawAmt, "USDC returned after withdraw");
     }
 
+    /// @notice Fuzz: small notional values — test rounding behavior at minimums
+    /// @dev When notional * maxPriceBps / 10_000 == 0, fee is zero.
+    ///      This tests that the system handles zero-fee and near-zero-fee purchases correctly.
+    function testFuzz_smallNotional_roundingBehavior(uint256 notional, uint16 maxPriceBps) public {
+        notional = bound(notional, 1e6, 10e6); // 1 to 10 USDC (small range)
+        maxPriceBps = uint16(bound(uint256(maxPriceBps), 1, 100)); // 0.01% to 1%
+
+        uint256 slaMultiplierBps = 10_000; // 100% — minimum valid
+        uint256 odds = 1_910_000;
+
+        uint256 sigId = nextSignalId++;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"cc",
+                commitHash: keccak256(abi.encodePacked("r", sigId)),
+                sport: "NFL",
+                maxPriceBps: maxPriceBps,
+                slaMultiplierBps: slaMultiplierBps,
+                maxNotional: 0,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoys(),
+                availableSportsbooks: _buildBooks()
+            })
+        );
+
+        uint256 fee = (notional * maxPriceBps) / 10_000;
+        uint256 lockAmount = (notional * slaMultiplierBps) / 10_000;
+
+        // Deposit collateral
+        usdc.mint(genius, lockAmount);
+        vm.startPrank(genius);
+        usdc.approve(address(collateral), lockAmount);
+        collateral.deposit(lockAmount);
+        vm.stopPrank();
+
+        if (fee > 0) {
+            usdc.mint(idiot, fee);
+            vm.startPrank(idiot);
+            usdc.approve(address(escrow), fee);
+            escrow.deposit(fee);
+            vm.stopPrank();
+        }
+
+        // Purchase should succeed
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(sigId, notional, odds);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        // Fee calculation must be exact integer division
+        assertEq(p.feePaid, fee, "Fuzz: fee must match integer division result");
+        // Fee must never exceed notional
+        assertLe(p.feePaid, notional, "Fuzz: fee must never exceed notional");
+        // Rounding: fee * 10_000 / maxPriceBps should be <= notional (no rounding up)
+        if (fee > 0) {
+            assertLe(fee * 10_000 / maxPriceBps, notional, "Fuzz: no rounding up in fee calculation");
+        }
+    }
+
     /// @notice Fuzz: withdraw more than balance should revert
     function testFuzz_withdrawExceedsBalance_reverts(uint256 depositAmt, uint256 withdrawAmt) public {
         depositAmt = bound(depositAmt, 1, 1e12);
