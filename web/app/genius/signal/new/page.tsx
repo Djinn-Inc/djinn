@@ -323,6 +323,11 @@ export default function CreateSignal() {
       const keyBigInt = keyToBigInt(aesKey);
       const shares = splitSecret(keyBigInt, SHAMIR_TOTAL_SHARES, SHAMIR_THRESHOLD);
 
+      // Also Shamir-split the real index for MPC executability checks
+      // realIndex is 0-based internally, but 1-indexed for the protocol (1-10)
+      const indexBigInt = BigInt(realIndex + 1);
+      const indexShares = splitSecret(indexBigInt, SHAMIR_TOTAL_SHARES, SHAMIR_THRESHOLD);
+
       const validators = getValidatorClients();
       const signalIdStr = signalId.toString();
 
@@ -330,12 +335,14 @@ export default function CreateSignal() {
         const validator = validators[i % validators.length];
         // Send only the individual Shamir share — NEVER the full AES key
         const shareHex = share.y.toString(16).padStart(64, "0");
+        const indexShareHex = indexShares[i].y.toString(16).padStart(64, "0");
         return validator.storeShare({
           signal_id: signalIdStr,
           genius_address: geniusAddress,
           share_x: share.x,
           share_y: share.y.toString(16),
           encrypted_key_share: shareHex,
+          encrypted_index_share: indexShareHex,
         });
       });
 

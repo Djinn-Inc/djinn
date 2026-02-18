@@ -38,3 +38,44 @@ export function setSportsbookPrefs(address: string, prefs: string[]): void {
     // localStorage may be unavailable in private browsing mode
   }
 }
+
+// ---------------------------------------------------------------------------
+// Purchased signal data (idiot side)
+// ---------------------------------------------------------------------------
+
+export interface PurchasedSignalData {
+  signalId: string;
+  realIndex: number;
+  pick: string;
+  sportsbook: string;
+  notional: string;
+  purchasedAt: number;
+}
+
+function purchasedKey(address: string): string {
+  return `djinn-purchased-signals:${address.toLowerCase()}`;
+}
+
+export function getPurchasedSignals(address?: string): PurchasedSignalData[] {
+  if (!address || typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(purchasedKey(address));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePurchasedSignal(address: string, data: PurchasedSignalData): void {
+  try {
+    const existing = getPurchasedSignals(address);
+    // Avoid duplicates
+    if (existing.some((e) => e.signalId === data.signalId)) return;
+    existing.push(data);
+    localStorage.setItem(purchasedKey(address), JSON.stringify(existing));
+  } catch {
+    // localStorage may be unavailable
+  }
+}

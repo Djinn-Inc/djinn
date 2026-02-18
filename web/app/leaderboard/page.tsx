@@ -5,7 +5,7 @@ import QualityScore from "@/components/QualityScore";
 import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { truncateAddress } from "@/lib/types";
 
-type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi";
+type SortField = "qualityScore" | "totalSignals" | "auditCount" | "roi" | "proofCount";
 
 export default function Leaderboard() {
   const { data, loading, error, configured } = useLeaderboard();
@@ -110,18 +110,28 @@ export default function Leaderboard() {
               >
                 ROI{sortIndicator("roi")}
               </th>
+              <th
+                className="pb-3 font-medium cursor-pointer hover:text-slate-900 transition-colors"
+                onClick={() => handleSort("proofCount")}
+                onKeyDown={sortKeyHandler("proofCount")}
+                aria-sort={ariaSort("proofCount")}
+                tabIndex={0}
+                role="columnheader"
+              >
+                Proofs{sortIndicator("proofCount")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="text-center text-slate-500 py-12">
+                <td colSpan={7} className="text-center text-slate-500 py-12">
                   Loading leaderboard...
                 </td>
               </tr>
             ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-slate-500 py-12">
+                <td colSpan={7} className="text-center text-slate-500 py-12">
                   No leaderboard data available. Genius rankings will appear
                   after signals are committed and audited on-chain.
                 </td>
@@ -157,6 +167,7 @@ export default function Leaderboard() {
                       {entry.roi.toFixed(1)}%
                     </span>
                   </td>
+                  <td className="py-4 text-slate-900">{entry.proofCount}</td>
                 </tr>
               ))
             )}

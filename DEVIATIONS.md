@@ -143,3 +143,48 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Why:** The original flow created stranded USDC: collateral was slashed to the escrow contract address, but escrow's internal accounting (feePool/balances) didn't track the incoming tokens. The `_refundFromFeePool` call moved existing fee pool accounting (fees the idiot already paid) rather than accounting for the newly-slashed collateral. This left the slashed USDC permanently unwithdrawable in the escrow contract.
 **Alternative considered:** Adding a `creditBalance(address, uint256)` function to Escrow callable by Audit would have preserved the "Collateral → Escrow" path. Chose direct-to-wallet for simplicity and better UX (idiot receives USDC immediately without needing to withdraw from escrow).
 **Impact:** Economic outcome identical — idiot receives the same USDC amount. UX improved — no additional withdrawal step. Fee pool for the cycle is left intact (genius earned fees stay in escrow; a future genius fee claim mechanism may be needed).
+
+## DEV-014: Batch Recovery Blob Instead of Per-Signal Key Wrapping
+
+**Whitepaper Section:** Section 5 (Creation/Purchase), Section 9 (Wallet-Based Key Recovery), Appendix B (KeyRecovery contract)
+**Whitepaper Says:** "Re-encrypts the signal key to the user's wallet public key" — per-signal, stored via `KeyRecovery.storeEncryptedKey(signal_id, encrypted_key, wallet)`. Both genius and idiot store per-signal encrypted keys.
+**What we did:** Implemented a batch approach: all genius signal data (preimages, real indices) is JSON-serialized, encrypted with an AES-256-GCM key derived from SHA-256 of a wallet signature ("Djinn Key Recovery v1"), and stored as a single blob via `KeyRecovery.storeRecoveryBlob(bytes)`. Maximum 4KB.
+**Why:**
+1. No ECIES library in the codebase — would need a new dependency for wallet-pubkey encryption
+2. AES-256-GCM is already implemented and battle-tested in the crypto module
+3. RFC 6979 deterministic ECDSA means `personal_sign` of a fixed message always produces the same signature → same derived key → deterministic recovery without storing any secret
+4. Single blob is simpler than N per-signal entries on-chain (fewer txs, less gas)
+**Tradeoff:** Requires a wallet signature popup on recovery. The whitepaper's per-signal approach would be transparent (just read + decrypt with wallet key). But signature-derived approach needs zero new crypto primitives.
+**Impact:** Same user-facing outcome — genius can recover signal data from any device via wallet. Implementation mechanism differs from whitepaper.
+
+## DEV-015: Idiot-Side Recovery Not Yet Implemented [TODO]
+
+**Whitepaper Section:** Section 5 (Purchase step 6), Section 9 (Wallet-Based Key Recovery)
+**Whitepaper Says:** "Bob's browser re-encrypts the signal key to Bob's wallet public key and posts it on-chain for recovery from any device."
+**What we did:** Only genius-side recovery is implemented. After purchase, the idiot's reconstructed AES key is used to decrypt but is not persisted for recovery.
+**Why:** Focused on genius recovery first (higher stakes — genius needs preimages for ZK proofs). Idiot recovery is lower priority since the decrypted pick is ephemeral information.
+**Impact:** If an idiot clears browser cache, they cannot re-decrypt a previously purchased signal from another device. The purchase itself is recorded on-chain, so settlement/audit is unaffected.
+
+## DEV-016: Index Shares Not Distributed for MPC [PARTIAL — SEE DEV-003/DEV-006]
+
+**Whitepaper Section:** Section 5 (Creation), Appendix C
+**Whitepaper Says:** "Splits the real signal's index into 10 pieces via a separate Shamir sharing (for the MPC executability check)" — this happens at signal creation in the browser.
+**What we did:** The web client distributes AES key shares to validators but does NOT Shamir-split the real index or send index shares. The MPC protocol on the validator side (DEV-006 through DEV-012) is fully implemented and assumes it receives index shares, but the web client never sends them.
+**Why:** The validator MPC was built independently from the web client. The web → validator share distribution API (`POST /v1/signal`) sends `encrypted_key_share` but not `encrypted_index_share` as shown in the whitepaper API reference (Appendix A).
+**Impact:** The miner executability check works (client-side, non-MPC), but the privacy-preserving MPC executability check cannot run. This is the gap between the validator protocol and the web client integration. Needs: (1) Shamir-split the realIndex in the browser, (2) send index shares alongside key shares to validators.
+
+## DEV-017: Per-Sport Track Records Not Implemented [TODO]
+
+**Whitepaper Section:** Section 5 (Discovery), Section 6 (Track Record Metrics)
+**Whitepaper Says:** "Track records are displayed per sport... Sport-level track records receive individual ZK proofs."
+**What we did:** Track record proofs are computed as a single aggregate across all sports. The leaderboard shows aggregate QS, signals, audits, ROI — no per-sport breakdown.
+**Why:** The ZK circuit generates a single proof over the full signal set. Per-sport would require either: (a) running the circuit multiple times with sport-filtered subsets, or (b) a circuit that outputs per-sport aggregates (more public inputs → larger verifier).
+**Impact:** Buyers cannot see sport-specific performance, which the whitepaper identifies as important for decision-making.
+
+## DEV-018: Track Record Metrics Missing from Discovery [TODO]
+
+**Whitepaper Section:** Section 5 (Discovery)
+**Whitepaper Says:** Buyers should see: "Purchase success rate", "Proof coverage percentage", "favorable rate, unfavorable rate, void rate"
+**What we did:** The signal browse / leaderboard shows: quality score, signal count, audit count, ROI. Missing: favorable rate, unfavorable rate, void rate, purchase success rate, proof coverage %.
+**Why:** The subgraph schema tracks aggregateQualityScore and totalAudits but doesn't expose per-outcome breakdowns. Adding these requires subgraph schema changes.
+**Impact:** Buyers have less information to make purchase decisions. Core metrics for evaluating genius quality are missing from the browse UX.

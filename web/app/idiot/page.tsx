@@ -44,12 +44,13 @@ export default function IdiotDashboard() {
   const router = useRouter();
 
   const geniusScoreMap = useMemo(() => {
-    const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number }>();
+    const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number; proofCount: number }>();
     for (const entry of leaderboard) {
       map.set(entry.address.toLowerCase(), {
         qualityScore: entry.qualityScore,
         totalSignals: entry.totalSignals,
         roi: entry.roi,
+        proofCount: entry.proofCount,
       });
     }
     return map;
@@ -523,9 +524,16 @@ export default function IdiotDashboard() {
                           by {truncateAddress(s.genius)}
                         </span>
                         {geniusStats && (
-                          <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
-                            {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS
-                          </span>
+                          <>
+                            <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS
+                            </span>
+                            {geniusStats.roi !== 0 && (
+                              <span className={`text-xs ${geniusStats.roi >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                {geniusStats.roi >= 0 ? "+" : ""}{geniusStats.roi.toFixed(1)}%
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-1">

@@ -193,3 +193,39 @@ describe("sportsbook preferences namespacing", () => {
     localStorage.removeItem(`djinn-sportsbook-prefs:${addr.toLowerCase()}`);
   });
 });
+
+describe("purchased signal persistence (idiot side)", () => {
+  it("saves and retrieves purchased signals per address", async () => {
+    const { getPurchasedSignals, savePurchasedSignal } = await import(
+      "../preferences"
+    );
+
+    const addr = "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF";
+    const purchase = {
+      signalId: "99999",
+      realIndex: 5,
+      pick: "Lakers -3 @ -110",
+      sportsbook: "FanDuel",
+      notional: "1000",
+      purchasedAt: 1708500000,
+    };
+
+    savePurchasedSignal(addr, purchase);
+
+    const data = getPurchasedSignals(addr);
+    expect(data).toHaveLength(1);
+    expect(data[0].signalId).toBe("99999");
+    expect(data[0].pick).toBe("Lakers -3 @ -110");
+
+    // Without address returns empty
+    expect(getPurchasedSignals()).toEqual([]);
+    expect(getPurchasedSignals(undefined)).toEqual([]);
+
+    // Deduplication: saving same signalId again should not duplicate
+    savePurchasedSignal(addr, purchase);
+    expect(getPurchasedSignals(addr)).toHaveLength(1);
+
+    // Cleanup
+    localStorage.removeItem(`djinn-purchased-signals:${addr.toLowerCase()}`);
+  });
+});

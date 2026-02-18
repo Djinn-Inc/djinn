@@ -19,6 +19,7 @@ function toLeaderboardEntry(g: SubgraphGeniusEntry): GeniusLeaderboardEntry {
     totalSignals: Number(g.totalSignals),
     auditCount: Number(g.totalAudits),
     roi,
+    proofCount: Number(g.totalTrackRecordProofs || 0),
   };
 }
 

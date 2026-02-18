@@ -54,6 +54,7 @@ export interface GeniusLeaderboardEntry {
   totalSignals: number;
   auditCount: number;
   roi: number;
+  proofCount: number;
 }
 
 export interface CommitParams {

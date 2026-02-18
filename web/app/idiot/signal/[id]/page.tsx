@@ -19,7 +19,7 @@ import {
 } from "@/lib/types";
 import type { CandidateLine } from "@/lib/api";
 import { decoyLineToCandidateLine, parseLine, formatLine } from "@/lib/odds";
-import { getSportsbookPrefs, setSportsbookPrefs } from "@/lib/preferences";
+import { getSportsbookPrefs, setSportsbookPrefs, savePurchasedSignal } from "@/lib/preferences";
 
 type PurchaseStep =
   | "idle"
@@ -377,6 +377,18 @@ export default function PurchaseSignal() {
             throw new Error(`Invalid realIndex ${parsed.realIndex} (expected 1-${signal.decoyLines.length})`);
           }
           setDecryptedPick(parsed);
+
+          // Persist purchased signal data for recovery
+          if (buyerAddress) {
+            savePurchasedSignal(buyerAddress, {
+              signalId: signalId.toString(),
+              realIndex: parsed.realIndex,
+              pick: parsed.pick,
+              sportsbook: usedSportsbook,
+              notional: notional,
+              purchasedAt: Math.floor(Date.now() / 1000),
+            });
+          }
         } catch (decryptErr) {
           console.warn("Decryption error:", decryptErr);
           setStepError(
