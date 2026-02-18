@@ -43,9 +43,10 @@ async function proxy(
         "Content-Type": res.headers.get("Content-Type") || "application/json",
       },
     });
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Validator unavailable" },
+      { error: "Validator unavailable", detail: msg, target },
       { status: 502 },
     );
   }
