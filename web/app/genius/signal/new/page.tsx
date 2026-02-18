@@ -224,6 +224,14 @@ export default function CreateSignal() {
       return;
     }
 
+    // Sync realPick.price from editOdds to prevent stale odds in serialized lines
+    const minOddsDecimal = editOdds ? americanToDecimal(editOdds) : null;
+    if (minOddsDecimal != null && realPick.price !== minOddsDecimal) {
+      setRealPick((prev) => prev ? { ...prev, price: minOddsDecimal } : prev);
+      // Also update the local reference for this submission
+      realPick.price = minOddsDecimal;
+    }
+
     const allLines = getAllLines();
     if (allLines.length !== 10) {
       setStepError("Expected 10 lines");
@@ -234,7 +242,6 @@ export default function CreateSignal() {
       setStep("committing");
 
       const aesKey = generateAesKey();
-      const minOddsDecimal = editOdds ? americanToDecimal(editOdds) : null;
       const pickPayload = JSON.stringify({
         realIndex: realIndex + 1,
         pick: formatLine(realPick),
@@ -912,7 +919,14 @@ export default function CreateSignal() {
             Regenerate Decoys
           </button>
           <button
-            onClick={() => setStep("configure")}
+            onClick={() => {
+              // Sync realPick.price from editOdds before transitioning
+              const dec = editOdds ? americanToDecimal(editOdds) : null;
+              if (dec != null) {
+                setRealPick((prev) => prev ? { ...prev, price: dec } : prev);
+              }
+              setStep("configure");
+            }}
             className="btn-primary flex-1 py-2"
           >
             Continue to Pricing
@@ -967,9 +981,20 @@ export default function CreateSignal() {
             className="input"
             required
           />
-          <p className="text-xs text-slate-500 mt-1">
-            Percentage buyers pay per purchase. Higher fee = more revenue but fewer buyers.
-          </p>
+          {(() => {
+            const pct = parseFloat(maxPriceBps);
+            if (maxPriceBps && (isNaN(pct) || pct <= 0)) {
+              return <p className="text-xs text-red-500 mt-1">Fee must be greater than 0%</p>;
+            }
+            if (pct > 50) {
+              return <p className="text-xs text-red-500 mt-1">Fee cannot exceed 50%</p>;
+            }
+            return (
+              <p className="text-xs text-slate-500 mt-1">
+                Percentage buyers pay per purchase. Higher fee = more revenue but fewer buyers.
+              </p>
+            );
+          })()}
           {(() => {
             const pct = parseFloat(maxPriceBps);
             if (!isNaN(pct) && pct > 0 && pct <= 50) {
@@ -999,11 +1024,22 @@ export default function CreateSignal() {
             className="input"
             required
           />
-          <p className="text-xs text-slate-500 mt-1">
-            If your pick is wrong, you pay the buyer up to this % of their stake
-            from your locked collateral. 100% means the buyer gets their full
-            stake back. Higher = more buyer protection but more risk for you.
-          </p>
+          {(() => {
+            const sla = parseFloat(slaMultiplier);
+            if (slaMultiplier && !isNaN(sla) && sla < 100) {
+              return <p className="text-xs text-red-500 mt-1">SLA multiplier must be at least 100%</p>;
+            }
+            if (sla > 1000) {
+              return <p className="text-xs text-red-500 mt-1">SLA multiplier cannot exceed 1000%</p>;
+            }
+            return (
+              <p className="text-xs text-slate-500 mt-1">
+                If your pick is wrong, you pay the buyer up to this % of their stake
+                from your locked collateral. 100% means the buyer gets their full
+                stake back. Higher = more buyer protection but more risk for you.
+              </p>
+            );
+          })()}
         </div>
 
         <div>
@@ -1019,6 +1055,16 @@ export default function CreateSignal() {
             className="input"
             required
           />
+          {(() => {
+            const hrs = parseFloat(expiresIn);
+            if (expiresIn && !isNaN(hrs) && hrs < 1) {
+              return <p className="text-xs text-red-500 mt-1">Expiry must be at least 1 hour</p>;
+            }
+            if (hrs > 168) {
+              return <p className="text-xs text-red-500 mt-1">Expiry cannot exceed 168 hours (7 days)</p>;
+            }
+            return null;
+          })()}
         </div>
 
         <div>
@@ -1035,9 +1081,17 @@ export default function CreateSignal() {
             className="input"
             required
           />
-          <p className="text-xs text-slate-500 mt-1">
-            Maximum notional a purchaser can specify. Caps your collateral exposure per purchase.
-          </p>
+          {(() => {
+            const mn = parseFloat(maxNotional);
+            if (maxNotional && !isNaN(mn) && mn < 1) {
+              return <p className="text-xs text-red-500 mt-1">Max notional must be at least $1</p>;
+            }
+            return (
+              <p className="text-xs text-slate-500 mt-1">
+                Maximum notional a purchaser can specify. Caps your collateral exposure per purchase.
+              </p>
+            );
+          })()}
           {(() => {
             const mn = parseFloat(maxNotional);
             const sla = parseFloat(slaMultiplier);
@@ -1129,7 +1183,16 @@ export default function CreateSignal() {
 
         <button
           type="submit"
-          disabled={isProcessing || commitLoading}
+          disabled={isProcessing || commitLoading || (() => {
+            const pct = parseFloat(maxPriceBps);
+            const sla = parseFloat(slaMultiplier);
+            const hrs = parseFloat(expiresIn);
+            const mn = parseFloat(maxNotional);
+            return isNaN(pct) || pct <= 0 || pct > 50
+              || isNaN(sla) || sla < 100 || sla > 1000
+              || isNaN(hrs) || hrs < 1 || hrs > 168
+              || isNaN(mn) || mn < 1;
+          })()}
           className="btn-primary w-full py-3 text-base"
         >
           {isProcessing ? "Processing..." : "Create Signal"}

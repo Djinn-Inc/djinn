@@ -10,11 +10,11 @@ dataSources:
   # --- SignalCommitment ---
   - kind: ethereum
     name: SignalCommitment
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000001"
+      address: "0x4675613f4aC6329D294605a56f2AAf04B0cc1f7d"
       abi: SignalCommitment
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -27,7 +27,7 @@ dataSources:
         - name: SignalCommitment
           file: ./abis/SignalCommitment.json
       eventHandlers:
-        - event: SignalCommitted(indexed uint256,indexed address,string,uint256,uint256,uint256)
+        - event: SignalCommitted(indexed uint256,indexed address,string,uint256,uint256,uint256,uint256)
           handler: handleSignalCommitted
         - event: SignalVoided(indexed uint256,indexed address)
           handler: handleSignalVoided
@@ -38,11 +38,11 @@ dataSources:
   # --- Escrow ---
   - kind: ethereum
     name: Escrow
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000002"
+      address: "0x83DcE21BA5875433Bc46e5eAC91e2B15cfA5B002"
       abi: Escrow
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -72,11 +72,11 @@ dataSources:
   # --- Collateral ---
   - kind: ethereum
     name: Collateral
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000003"
+      address: "0x436b9246F5eE53835df6AA68CdEeaE02514C0De6"
       abi: Collateral
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -104,11 +104,11 @@ dataSources:
   # --- Account ---
   - kind: ethereum
     name: Account
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000004"
+      address: "0x8fF0e9aAAb1206eb2C6087deE264e5EFB3EaDB4B"
       abi: Account
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -134,11 +134,11 @@ dataSources:
   # --- Audit ---
   - kind: ethereum
     name: Audit
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000005"
+      address: "0x18b30e757f1bfddd8728deec7ea4b7463939343d"
       abi: Audit
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -162,11 +162,11 @@ dataSources:
   # --- CreditLedger ---
   - kind: ethereum
     name: CreditLedger
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000006"
+      address: "0x1a3174C715D832b865269fD44beBd742922BC017"
       abi: CreditLedger
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -188,11 +188,11 @@ dataSources:
   # --- TrackRecord ---
   - kind: ethereum
     name: TrackRecord
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000007"
+      address: "0xD1dA1E9258B042b8309A1278BaACe16B1D99C423"
       abi: TrackRecord
-      startBlock: 0
+      startBlock: 37786979
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

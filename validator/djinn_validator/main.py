@@ -10,6 +10,7 @@ import os
 import random
 import signal
 
+import httpx
 import structlog
 import uvicorn
 
@@ -57,14 +58,36 @@ async def epoch_loop(
             # Sync metagraph
             neuron.sync_metagraph()
 
-            # Health-check all miners
+            # Health-check all miners by pinging their axon /health endpoint
             miner_uids = neuron.get_miner_uids()
-            for uid in miner_uids:
-                axon = neuron.get_axon_info(uid)
-                hotkey = axon.get("hotkey", f"uid-{uid}")
-                metrics = scorer.get_or_create(uid, hotkey)
-                # In production: ping miner axon and record health check
-                metrics.record_health_check(responded=True)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+                for uid in miner_uids:
+                    axon = neuron.get_axon_info(uid)
+                    hotkey = axon.get("hotkey", f"uid-{uid}")
+                    ip = axon.get("ip", "")
+                    port = axon.get("port", 0)
+                    metrics = scorer.get_or_create(uid, hotkey)
+
+                    if not ip or not port:
+                        metrics.record_health_check(responded=False)
+                        log.debug("miner_no_axon", uid=uid, hotkey=hotkey)
+                        continue
+
+                    url = f"http://{ip}:{port}/health"
+                    try:
+                        resp = await client.get(url)
+                        responded = resp.status_code == 200
+                    except httpx.HTTPError:
+                        responded = False
+
+                    metrics.record_health_check(responded=responded)
+                    log.debug(
+                        "miner_health_check",
+                        uid=uid,
+                        hotkey=hotkey,
+                        url=url,
+                        responded=responded,
+                    )
 
             # Resolve any pending signal outcomes
             hotkey = ""
@@ -89,14 +112,9 @@ async def epoch_loop(
                         neuron.record_weight_set()
                     log.info("weights_updated", n_miners=len(weights), active=is_active, success=success)
 
-            # Reset per-epoch metrics
+            # Reset per-epoch metrics (also increments consecutive_epochs
+            # for miners that participated this epoch)
             scorer.reset_epoch()
-
-            # Increment consecutive epochs for responding miners
-            for uid in miner_uids:
-                hotkey = neuron.get_axon_info(uid).get("hotkey", f"uid-{uid}")
-                m = scorer.get_or_create(uid, hotkey)
-                m.consecutive_epochs += 1
 
             consecutive_errors = 0
 

@@ -75,3 +75,106 @@ test.describe("Live API health", () => {
     expect(res.status()).toBeLessThan(500);
   });
 });
+
+test.describe("Navigation flows", () => {
+  test("home → genius dashboard navigation", async ({ page }) => {
+    await page.goto("/");
+    const geniusLink = page.getByRole("link", { name: /genius/i }).first();
+    await expect(geniusLink).toBeVisible();
+    await geniusLink.click();
+    await expect(page).toHaveURL(/\/genius/);
+    await expect(
+      page.getByRole("heading", { name: "Genius Dashboard" })
+    ).toBeVisible();
+  });
+
+  test("home → idiot dashboard navigation", async ({ page }) => {
+    await page.goto("/");
+    const idiotLink = page.getByRole("link", { name: /idiot/i }).first();
+    await expect(idiotLink).toBeVisible();
+    await idiotLink.click();
+    await expect(page).toHaveURL(/\/idiot/);
+    await expect(
+      page.getByRole("heading", { name: "Idiot Dashboard" })
+    ).toBeVisible();
+  });
+
+  test("genius dashboard → create signal navigation", async ({ page }) => {
+    await page.goto("/genius");
+    await expect(page.getByText(/connect your wallet/i)).toBeVisible({
+      timeout: 10_000,
+    });
+    // Even without wallet, the create signal route should load
+    await page.goto("/genius/signal/new");
+    await expect(page.getByText(/create signal|connect your wallet/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  test("direct URL to leaderboard works", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await expect(
+      page.getByRole("heading", { name: /leaderboard/i })
+    ).toBeVisible();
+  });
+});
+
+test.describe("Error states", () => {
+  test("404 page for unknown route", async ({ page }) => {
+    const res = await page.goto("/this-page-does-not-exist");
+    // Next.js returns 404 for unknown routes
+    expect(res?.status()).toBe(404);
+  });
+
+  test("invalid API route returns error", async ({ request }) => {
+    const res = await request.get("/api/nonexistent");
+    expect(res.status()).toBeGreaterThanOrEqual(400);
+  });
+
+  test("odds API with invalid sport returns error or empty", async ({
+    request,
+  }) => {
+    const res = await request.get("/api/odds?sport=invalid_sport_key");
+    // Should return error or empty array, not 500
+    expect(res.status()).toBeLessThan(500);
+  });
+});
+
+test.describe("Mobile viewport", () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("home page renders on mobile", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "DJINN" })).toBeVisible();
+  });
+
+  test("genius dashboard mobile layout", async ({ page }) => {
+    await page.goto("/genius");
+    await expect(
+      page.getByRole("heading", { name: "Genius Dashboard" })
+    ).toBeVisible();
+    // Content should not overflow horizontally
+    const bodyWidth = await page.evaluate(
+      () => document.body.scrollWidth
+    );
+    expect(bodyWidth).toBeLessThanOrEqual(375 + 20); // small tolerance
+  });
+
+  test("idiot dashboard mobile layout", async ({ page }) => {
+    await page.goto("/idiot");
+    await expect(
+      page.getByRole("heading", { name: "Idiot Dashboard" })
+    ).toBeVisible();
+    const bodyWidth = await page.evaluate(
+      () => document.body.scrollWidth
+    );
+    expect(bodyWidth).toBeLessThanOrEqual(375 + 20);
+  });
+
+  test("leaderboard renders on mobile without overflow", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await expect(
+      page.getByRole("heading", { name: /leaderboard/i })
+    ).toBeVisible();
+  });
+});

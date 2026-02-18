@@ -7,6 +7,7 @@
       { "indexed": false, "internalType": "string", "name": "sport", "type": "string" },
       { "indexed": false, "internalType": "uint256", "name": "maxPriceBps", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "slaMultiplierBps", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "maxNotional", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "expiresAt", "type": "uint256" }
     ],
     "name": "SignalCommitted",
