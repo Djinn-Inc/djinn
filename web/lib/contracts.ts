@@ -31,6 +31,7 @@ export const ADDRESSES = {
   account: safeAddress(process.env.NEXT_PUBLIC_ACCOUNT_ADDRESS, ZERO_ADDRESS),
   audit: safeAddress(process.env.NEXT_PUBLIC_AUDIT_ADDRESS, ZERO_ADDRESS),
   trackRecord: safeAddress(process.env.NEXT_PUBLIC_TRACK_RECORD_ADDRESS, ZERO_ADDRESS),
+  keyRecovery: safeAddress(process.env.NEXT_PUBLIC_KEY_RECOVERY_ADDRESS, ZERO_ADDRESS),
   usdc: safeAddress(
     process.env.NEXT_PUBLIC_USDC_ADDRESS,
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -109,6 +110,12 @@ export const TRACK_RECORD_ABI = [
   "event TrackRecordSubmitted(uint256 indexed recordId, address indexed genius, uint256 signalCount, uint256 totalGain, uint256 totalLoss, uint256 favCount, uint256 unfavCount, uint256 voidCount, bytes32 proofHash)",
 ] as const;
 
+export const KEY_RECOVERY_ABI = [
+  "function storeRecoveryBlob(bytes blob) external",
+  "function getRecoveryBlob(address user) external view returns (bytes)",
+  "event RecoveryBlobStored(address indexed user, uint256 timestamp)",
+] as const;
+
 export const ERC20_ABI = [
   "function approve(address spender, uint256 amount) external returns (bool)",
   "function allowance(address owner, address spender) external view returns (uint256)",
@@ -184,6 +191,16 @@ export function getTrackRecordContract(
   return new ethers.Contract(
     ADDRESSES.trackRecord,
     TRACK_RECORD_ABI,
+    signerOrProvider
+  );
+}
+
+export function getKeyRecoveryContract(
+  signerOrProvider: ethers.Signer | ethers.Provider
+) {
+  return new ethers.Contract(
+    ADDRESSES.keyRecovery,
+    KEY_RECOVERY_ABI,
     signerOrProvider
   );
 }

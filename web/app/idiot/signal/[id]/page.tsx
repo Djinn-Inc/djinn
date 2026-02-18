@@ -19,6 +19,7 @@ import {
 } from "@/lib/types";
 import type { CandidateLine } from "@/lib/api";
 import { decoyLineToCandidateLine, parseLine, formatLine } from "@/lib/odds";
+import { getSportsbookPrefs, setSportsbookPrefs } from "@/lib/preferences";
 
 type PurchaseStep =
   | "idle"
@@ -65,13 +66,62 @@ export default function PurchaseSignal() {
   const [marketOdds, setMarketOdds] = useState<number | null>(null);
   const purchaseInFlight = useRef(false);
 
-  // Auto-select first sportsbook
+  // Sportsbook preferences
+  const [savedPrefs, setSavedPrefs] = useState<string[]>([]);
+  const [editingPrefs, setEditingPrefs] = useState(false);
+  const [pendingPrefs, setPendingPrefs] = useState<string[]>([]);
+
+  // Load sportsbook prefs from localStorage
   const sportsbooks = signal?.availableSportsbooks;
   useEffect(() => {
-    if (sportsbooks && sportsbooks.length >= 1 && !selectedSportsbook) {
-      setSelectedSportsbook(sportsbooks[0]);
+    const prefs = getSportsbookPrefs(address);
+    setSavedPrefs(prefs);
+  }, [address]);
+
+  // Auto-select sportsbook from prefs or first available
+  useEffect(() => {
+    if (!sportsbooks || sportsbooks.length === 0) return;
+    if (selectedSportsbook) return;
+
+    // Try saved prefs first (in order)
+    for (const pref of savedPrefs) {
+      if (sportsbooks.includes(pref)) {
+        setSelectedSportsbook(pref);
+        return;
+      }
     }
-  }, [sportsbooks, selectedSportsbook]);
+    // Fall back to first available
+    setSelectedSportsbook(sportsbooks[0]);
+  }, [sportsbooks, selectedSportsbook, savedPrefs]);
+
+  const togglePendingPref = (book: string) => {
+    setPendingPrefs((prev) =>
+      prev.includes(book)
+        ? prev.filter((b) => b !== book)
+        : [...prev, book],
+    );
+  };
+
+  const savePendingPrefs = () => {
+    if (address) setSportsbookPrefs(address, pendingPrefs);
+    setSavedPrefs(pendingPrefs);
+    setEditingPrefs(false);
+    // Auto-select first preferred that's available
+    if (sportsbooks) {
+      for (const pref of pendingPrefs) {
+        if (sportsbooks.includes(pref)) {
+          setSelectedSportsbook(pref);
+          setMarketOdds(null);
+          break;
+        }
+      }
+    }
+  };
+
+  const startEditingPrefs = () => {
+    setPendingPrefs(savedPrefs.length > 0 ? [...savedPrefs] : []);
+    setEditingPrefs(true);
+  };
 
   if (!isConnected) {
     return (
@@ -120,6 +170,17 @@ export default function PurchaseSignal() {
   const isExpired = expiresDate < new Date();
   const isActive = signal.status === SignalStatus.Active && !isExpired;
 
+  // Build ordered list of sportsbooks to try: selected first, then remaining prefs
+  const getSportsbooksToTry = (): string[] => {
+    const toTry: string[] = [selectedSportsbook];
+    for (const pref of savedPrefs) {
+      if (pref !== selectedSportsbook && signal.availableSportsbooks.includes(pref)) {
+        toTry.push(pref);
+      }
+    }
+    return toTry;
+  };
+
   const handlePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signalId || !selectedSportsbook) return;
@@ -137,7 +198,7 @@ export default function PurchaseSignal() {
     setStepError(null);
 
     try {
-      // Step 1: Check line availability with miner
+      // Step 1: Check line availability with miner — auto-retry with preferred sportsbooks
       setStep("checking_lines");
 
       const miner = getMinerClient();
@@ -151,23 +212,46 @@ export default function PurchaseSignal() {
           ),
       );
 
-      const checkResult = await miner.checkLines({ lines: candidateLines });
-      setAvailableIndices(checkResult.available_indices);
+      const sportsbooksToTry = getSportsbooksToTry();
+      let checkResult: Awaited<ReturnType<typeof miner.checkLines>> | null = null;
+      let usedSportsbook = selectedSportsbook;
 
-      if (checkResult.available_indices.length === 0) {
+      for (const book of sportsbooksToTry) {
+        try {
+          const result = await miner.checkLines({ lines: candidateLines });
+          if (result.available_indices.length > 0) {
+            checkResult = result;
+            usedSportsbook = book;
+            break;
+          }
+        } catch {
+          // Try next sportsbook
+          continue;
+        }
+      }
+
+      if (!checkResult || checkResult.available_indices.length === 0) {
         setStepError(
-          "No lines are currently available at this sportsbook. Try another sportsbook or check back later.",
+          savedPrefs.length > 1
+            ? `No lines available at any of your preferred sportsbooks (${sportsbooksToTry.join(", ")}). Try another sportsbook or check back later.`
+            : "No lines are currently available at this sportsbook. Try another sportsbook or check back later.",
         );
         setStep("idle");
         return;
       }
 
-      // Extract best odds from miner response for the selected sportsbook
+      // Update selected sportsbook if we fell through to a different one
+      if (usedSportsbook !== selectedSportsbook) {
+        setSelectedSportsbook(usedSportsbook);
+      }
+      setAvailableIndices(checkResult.available_indices);
+
+      // Extract best odds from miner response for the used sportsbook
       let bestOdds = 1.91; // fallback
       for (const lineResult of checkResult.results) {
         if (lineResult.available && lineResult.bookmakers) {
           const match = lineResult.bookmakers.find(
-            (b) => b.bookmaker.toLowerCase() === selectedSportsbook.toLowerCase(),
+            (b) => b.bookmaker.toLowerCase() === usedSportsbook.toLowerCase(),
           );
           if (match && match.odds > 0) {
             bestOdds = match.odds;
@@ -187,7 +271,7 @@ export default function PurchaseSignal() {
       const validators = getValidatorClients();
       const purchaseReq = {
         buyer_address: buyerAddress,
-        sportsbook: selectedSportsbook,
+        sportsbook: usedSportsbook,
         available_indices: checkResult.available_indices,
       };
 
@@ -519,27 +603,118 @@ export default function PurchaseSignal() {
             </div>
           </div>
 
-          {signal.availableSportsbooks.length > 1 && (
+          {signal.availableSportsbooks.length > 0 && (
             <div className="card">
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
-                Select Sportsbook
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {signal.availableSportsbooks.map((book) => (
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">
+                  {editingPrefs ? "Set Sportsbook Preferences" : "Sportsbook"}
+                </p>
+                {!editingPrefs && savedPrefs.length > 0 && (
                   <button
-                    key={book}
                     type="button"
-                    onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
-                    className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                      selectedSportsbook === book
-                        ? "bg-idiot-500 text-white"
-                        : "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                    }`}
+                    onClick={startEditingPrefs}
+                    className="text-xs text-idiot-500 hover:text-idiot-600 transition-colors"
                   >
-                    {book}
+                    Change
                   </button>
-                ))}
+                )}
               </div>
+
+              {editingPrefs ? (
+                <div>
+                  <p className="text-xs text-slate-400 mb-2">
+                    Select your preferred sportsbooks in order. On purchase, Djinn will auto-try the next if a line check fails.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {signal.availableSportsbooks.map((book) => {
+                      const idx = pendingPrefs.indexOf(book);
+                      const isSelected = idx !== -1;
+                      return (
+                        <button
+                          key={book}
+                          type="button"
+                          onClick={() => togglePendingPref(book)}
+                          className={`rounded-lg px-3 py-1.5 text-sm transition-colors relative ${
+                            isSelected
+                              ? "bg-idiot-500 text-white"
+                              : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                          }`}
+                        >
+                          {isSelected && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center">
+                              {idx + 1}
+                            </span>
+                          )}
+                          {book}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={savePendingPrefs}
+                      disabled={pendingPrefs.length === 0}
+                      className="btn-primary text-xs px-3 py-1.5"
+                    >
+                      Save Preferences
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPrefs(false)}
+                      className="btn-secondary text-xs px-3 py-1.5"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : savedPrefs.length === 0 && signal.availableSportsbooks.length > 1 ? (
+                <div>
+                  <p className="text-xs text-slate-400 mb-2">
+                    No sportsbook preferences saved. Select your preferred sportsbooks for faster purchasing.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {signal.availableSportsbooks.map((book) => (
+                      <button
+                        key={book}
+                        type="button"
+                        onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
+                        className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                          selectedSportsbook === book
+                            ? "bg-idiot-500 text-white"
+                            : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                        }`}
+                      >
+                        {book}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={startEditingPrefs}
+                    className="text-xs text-idiot-500 hover:text-idiot-600 transition-colors"
+                  >
+                    Set preferences for auto-retry
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {signal.availableSportsbooks.map((book) => (
+                    <button
+                      key={book}
+                      type="button"
+                      onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
+                      className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                        selectedSportsbook === book
+                          ? "bg-idiot-500 text-white"
+                          : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                      }`}
+                    >
+                      {book}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

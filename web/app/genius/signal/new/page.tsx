@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
 import { useCommitSignal, useCollateral, useDepositCollateral, useWalletUsdcBalance } from "@/lib/hooks";
+import { getSavedSignals, saveSavedSignals } from "@/lib/hooks/useSettledSignals";
+import { storeRecovery } from "@/lib/recovery";
+import { ADDRESSES } from "@/lib/contracts";
 import SecretModal from "@/components/SecretModal";
 import PrivateWorkspace from "@/components/PrivateWorkspace";
 import {
@@ -41,6 +44,7 @@ type WizardStep = "browse" | "review" | "configure" | "committing" | "distributi
 export default function CreateSignal() {
   const router = useRouter();
   const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const { commit, loading: commitLoading, error: commitError } =
     useCommitSignal();
   const { signals: existingSignals } = useActiveSignals(undefined, address);
@@ -352,23 +356,33 @@ export default function CreateSignal() {
       }
 
       // Persist private signal data for future track record proof generation
-      try {
-        const stored = JSON.parse(localStorage.getItem("djinn-signal-data") || "[]");
-        stored.push({
-          signalId: signalId.toString(),
-          preimage: keyToBigInt(aesKey).toString(),
-          realIndex: realIndex + 1, // 1-indexed as used in ZK circuit
-          sport: selectedSport.label,
-          pick: formatLine(realPick),
-          minOdds: minOddsDecimal,
-          minOddsAmerican: editOdds || null,
-          slaMultiplierBps: Math.round(slaNum * 100),
-          createdAt: Math.floor(Date.now() / 1000),
+      const newEntry = {
+        signalId: signalId.toString(),
+        preimage: keyToBigInt(aesKey).toString(),
+        realIndex: realIndex + 1, // 1-indexed as used in ZK circuit
+        sport: selectedSport.label,
+        pick: formatLine(realPick),
+        minOdds: minOddsDecimal,
+        minOddsAmerican: editOdds || null,
+        slaMultiplierBps: Math.round(slaNum * 100),
+        createdAt: Math.floor(Date.now() / 1000),
+      };
+      const existing = getSavedSignals(geniusAddress);
+      const updated = [...existing, newEntry];
+      saveSavedSignals(geniusAddress, updated);
+
+      // Store recovery blob on-chain (non-blocking — localStorage is primary)
+      if (walletClient && ADDRESSES.keyRecovery !== "0x0000000000000000000000000000000000000000") {
+        const { waitForTransactionReceipt } = await import("@wagmi/core");
+        const { wagmiConfig } = await import("@/app/providers");
+        storeRecovery(
+          (msg) => walletClient.signMessage({ message: msg }),
+          walletClient,
+          updated,
+          async (h) => { await waitForTransactionReceipt(wagmiConfig, { hash: h }); },
+        ).catch((err) => {
+          console.warn("[recovery] Failed to store recovery blob on-chain:", err);
         });
-        localStorage.setItem("djinn-signal-data", JSON.stringify(stored));
-      } catch {
-        // localStorage may be unavailable; non-fatal
-        console.warn("Failed to save signal data to localStorage");
       }
 
       setStep("success");

@@ -39,16 +39,44 @@ export interface ProofReadyPurchase {
   slaBps: string;
 }
 
-/** Read saved signal data from localStorage. */
-export function getSavedSignals(): SavedSignalData[] {
-  if (typeof window === "undefined") return [];
+const LEGACY_KEY = "djinn-signal-data";
+
+function signalStorageKey(address: string): string {
+  return `djinn-signal-data:${address.toLowerCase()}`;
+}
+
+/** Read saved signal data from localStorage, namespaced by wallet address. */
+export function getSavedSignals(address?: string): SavedSignalData[] {
+  if (typeof window === "undefined" || !address) return [];
   try {
-    const raw = localStorage.getItem("djinn-signal-data");
+    const key = signalStorageKey(address);
+    let raw = localStorage.getItem(key);
+
+    // Lazy migration: move legacy non-namespaced data to namespaced key
+    if (!raw) {
+      const legacyRaw = localStorage.getItem(LEGACY_KEY);
+      if (legacyRaw) {
+        localStorage.setItem(key, legacyRaw);
+        localStorage.removeItem(LEGACY_KEY);
+        raw = legacyRaw;
+      }
+    }
+
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+/** Write saved signal data to localStorage, namespaced by wallet address. */
+export function saveSavedSignals(address: string, signals: SavedSignalData[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(signalStorageKey(address), JSON.stringify(signals));
+  } catch {
+    console.warn("Failed to save signal data to localStorage");
   }
 }
 
@@ -72,8 +100,8 @@ export function useSettledSignals(geniusAddress: string | undefined) {
     setError(null);
 
     try {
-      // Step 1: Read private data from localStorage
-      const saved = getSavedSignals();
+      // Step 1: Read private data from localStorage (namespaced by wallet)
+      const saved = getSavedSignals(geniusAddress);
       if (saved.length === 0) {
         setSignals([]);
         return;

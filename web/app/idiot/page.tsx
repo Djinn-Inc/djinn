@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
+import { useRouter } from "next/navigation";
 import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
+import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
+import SignalPlot from "@/components/SignalPlot";
 
 export default function IdiotDashboard() {
   const { isConnected, address } = useAccount();
@@ -27,7 +30,77 @@ export default function IdiotDashboard() {
   const [txError, setTxError] = useState<string | null>(null);
   const [txSuccess, setTxSuccess] = useState<string | null>(null);
   const [sportFilter, setSportFilter] = useState("");
+  const [viewMode, setViewMode] = useState<"plot" | "list">("list");
+  const [notionalMin, setNotionalMin] = useState(0);
+  const [notionalMax, setNotionalMax] = useState(10000);
+  const [feeMax, setFeeMax] = useState(500);
+  const [slaMin, setSlaMin] = useState(0);
+  const [expiryFilter, setExpiryFilter] = useState("");
+  const [geniusSearch, setGeniusSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"expiry" | "fee-asc" | "fee-desc" | "sla" | "score">("expiry");
+  const [showFilters, setShowFilters] = useState(false);
   const { signals, loading: signalsLoading } = useActiveSignals(sportFilter || undefined);
+  const { data: leaderboard } = useLeaderboard();
+  const router = useRouter();
+
+  const geniusScoreMap = useMemo(() => {
+    const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number }>();
+    for (const entry of leaderboard) {
+      map.set(entry.address.toLowerCase(), {
+        qualityScore: entry.qualityScore,
+        totalSignals: entry.totalSignals,
+        roi: entry.roi,
+      });
+    }
+    return map;
+  }, [leaderboard]);
+
+  const filteredSignals = useMemo(() => {
+    const now = Date.now();
+    const minBig = BigInt(notionalMin) * 1_000_000n;
+    const maxBig = BigInt(notionalMax) * 1_000_000n;
+    return signals.filter((s) => {
+      if (s.maxNotional > 0n && s.maxNotional < minBig) return false;
+      if (notionalMax < 10000 && s.maxNotional > maxBig) return false;
+      if (Number(s.maxPriceBps) > feeMax) return false;
+      if (slaMin > 0 && Number(s.slaMultiplierBps) < slaMin) return false;
+      if (expiryFilter) {
+        const hoursLeft = (Number(s.expiresAt) * 1000 - now) / 3_600_000;
+        if (hoursLeft > parseInt(expiryFilter)) return false;
+      }
+      if (geniusSearch) {
+        const q = geniusSearch.toLowerCase();
+        if (!s.genius.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [signals, notionalMin, notionalMax, feeMax, slaMin, expiryFilter, geniusSearch]);
+
+  const sortedSignals = useMemo(() => {
+    const sorted = [...filteredSignals];
+    switch (sortBy) {
+      case "expiry":
+        sorted.sort((a, b) => Number(a.expiresAt) - Number(b.expiresAt));
+        break;
+      case "fee-asc":
+        sorted.sort((a, b) => Number(a.maxPriceBps) - Number(b.maxPriceBps));
+        break;
+      case "fee-desc":
+        sorted.sort((a, b) => Number(b.maxPriceBps) - Number(a.maxPriceBps));
+        break;
+      case "sla":
+        sorted.sort((a, b) => Number(b.slaMultiplierBps) - Number(a.slaMultiplierBps));
+        break;
+      case "score":
+        sorted.sort((a, b) => {
+          const sa = geniusScoreMap.get(a.genius.toLowerCase())?.qualityScore ?? 0;
+          const sb = geniusScoreMap.get(b.genius.toLowerCase())?.qualityScore ?? 0;
+          return sb - sa;
+        });
+        break;
+    }
+    return sorted;
+  }, [filteredSignals, sortBy, geniusScoreMap]);
 
   const handleDeposit = async () => {
     if (!depositAmount) return;
@@ -203,11 +276,16 @@ export default function IdiotDashboard() {
 
       {/* Browse Signals */}
       <section className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
           <h2 className="text-xl font-semibold text-slate-900">
             Available Signals
+            {!signalsLoading && (
+              <span className="text-sm font-normal text-slate-400 ml-2">
+                {sortedSignals.length}{sortedSignals.length !== signals.length && ` of ${signals.length}`}
+              </span>
+            )}
           </h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
               className="input w-auto"
               value={sportFilter}
@@ -221,26 +299,214 @@ export default function IdiotDashboard() {
               <option value="NHL">NHL</option>
               <option value="Soccer">Soccer</option>
             </select>
+            <select
+              className="input w-auto"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              aria-label="Sort signals"
+            >
+              <option value="expiry">Expiring soon</option>
+              <option value="fee-asc">Fee: low to high</option>
+              <option value="fee-desc">Fee: high to low</option>
+              <option value="sla">Highest SLA</option>
+              <option value="score">Genius score</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                showFilters
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              Filters{(feeMax < 500 || slaMin > 0 || expiryFilter || geniusSearch || notionalMax < 10000) && (
+                <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-idiot-500 text-white text-[10px]">
+                  {[feeMax < 500, slaMin > 0, expiryFilter, geniusSearch, notionalMax < 10000].filter(Boolean).length}
+                </span>
+              )}
+            </button>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "list"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+                aria-label="List view"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("plot")}
+                className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "plot"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+                aria-label="Dot plot view"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <circle cx="8" cy="8" r="2" fill="currentColor" />
+                  <circle cx="16" cy="12" r="2" fill="currentColor" />
+                  <circle cx="12" cy="16" r="2" fill="currentColor" />
+                  <circle cx="18" cy="6" r="2" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Expanded filter panel */}
+        {showFilters && (
+          <div className="card mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="feeMaxFilter" className="text-xs text-slate-500 uppercase tracking-wide">
+                  Max Fee
+                </label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    id="feeMaxFilter"
+                    type="range"
+                    min={0}
+                    max={500}
+                    step={10}
+                    value={feeMax}
+                    onChange={(e) => setFeeMax(Number(e.target.value))}
+                    className="flex-1 accent-idiot-500"
+                  />
+                  <span className="text-xs text-slate-700 tabular-nums w-10 text-right">
+                    {feeMax < 500 ? `${(feeMax / 100).toFixed(1)}%` : "Any"}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="slaMinFilter" className="text-xs text-slate-500 uppercase tracking-wide">
+                  Min SLA (Skin in Game)
+                </label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    id="slaMinFilter"
+                    type="range"
+                    min={0}
+                    max={30000}
+                    step={1000}
+                    value={slaMin}
+                    onChange={(e) => setSlaMin(Number(e.target.value))}
+                    className="flex-1 accent-idiot-500"
+                  />
+                  <span className="text-xs text-slate-700 tabular-nums w-12 text-right">
+                    {slaMin > 0 ? `${(slaMin / 100).toFixed(0)}%` : "Any"}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="notionalFilter" className="text-xs text-slate-500 uppercase tracking-wide">
+                  Max Notional
+                </label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    id="notionalFilter"
+                    type="range"
+                    min={0}
+                    max={10000}
+                    step={100}
+                    value={notionalMax}
+                    onChange={(e) => setNotionalMax(Number(e.target.value))}
+                    className="flex-1 accent-idiot-500"
+                  />
+                  <span className="text-xs text-slate-700 tabular-nums w-12 text-right">
+                    {notionalMax < 10000 ? `$${notionalMax.toLocaleString()}` : "Any"}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="expiryFilterSelect" className="text-xs text-slate-500 uppercase tracking-wide">
+                  Expiring Within
+                </label>
+                <select
+                  id="expiryFilterSelect"
+                  className="input mt-1"
+                  value={expiryFilter}
+                  onChange={(e) => setExpiryFilter(e.target.value)}
+                >
+                  <option value="">Any time</option>
+                  <option value="1">1 hour</option>
+                  <option value="6">6 hours</option>
+                  <option value="24">24 hours</option>
+                  <option value="72">3 days</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="geniusSearchInput" className="text-xs text-slate-500 uppercase tracking-wide">
+                  Genius Address
+                </label>
+                <input
+                  id="geniusSearchInput"
+                  type="text"
+                  placeholder="0x..."
+                  className="input mt-1"
+                  value={geniusSearch}
+                  onChange={(e) => setGeniusSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeeMax(500);
+                    setSlaMin(0);
+                    setNotionalMax(10000);
+                    setExpiryFilter("");
+                    setGeniusSearch("");
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-700 underline"
+                >
+                  Reset filters
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {signalsLoading ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">Loading signals...</p>
           </div>
-        ) : signals.length === 0 ? (
+        ) : sortedSignals.length === 0 ? (
           <div className="card">
             <p className="text-center text-slate-500 py-8">
-              No signals available right now. Check back soon &mdash; new signals
-              are committed as Geniuses publish their analysis.
+              {signals.length === 0
+                ? "No signals available right now. Check back soon \u2014 new signals are committed as Geniuses publish their analysis."
+                : "No signals match your filters. Try adjusting or resetting them."}
             </p>
+          </div>
+        ) : viewMode === "plot" ? (
+          <div className="card">
+            <SignalPlot
+              signals={sortedSignals}
+              onSelect={(id) => router.push(`/idiot/signal/${id}`)}
+            />
           </div>
         ) : (
           <div className="space-y-3">
-            {signals.map((s) => {
+            {sortedSignals.map((s) => {
               const feePerHundred = ((100 * Number(s.maxPriceBps)) / 10_000).toFixed(2);
               const slaPercent = formatBps(s.slaMultiplierBps);
               const expires = new Date(Number(s.expiresAt) * 1000);
-              const hoursLeft = Math.max(0, Math.round((expires.getTime() - Date.now()) / 3_600_000));
+              const hoursLeft = Math.max(0, (expires.getTime() - Date.now()) / 3_600_000);
+              const timeLabel = hoursLeft < 1
+                ? `${Math.round(hoursLeft * 60)}m left`
+                : hoursLeft < 24
+                  ? `${Math.round(hoursLeft)}h left`
+                  : `${Math.floor(hoursLeft / 24)}d left`;
+              const geniusStats = geniusScoreMap.get(s.genius.toLowerCase());
               return (
                 <Link
                   key={s.signalId}
@@ -256,6 +522,11 @@ export default function IdiotDashboard() {
                         <span className="text-xs text-slate-400">
                           by {truncateAddress(s.genius)}
                         </span>
+                        {geniusStats && (
+                          <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
+                            {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-xs text-slate-500">
@@ -265,9 +536,17 @@ export default function IdiotDashboard() {
                         <span className="text-xs text-slate-500">
                           {slaPercent} SLA
                         </span>
+                        {s.maxNotional > 0n && (
+                          <>
+                            <span className="text-xs text-slate-400">&middot;</span>
+                            <span className="text-xs text-slate-500">
+                              max ${formatUsdc(s.maxNotional)}
+                            </span>
+                          </>
+                        )}
                         <span className="text-xs text-slate-400">&middot;</span>
                         <span className={`text-xs ${hoursLeft < 2 ? "text-red-500" : "text-slate-500"}`}>
-                          {hoursLeft}h left
+                          {timeLabel}
                         </span>
                       </div>
                     </div>
