@@ -18,7 +18,30 @@ import {
 const BLOCK_CHUNK_SIZE = 9_999;
 
 /** Block number when contracts were first deployed. Avoids scanning from genesis. */
-const DEPLOY_BLOCK = Number(process.env.NEXT_PUBLIC_DEPLOY_BLOCK ?? "0");
+const RAW_DEPLOY_BLOCK = Number(process.env.NEXT_PUBLIC_DEPLOY_BLOCK ?? "0");
+
+/**
+ * If DEPLOY_BLOCK is 0 (env var not set), fall back to a recent block
+ * to avoid scanning millions of blocks and hanging forever.
+ * 500,000 blocks ~ 6 days on Base (2s block time).
+ */
+const FALLBACK_LOOKBACK = 500_000;
+let _resolvedDeployBlock: number | null = null;
+
+async function resolveDeployBlock(provider: ethers.Provider): Promise<number> {
+  if (RAW_DEPLOY_BLOCK > 0) return RAW_DEPLOY_BLOCK;
+  if (_resolvedDeployBlock !== null) return _resolvedDeployBlock;
+  try {
+    const current = await provider.getBlockNumber();
+    _resolvedDeployBlock = Math.max(0, current - FALLBACK_LOOKBACK);
+  } catch {
+    _resolvedDeployBlock = 0;
+  }
+  return _resolvedDeployBlock;
+}
+
+// Keep a synchronous alias for call sites that already have the value
+const DEPLOY_BLOCK = RAW_DEPLOY_BLOCK;
 
 /** Cache TTL in milliseconds (30 seconds). */
 const CACHE_TTL_MS = 30_000;
@@ -186,8 +209,9 @@ function parseSignalEvents(
 
 export async function getActiveSignals(
   provider: ethers.Provider,
-  fromBlock: number = DEPLOY_BLOCK,
+  fromBlock?: number,
 ): Promise<SignalEvent[]> {
+  const effectiveFrom = fromBlock ?? await resolveDeployBlock(provider);
   const cacheKey = `signals:active`;
   const cached = signalCache.get(cacheKey);
 
@@ -205,13 +229,13 @@ export async function getActiveSignals(
   }
 
   // Incremental: start from last cached block + 1
-  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const startBlock = cached ? cached.lastBlock + 1 : effectiveFrom;
   const events = await queryFilterChunked(contract, filter, startBlock);
   const parsed = parseSignalEvents(events);
 
   const all = cached ? signalCache.merge(cacheKey, parsed, getMaxBlock(parsed, cached.lastBlock)) : parsed;
   if (!cached) {
-    signalCache.set(cacheKey, all, getMaxBlock(parsed, fromBlock));
+    signalCache.set(cacheKey, all, getMaxBlock(parsed, effectiveFrom));
   }
 
   const now = BigInt(Math.floor(Date.now() / 1000));
@@ -221,10 +245,11 @@ export async function getActiveSignals(
 export async function getSignalsByGenius(
   provider: ethers.Provider,
   geniusAddress: string,
-  fromBlock: number = 0,
+  fromBlock?: number,
   /** When true, returns all signals including expired/settled ones. */
   includeAll: boolean = false,
 ): Promise<SignalEvent[]> {
+  const effectiveFrom = fromBlock ?? await resolveDeployBlock(provider);
   const cacheKey = `signals:genius:${geniusAddress.toLowerCase()}`;
   const cached = signalCache.get(cacheKey);
 
@@ -241,13 +266,13 @@ export async function getSignalsByGenius(
     return cached.events.filter((s) => s.expiresAt > now);
   }
 
-  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const startBlock = cached ? cached.lastBlock + 1 : effectiveFrom;
   const events = await queryFilterChunked(contract, filter, startBlock);
   const parsed = parseSignalEvents(events);
 
   const all = cached ? signalCache.merge(cacheKey, parsed, getMaxBlock(parsed, cached.lastBlock)) : parsed;
   if (!cached) {
-    signalCache.set(cacheKey, all, getMaxBlock(parsed, fromBlock));
+    signalCache.set(cacheKey, all, getMaxBlock(parsed, effectiveFrom));
   }
 
   if (includeAll) return all;
@@ -273,8 +298,9 @@ export interface PurchaseEvent {
 export async function getPurchasesByBuyer(
   provider: ethers.Provider,
   buyerAddress: string,
-  fromBlock: number = DEPLOY_BLOCK,
+  fromBlock?: number,
 ): Promise<PurchaseEvent[]> {
+  const effectiveFrom = fromBlock ?? await resolveDeployBlock(provider);
   const cacheKey = `purchases:buyer:${buyerAddress.toLowerCase()}`;
   const cached = purchaseCache.get(cacheKey);
 
@@ -289,7 +315,7 @@ export async function getPurchasesByBuyer(
   );
   const filter = contract.filters.SignalPurchased(null, buyerAddress);
 
-  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const startBlock = cached ? cached.lastBlock + 1 : effectiveFrom;
   const events = await queryFilterChunked(contract, filter, startBlock);
 
   const purchases: PurchaseEvent[] = [];
@@ -313,7 +339,7 @@ export async function getPurchasesByBuyer(
     ? purchaseCache.merge(cacheKey, purchases, getMaxBlock(purchases, cached.lastBlock))
     : purchases;
   if (!cached) {
-    purchaseCache.set(cacheKey, all, getMaxBlock(purchases, fromBlock));
+    purchaseCache.set(cacheKey, all, getMaxBlock(purchases, effectiveFrom));
   }
 
   return all;
@@ -338,8 +364,9 @@ export interface AuditEvent {
 export async function getAuditsByGenius(
   provider: ethers.Provider,
   geniusAddress: string,
-  fromBlock: number = DEPLOY_BLOCK,
+  fromBlock?: number,
 ): Promise<AuditEvent[]> {
+  const effectiveFrom = fromBlock ?? await resolveDeployBlock(provider);
   const cacheKey = `audits:genius:${geniusAddress.toLowerCase()}`;
   const cached = auditCache.get(cacheKey);
 
@@ -353,7 +380,7 @@ export async function getAuditsByGenius(
     provider,
   );
 
-  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const startBlock = cached ? cached.lastBlock + 1 : effectiveFrom;
   const audits: AuditEvent[] = [];
 
   const auditFilter = contract.filters.AuditSettled(geniusAddress);
@@ -402,7 +429,7 @@ export async function getAuditsByGenius(
     ? auditCache.merge(cacheKey, audits, getMaxBlock(audits, cached.lastBlock))
     : audits;
   if (!cached) {
-    auditCache.set(cacheKey, all, getMaxBlock(audits, fromBlock));
+    auditCache.set(cacheKey, all, getMaxBlock(audits, effectiveFrom));
   }
 
   // Re-sort merged results
@@ -412,8 +439,9 @@ export async function getAuditsByGenius(
 export async function getAuditsByIdiot(
   provider: ethers.Provider,
   idiotAddress: string,
-  fromBlock: number = DEPLOY_BLOCK,
+  fromBlock?: number,
 ): Promise<AuditEvent[]> {
+  const effectiveFrom = fromBlock ?? await resolveDeployBlock(provider);
   const cacheKey = `audits:idiot:${idiotAddress.toLowerCase()}`;
   const cached = auditCache.get(cacheKey);
 
@@ -427,7 +455,7 @@ export async function getAuditsByIdiot(
     provider,
   );
 
-  const startBlock = cached ? cached.lastBlock + 1 : fromBlock;
+  const startBlock = cached ? cached.lastBlock + 1 : effectiveFrom;
   const audits: AuditEvent[] = [];
 
   const auditFilter = contract.filters.AuditSettled(null, idiotAddress);
@@ -476,7 +504,7 @@ export async function getAuditsByIdiot(
     ? auditCache.merge(cacheKey, audits, getMaxBlock(audits, cached.lastBlock))
     : audits;
   if (!cached) {
-    auditCache.set(cacheKey, all, getMaxBlock(audits, fromBlock));
+    auditCache.set(cacheKey, all, getMaxBlock(audits, effectiveFrom));
   }
 
   return [...all].sort((a, b) => b.blockNumber - a.blockNumber);
