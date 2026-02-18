@@ -5,7 +5,7 @@ const cspDirectives = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' https://*.base.org wss://*.base.org https://api.the-odds-api.com https://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.com wss://*.walletconnect.org https://*.trycloudflare.com",
+  "connect-src 'self' https://*.base.org wss://*.base.org https://api.the-odds-api.com https://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.com wss://*.walletconnect.org",
   "frame-src https://challenges.cloudflare.com",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
@@ -42,7 +42,7 @@ export function middleware(request: NextRequest) {
       response.headers.set("Access-Control-Allow-Origin", origin);
     }
 
-    response.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.headers.set("Access-Control-Allow-Headers", "Content-Type");
     response.headers.set("Access-Control-Max-Age", "86400");
 

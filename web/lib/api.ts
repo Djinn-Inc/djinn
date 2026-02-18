@@ -249,16 +249,20 @@ function getEnvOrDefault(envVar: string, devDefault: string): string {
 }
 
 function getValidatorUrls(): string[] {
+  // In the browser, route through the Next.js API proxy so the actual
+  // validator URL is resolved server-side at runtime (not baked at build time).
+  if (typeof window !== "undefined") return ["/api/validator"];
   return getEnvOrDefault(
-    "NEXT_PUBLIC_VALIDATOR_URL",
-    "http://localhost:8421",
+    "VALIDATOR_URL",
+    getEnvOrDefault("NEXT_PUBLIC_VALIDATOR_URL", "http://localhost:8421"),
   ).split(",").filter((u) => u.trim().length > 0);
 }
 
 function getMinerUrl(): string {
+  if (typeof window !== "undefined") return "/api/miner";
   return getEnvOrDefault(
-    "NEXT_PUBLIC_MINER_URL",
-    "http://localhost:8422",
+    "MINER_URL",
+    getEnvOrDefault("NEXT_PUBLIC_MINER_URL", "http://localhost:8422"),
   );
 }
 
