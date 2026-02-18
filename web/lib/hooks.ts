@@ -60,7 +60,8 @@ export function humanizeError(err: unknown, fallback = "Transaction failed"): st
   if (execMatch) return execMatch[1];
 
   // For generic contract errors, clean up the message
-  if (msg.length > 200) return fallback;
+  // But preserve validator/miner distribution errors (they have useful detail)
+  if (msg.length > 200 && !msg.includes("distribution failed")) return fallback;
 
   return msg;
 }

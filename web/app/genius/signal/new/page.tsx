@@ -332,8 +332,12 @@ export default function CreateSignal() {
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
       const failed = results.filter((r) => r.status === "rejected").length;
       if (succeeded < SHAMIR_THRESHOLD) {
+        const errors = results
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => r.reason?.message || String(r.reason))
+          .slice(0, 3);
         throw new Error(
-          `Key distribution failed: ${succeeded} of ${SHAMIR_THRESHOLD} required validators responded. This usually means the validator network is offline. Please try again later.`,
+          `Key distribution failed: ${succeeded} of ${SHAMIR_THRESHOLD} required validators responded.\n${errors.join("\n")}`,
         );
       }
       if (failed > 0) {
@@ -422,7 +426,7 @@ export default function CreateSignal() {
         <h1 className="text-3xl font-bold text-slate-900 mb-4">
           Signal Creation Failed
         </h1>
-        <p className="text-sm text-red-600 mb-8">{stepError}</p>
+        <p className="text-sm text-red-600 mb-8 whitespace-pre-line">{stepError}</p>
         <button onClick={() => setStep("browse")} className="btn-primary">
           Try Again
         </button>
@@ -1051,7 +1055,7 @@ export default function CreateSignal() {
 
         {(commitError || stepError) && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4" role="alert">
-            <p className="text-sm text-red-600">{commitError || stepError}</p>
+            <p className="text-sm text-red-600 whitespace-pre-line">{commitError || stepError}</p>
           </div>
         )}
 
