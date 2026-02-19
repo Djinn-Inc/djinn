@@ -17,7 +17,7 @@ import {
   keyToBigInt,
   toHex,
 } from "@/lib/crypto";
-import { getValidatorClients } from "@/lib/api";
+import { discoverValidatorClients } from "@/lib/api";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { fetchProtocolStats } from "@/lib/subgraph";
 import { formatUsdc } from "@/lib/types";
@@ -40,7 +40,7 @@ import {
 const SHAMIR_TOTAL_SHARES = parseInt(process.env.NEXT_PUBLIC_SHAMIR_TOTAL ?? "10", 10);
 const SHAMIR_THRESHOLD = parseInt(process.env.NEXT_PUBLIC_SHAMIR_THRESHOLD ?? "7", 10);
 
-type WizardStep = "browse" | "review" | "configure" | "committing" | "distributing" | "success" | "error";
+type WizardStep = "browse" | "review" | "configure" | "preflight" | "committing" | "distributing" | "success" | "error";
 
 export default function CreateSignal() {
   const router = useRouter();
@@ -102,7 +102,7 @@ export default function CreateSignal() {
   // Step 3: Configure
   const [maxPriceBps, setMaxPriceBps] = useState("10");
   const [slaMultiplier, setSlaMultiplier] = useState("100");
-  const [maxNotional, setMaxNotional] = useState("10000");
+  const [maxNotional, setMaxNotional] = useState("100");
   const [expiresIn, setExpiresIn] = useState("24");
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
 
@@ -245,8 +245,18 @@ export default function CreateSignal() {
     }
 
     try {
-      // Pre-flight: check that enough validators are reachable
-      const preflightValidators = getValidatorClients();
+      // Show immediate feedback
+      setStep("preflight");
+
+      // Pre-flight: discover validators and check that enough are reachable
+      const preflightValidators = await discoverValidatorClients();
+      if (preflightValidators.length < SHAMIR_THRESHOLD) {
+        setStepError(
+          `Only ${preflightValidators.length} validators discovered, need ${SHAMIR_THRESHOLD}. Try again in a moment.`,
+        );
+        setStep("configure");
+        return;
+      }
       const healthChecks = await Promise.allSettled(
         preflightValidators.map((v) => v.health()),
       );
@@ -257,6 +267,7 @@ export default function CreateSignal() {
         setStepError(
           `Only ${healthyCount} of ${SHAMIR_THRESHOLD} required validators are reachable. Try again in a moment.`,
         );
+        setStep("configure");
         return;
       }
 
@@ -345,7 +356,7 @@ export default function CreateSignal() {
       const indexBigInt = BigInt(realIndex + 1);
       const indexShares = splitSecret(indexBigInt, SHAMIR_TOTAL_SHARES, SHAMIR_THRESHOLD);
 
-      const validators = getValidatorClients();
+      const validators = preflightValidators;
       const signalIdStr = signalId.toString();
 
       const storePromises = shares.map((share, i) => {
@@ -480,7 +491,7 @@ export default function CreateSignal() {
     );
   }
 
-  const isProcessing = step === "committing" || step === "distributing";
+  const isProcessing = step === "preflight" || step === "committing" || step === "distributing";
   const isInteractiveStep = step === "browse" || step === "review" || step === "configure";
 
   // ---------- Step 1: Browse games & pick a bet ----------
@@ -1152,6 +1163,10 @@ export default function CreateSignal() {
             }
             return null;
           })()}
+          <p className="text-xs text-slate-500 mt-1">
+            Signals also become unavailable once the game starts. Setting expiry
+            well before game time avoids revealing which event your signal is on.
+          </p>
         </div>
 
         <div>
@@ -1202,8 +1217,10 @@ export default function CreateSignal() {
 
         <SecretModal
           open={isProcessing}
-          title={step === "committing" ? "Encrypting & Committing Signal" : "Distributing Key Shares"}
-          message={step === "committing"
+          title={step === "preflight" ? "Connecting to Validators" : step === "committing" ? "Encrypting & Committing Signal" : "Distributing Key Shares"}
+          message={step === "preflight"
+            ? "Discovering and verifying validator availability on the Bittensor network..."
+            : step === "committing"
             ? "Your pick is being encrypted locally, then the encrypted blob is committed on-chain. Nobody can see your pick."
             : "Splitting your encryption key into shares and distributing them to validators. Your full key never leaves this device."}
         >

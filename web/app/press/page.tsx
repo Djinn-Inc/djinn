@@ -30,17 +30,7 @@ const ARTICLES: Article[] = [
     url: "https://taodaily.io/djinn-subnet-sn103-sets-new-bitstarter-record-raising-600-tao-in-51-minutes/",
     description:
       "Djinn achieved a record on Bittensor\u2019s crowdfunding platform, completing its 600 TAO fundraise in under an hour \u2014 the fastest Bitstarter raise to date.",
-    image: "https://taodaily.io/wp-content/uploads/2026/01/taodailyy-6.png",
-    tag: "article",
-  },
-  {
-    title: "DJINN SUBNET 103: Bittensor\u2019s Industrial Cloud Execution",
-    source: "SubnetEdge",
-    date: "Jan 2026",
-    url: "https://subnetedge.substack.com/p/djinn-subnet-103-bittensors-industrial",
-    description:
-      "Deep dive into Djinn\u2019s architecture, the team behind it, its partnership with Tensora Group, and its positioning as a decentralized intelligence marketplace.",
-    image: "https://subnetedge.substack.com/api/v1/post_cover?id=154974735",
+    image: "/press/taodaily-djinn.png",
     tag: "article",
   },
 ];
@@ -187,29 +177,36 @@ export default function Press() {
               name: "Subnet Alpha",
               url: "https://subnetalpha.ai/subnet/djinn/",
               desc: "Subnet directory listing",
+              logo: "/press/subnetalpha-logo.webp",
             },
             {
               name: "Taostats",
-              url: "https://taostats.io/subnets",
+              url: "https://taostats.io/subnets/netuid-103/",
               desc: "Network explorer",
+              logo: "/press/taostats-logo.svg",
             },
             {
               name: "Bitstarter",
-              url: "https://app.bitstarter.ai/subnets/",
+              url: "https://app.bitstarter.ai/subnets/djinn/",
               desc: "Crowdfunding platform",
+              logo: "/press/bitstarter-logo.svg",
             },
-          ].map(({ name, url, desc }) => (
+          ].map(({ name, url, desc, logo }) => (
             <a
               key={url}
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="card !p-4 text-center hover:shadow-lg transition-shadow group"
+              className="card !p-4 text-center hover:shadow-lg transition-shadow group flex flex-col items-center gap-3"
             >
-              <h4 className="font-semibold text-slate-900 group-hover:text-idiot-600 transition-colors">
-                {name}
-              </h4>
-              <p className="text-xs text-slate-400 mt-1">{desc}</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={logo} alt={name} className="h-6 object-contain" />
+              <div>
+                <h4 className="font-semibold text-slate-900 group-hover:text-idiot-600 transition-colors">
+                  {name}
+                </h4>
+                <p className="text-xs text-slate-400 mt-1">{desc}</p>
+              </div>
             </a>
           ))}
         </div>

@@ -267,6 +267,30 @@ function getMinerUrl(): string {
   );
 }
 
+/**
+ * Discover all validators from the metagraph and return per-validator clients.
+ * Each client routes through a UID-specific proxy: /api/validators/{uid}/...
+ * This ensures Shamir shares go to different validators.
+ */
+export async function discoverValidatorClients(): Promise<ValidatorClient[]> {
+  if (typeof window === "undefined") {
+    // Server-side: use direct URLs from env or metagraph
+    return getValidatorUrls().map((url) => new ValidatorClient(url.trim()));
+  }
+
+  // Browser: call the discovery endpoint and create per-UID proxy clients
+  try {
+    const res = await fetch("/api/validators/discover");
+    if (!res.ok) throw new Error(`Discovery failed: ${res.status}`);
+    const { validators } = await res.json() as { validators: { uid: number }[] };
+    if (validators.length === 0) throw new Error("No validators discovered");
+    return validators.map((v) => new ValidatorClient(`/api/validators/${v.uid}`));
+  } catch {
+    // Fallback to single proxy
+    return [new ValidatorClient("/api/validator")];
+  }
+}
+
 export function getValidatorClients(): ValidatorClient[] {
   return getValidatorUrls().map((url) => new ValidatorClient(url.trim()));
 }
