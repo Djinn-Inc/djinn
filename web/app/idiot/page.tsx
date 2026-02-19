@@ -382,9 +382,9 @@ export default function IdiotDashboard() {
               </span>
             )}
           </h2>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto scrollbar-hide">
             <select
-              className="input w-auto"
+              className="input w-auto shrink-0"
               value={sportFilter}
               onChange={(e) => setSportFilter(e.target.value)}
               aria-label="Filter by sport"
@@ -397,7 +397,7 @@ export default function IdiotDashboard() {
               <option value="Soccer">Soccer</option>
             </select>
             <select
-              className="input w-auto"
+              className="input w-auto shrink-0"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               aria-label="Sort signals"
@@ -608,11 +608,11 @@ export default function IdiotDashboard() {
                 <Link
                   key={s.signalId}
                   href={`/idiot/signal/${s.signalId}`}
-                  className="card block hover:border-idiot-300 transition-colors"
+                  className="card block hover:border-idiot-300 active:bg-slate-50 transition-colors"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-900">
                           {s.sport}
                         </span>
@@ -620,41 +620,34 @@ export default function IdiotDashboard() {
                           by {truncateAddress(s.genius)}
                         </span>
                         {geniusStats && (
-                          <>
-                            <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
-                              {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS
-                            </span>
+                          <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
+                            {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS
                             {geniusStats.roi !== 0 && (
-                              <span className={`text-xs ${geniusStats.roi >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              <span className="ml-1">
                                 {geniusStats.roi >= 0 ? "+" : ""}{geniusStats.roi.toFixed(1)}%
                               </span>
                             )}
-                          </>
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1">
+                      <div className="flex items-center gap-2 sm:gap-3 mt-1.5 flex-wrap">
                         <span className="text-xs text-slate-500">
-                          ${feePerHundred} per $100
+                          ${feePerHundred}/$100
                         </span>
-                        <span className="text-xs text-slate-400">&middot;</span>
                         <span className="text-xs text-slate-500">
                           {slaPercent} SLA
                         </span>
                         {s.maxNotional > 0n && (
-                          <>
-                            <span className="text-xs text-slate-400">&middot;</span>
-                            <span className="text-xs text-slate-500">
-                              max ${formatUsdc(s.maxNotional)}
-                            </span>
-                          </>
+                          <span className="text-xs text-slate-500">
+                            max ${formatUsdc(s.maxNotional)}
+                          </span>
                         )}
-                        <span className="text-xs text-slate-400">&middot;</span>
-                        <span className={`text-xs ${hoursLeft < 2 ? "text-red-500" : "text-slate-500"}`}>
+                        <span className={`text-xs ${hoursLeft < 2 ? "text-red-500 font-medium" : "text-slate-500"}`}>
                           {timeLabel}
                         </span>
                       </div>
                     </div>
-                    <span className="text-xs text-idiot-500 font-medium shrink-0 ml-4">
+                    <span className="text-xs text-idiot-500 font-medium shrink-0 ml-3 mt-0.5">
                       View &rarr;
                     </span>
                   </div>
@@ -670,56 +663,92 @@ export default function IdiotDashboard() {
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Purchase History
         </h2>
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="pb-3 font-medium">Signal</th>
-                <th className="pb-3 font-medium">Notional</th>
-                <th className="pb-3 font-medium">Fee Paid</th>
-                <th className="pb-3 font-medium">Credits Used</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchasesLoading ? (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
-                    Loading...
-                  </td>
-                </tr>
-              ) : purchases.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
-                    No purchases yet. Browse available signals above to get started.
-                  </td>
-                </tr>
-              ) : (
-                [...purchases].reverse().map((p) => (
-                  <tr key={p.purchaseId} className="border-b border-slate-100">
-                    <td className="py-3">{truncateAddress(p.signalId)}</td>
-                    <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
-                    <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
-                    <td className="py-3">
-                      {p.creditUsed > 0n ? (
-                        <span className="text-idiot-500">{formatUsdc(p.creditUsed)}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
-                        Purchased
-                      </span>
-                    </td>
-                    <td className="py-3 text-slate-500">Block {p.blockNumber}</td>
+        {purchasesLoading ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">Loading...</p>
+          </div>
+        ) : purchases.length === 0 ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">
+              No purchases yet. Browse available signals above to get started.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="card overflow-x-auto hidden md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-slate-200">
+                    <th className="pb-3 font-medium">Signal</th>
+                    <th className="pb-3 font-medium">Notional</th>
+                    <th className="pb-3 font-medium">Fee Paid</th>
+                    <th className="pb-3 font-medium">Credits Used</th>
+                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium">Date</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {[...purchases].reverse().map((p) => (
+                    <tr key={p.purchaseId} className="border-b border-slate-100">
+                      <td className="py-3">{truncateAddress(p.signalId)}</td>
+                      <td className="py-3">${formatUsdc(BigInt(p.notional))}</td>
+                      <td className="py-3">${formatUsdc(BigInt(p.feePaid))}</td>
+                      <td className="py-3">
+                        {p.creditUsed > 0n ? (
+                          <span className="text-idiot-500">{formatUsdc(p.creditUsed)}</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
+                          Purchased
+                        </span>
+                      </td>
+                      <td className="py-3 text-slate-500">Block {p.blockNumber}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Mobile cards */}
+            <div className="space-y-3 md:hidden">
+              {[...purchases].reverse().map((p) => (
+                <div key={p.purchaseId} className="card">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900">
+                      Signal {truncateAddress(p.signalId)}
+                    </span>
+                    <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
+                      Purchased
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <div>
+                      <span className="text-slate-500">Notional</span>
+                      <p className="font-medium text-slate-900">${formatUsdc(BigInt(p.notional))}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Fee</span>
+                      <p className="font-medium text-slate-900">${formatUsdc(BigInt(p.feePaid))}</p>
+                    </div>
+                    {p.creditUsed > 0n && (
+                      <div>
+                        <span className="text-slate-500">Credits</span>
+                        <p className="font-medium text-idiot-500">{formatUsdc(p.creditUsed)}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-slate-500">Block</span>
+                      <p className="text-slate-600">{p.blockNumber}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Early Exit */}
@@ -730,67 +759,105 @@ export default function IdiotDashboard() {
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Settlement History
         </h2>
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="pb-3 font-medium">Cycle</th>
-                <th className="pb-3 font-medium">Genius</th>
-                <th className="pb-3 font-medium">Result</th>
-                <th className="pb-3 font-medium">Payout</th>
-                <th className="pb-3 font-medium">Credits</th>
-                <th className="pb-3 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditsLoading ? (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
-                    Loading...
-                  </td>
-                </tr>
-              ) : audits.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-8">
-                    No settlements yet. Settlements happen after every 10 signals
-                    in a Genius-Idiot pair are resolved.
-                  </td>
-                </tr>
-              ) : (
-                audits.map((a, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-3">{a.cycle.toString()}</td>
-                    <td className="py-3">{truncateAddress(a.genius)}</td>
-                    <td className="py-3">
-                      {a.isEarlyExit ? (
-                        <span className="rounded-full px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700">Early Exit</span>
-                      ) : Number(a.qualityScore) >= 0 ? (
-                        <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
-                      ) : (
-                        <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {a.trancheA > 0n ? (
-                        <span className="text-green-600">${formatUsdc(a.trancheA)}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {a.trancheB > 0n ? (
-                        <span className="text-idiot-500">{formatUsdc(a.trancheB)}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-3 text-slate-500">Block {a.blockNumber}</td>
+        {auditsLoading ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">Loading...</p>
+          </div>
+        ) : audits.length === 0 ? (
+          <div className="card">
+            <p className="text-center text-slate-500 py-8">
+              No settlements yet. Settlements happen after every 10 signals
+              in a Genius-Idiot pair are resolved.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="card overflow-x-auto hidden md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-slate-200">
+                    <th className="pb-3 font-medium">Cycle</th>
+                    <th className="pb-3 font-medium">Genius</th>
+                    <th className="pb-3 font-medium">Result</th>
+                    <th className="pb-3 font-medium">Payout</th>
+                    <th className="pb-3 font-medium">Credits</th>
+                    <th className="pb-3 font-medium">Date</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {audits.map((a, i) => (
+                    <tr key={i} className="border-b border-slate-100">
+                      <td className="py-3">{a.cycle.toString()}</td>
+                      <td className="py-3">{truncateAddress(a.genius)}</td>
+                      <td className="py-3">
+                        {a.isEarlyExit ? (
+                          <span className="rounded-full px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700">Early Exit</span>
+                        ) : Number(a.qualityScore) >= 0 ? (
+                          <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
+                        ) : (
+                          <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        {a.trancheA > 0n ? (
+                          <span className="text-green-600">${formatUsdc(a.trancheA)}</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        {a.trancheB > 0n ? (
+                          <span className="text-idiot-500">{formatUsdc(a.trancheB)}</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 text-slate-500">Block {a.blockNumber}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Mobile cards */}
+            <div className="space-y-3 md:hidden">
+              {audits.map((a, i) => (
+                <div key={i} className="card">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900">
+                      Cycle {a.cycle.toString()} &middot; {truncateAddress(a.genius)}
+                    </span>
+                    {a.isEarlyExit ? (
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700">Early Exit</span>
+                    ) : Number(a.qualityScore) >= 0 ? (
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-green-100 text-green-700">Favorable</span>
+                    ) : (
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-red-100 text-red-700">Unfavorable</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    {a.trancheA > 0n && (
+                      <div>
+                        <span className="text-slate-500">Payout</span>
+                        <p className="font-medium text-green-600">${formatUsdc(a.trancheA)}</p>
+                      </div>
+                    )}
+                    {a.trancheB > 0n && (
+                      <div>
+                        <span className="text-slate-500">Credits</span>
+                        <p className="font-medium text-idiot-500">{formatUsdc(a.trancheB)}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-slate-500">Block</span>
+                      <p className="text-slate-600">{a.blockNumber}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
     </div>
   );

@@ -37,8 +37,8 @@ import {
   type SportOption,
 } from "@/lib/odds";
 
-const SHAMIR_TOTAL_SHARES = 10;
-const SHAMIR_THRESHOLD = 7;
+const SHAMIR_TOTAL_SHARES = parseInt(process.env.NEXT_PUBLIC_SHAMIR_TOTAL ?? "10", 10);
+const SHAMIR_THRESHOLD = parseInt(process.env.NEXT_PUBLIC_SHAMIR_THRESHOLD ?? "7", 10);
 
 type WizardStep = "browse" | "review" | "configure" | "committing" | "distributing" | "success" | "error";
 
