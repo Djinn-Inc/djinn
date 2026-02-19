@@ -43,6 +43,9 @@ class Config:
         """Parse comma-separated RPC URLs for failover support."""
         return [u.strip() for u in self.base_rpc_url.split(",") if u.strip()]
 
+    # Validator Base chain private key (for signing outcome settlement txs)
+    base_validator_private_key: str = os.getenv("BASE_VALIDATOR_PRIVATE_KEY", "")
+
     # Contract addresses
     escrow_address: str = os.getenv("ESCROW_ADDRESS", "")
     signal_commitment_address: str = os.getenv("SIGNAL_COMMITMENT_ADDRESS", "")
@@ -114,6 +117,12 @@ class Config:
                 addr = getattr(self, name)
                 if addr and not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
                     raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
+        if not self.base_validator_private_key:
+            if is_production:
+                raise ValueError("BASE_VALIDATOR_PRIVATE_KEY must be set in production — outcome settlement requires it")
+            warnings.append("BASE_VALIDATOR_PRIVATE_KEY not set — on-chain outcome settlement disabled")
+        elif not re.match(r"^(0x)?[0-9a-fA-F]{64}$", self.base_validator_private_key):
+            raise ValueError("BASE_VALIDATOR_PRIVATE_KEY must be a 32-byte hex string (with optional 0x prefix)")
         known_networks = ("finney", "mainnet", "test", "local", "mock")
         if self.bt_network not in known_networks:
             warnings.append(f"BT_NETWORK={self.bt_network!r} is not a recognized network ({', '.join(known_networks)})")

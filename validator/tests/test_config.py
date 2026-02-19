@@ -39,7 +39,11 @@ class TestConfigDefaults:
 
 class TestConfigValidation:
     def test_valid_config_no_warnings(self) -> None:
-        config = _config(bt_network="local", sports_api_key="test-key")
+        config = _config(
+            bt_network="local",
+            sports_api_key="test-key",
+            base_validator_private_key="0x" + "ab" * 32,
+        )
         warnings = config.validate()
         assert len(warnings) == 0
 
@@ -70,6 +74,7 @@ class TestConfigValidation:
             bt_network="local",
             sports_api_key="key",
             escrow_address="",
+            base_validator_private_key="0x" + "ab" * 32,
         )
         warnings = config.validate()
         assert len(warnings) == 0
@@ -91,7 +96,8 @@ class TestConfigNetworkWarning:
                          escrow_address="0x1234567890abcdef1234567890abcdef12345678",
                          signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
                          account_address="0x1234567890abcdef1234567890abcdef12345678",
-                         collateral_address="0x1234567890abcdef1234567890abcdef12345678")
+                         collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+                         base_validator_private_key="0x" + "ab" * 32)
         warnings = config.validate()
         assert not any("BT_NETWORK" in w for w in warnings)
 
@@ -113,6 +119,7 @@ class TestConfigStrictAutoDetect:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_validator_private_key="0x" + "ab" * 32,
             base_chain_id=99999,  # Non-standard → generates a warning
         )
         with pytest.raises(ValueError, match="strict mode"):
@@ -137,6 +144,7 @@ class TestConfigStrictAutoDetect:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_validator_private_key="0x" + "ab" * 32,
             base_chain_id=99999,
         )
         warnings = config.validate(strict=False)
@@ -247,6 +255,7 @@ class TestConfigAddressValidation:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_validator_private_key="0x" + "ab" * 32,
         )
         warnings = config.validate()
         assert not any("not a valid" in w for w in warnings)

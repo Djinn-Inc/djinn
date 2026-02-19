@@ -40,7 +40,6 @@ export default function TrackRecordPage() {
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { submit: submitOnChain, loading: submitLoading } = useSubmitTrackRecord();
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sportFilter, setSportFilter] = useState("");
 
   // Fetch settled signals (merges localStorage + subgraph + on-chain data)
@@ -59,6 +58,12 @@ export default function TrackRecordPage() {
       return true;
     }),
     [settledSignals, sportFilter],
+  );
+
+  // Auto-select all proofable signals (capped at circuit max of 20)
+  const includedSignals = useMemo(
+    () => proofableSignals.slice(0, 20),
+    [proofableSignals],
   );
 
   // Unique sports for the filter dropdown
@@ -111,28 +116,6 @@ export default function TrackRecordPage() {
     }
   }, [address, walletClient, refresh]);
 
-  // Auto-select all proofable signals on first load (up to 20)
-  useEffect(() => {
-    if (proofableSignals.length > 0 && selectedIds.size === 0) {
-      const ids = proofableSignals.slice(0, 20).map((s) => s.signalId);
-      setSelectedIds(new Set(ids));
-    }
-  }, [proofableSignals]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleSignal = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else if (next.size < 20) next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => {
-    const ids = proofableSignals.slice(0, 20).map((s) => s.signalId);
-    setSelectedIds(new Set(ids));
-  };
-
   if (!isConnected) {
     return (
       <div className="text-center py-20">
@@ -146,17 +129,14 @@ export default function TrackRecordPage() {
     );
   }
 
-  const handleGenerateFromSelected = async () => {
+  const handleGenerate = async () => {
     setErrorMsg(null);
     setState("generating");
 
     try {
       const signals: SignalData[] = [];
 
-      for (const sig of proofableSignals) {
-        if (!selectedIds.has(sig.signalId)) continue;
-
-        // Use the first settled purchase for each signal
+      for (const sig of includedSignals) {
         const purchase = sig.purchases[0];
         if (!purchase) continue;
 
@@ -168,13 +148,13 @@ export default function TrackRecordPage() {
           index: BigInt(sig.realIndex),
           outcome: outcomeNum,
           notional: BigInt(purchase.notional),
-          odds: BigInt(purchase.odds || "1910000"), // fallback to common odds
+          odds: BigInt(purchase.odds || "1910000"),
           slaBps: BigInt(purchase.slaBps || "10000"),
         });
       }
 
       if (signals.length === 0) {
-        throw new Error("No valid signals selected for proof generation");
+        throw new Error("No settled signals available for proof generation");
       }
 
       await generateAndSetResult(signals);
@@ -354,7 +334,7 @@ export default function TrackRecordPage() {
               Your Signals
             </h2>
             <p className="text-sm text-slate-500 mb-4">
-              Select settled signals to include in your track record proof.
+              All settled signals are automatically included in your track record proof.
               Signal data is saved locally when you create signals and merged
               with on-chain purchase outcomes.
             </p>
@@ -434,40 +414,32 @@ export default function TrackRecordPage() {
             {!signalsLoading && proofableSignals.length > 0 && (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <p className="text-xs text-slate-400">
-                      {proofableSignals.length} signal{proofableSignals.length !== 1 ? "s" : ""} with settled purchases
-                    </p>
-                    {availableSports.length > 1 && (
-                      <select
-                        className="input w-auto text-xs py-1"
-                        value={sportFilter}
-                        onChange={(e) => { setSportFilter(e.target.value); setSelectedIds(new Set()); }}
-                        aria-label="Filter by sport"
-                      >
-                        <option value="">All Sports</option>
-                        {availableSports.map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
+                  <p className="text-xs text-slate-400">
+                    {includedSignals.length} signal{includedSignals.length !== 1 ? "s" : ""} included
+                    {proofableSignals.length > 20 && (
+                      <span className="text-amber-500 ml-1">(max 20 per proof, {proofableSignals.length - 20} excluded)</span>
                     )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={selectAll}
-                    className="text-xs text-genius-600 hover:text-genius-800"
-                  >
-                    Select all (max 20)
-                  </button>
+                  </p>
+                  {availableSports.length > 1 && (
+                    <select
+                      className="input w-auto text-xs py-1"
+                      value={sportFilter}
+                      onChange={(e) => setSportFilter(e.target.value)}
+                      aria-label="Filter by sport"
+                    >
+                      <option value="">All Sports</option>
+                      {availableSports.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
-                  {proofableSignals.map((sig) => (
+                  {includedSignals.map((sig) => (
                     <SignalRow
                       key={sig.signalId}
                       signal={sig}
-                      selected={selectedIds.has(sig.signalId)}
-                      onToggle={() => toggleSignal(sig.signalId)}
                     />
                   ))}
                 </div>
@@ -500,13 +472,13 @@ export default function TrackRecordPage() {
             </SecretModal>
 
             <button
-              onClick={handleGenerateFromSelected}
-              disabled={state === "generating" || selectedIds.size === 0}
+              onClick={handleGenerate}
+              disabled={state === "generating" || includedSignals.length === 0}
               className="btn-primary w-full py-3"
             >
               {state === "generating"
                 ? "Generating Proof..."
-                : `Generate Proof (${selectedIds.size} signal${selectedIds.size !== 1 ? "s" : ""})`}
+                : `Generate Proof (${includedSignals.length} signal${includedSignals.length !== 1 ? "s" : ""})`}
             </button>
           </div>
 
@@ -545,12 +517,8 @@ export default function TrackRecordPage() {
 
 function SignalRow({
   signal,
-  selected,
-  onToggle,
 }: {
   signal: ProofReadySignal;
-  selected: boolean;
-  onToggle: () => void;
 }) {
   const purchase = signal.purchases[0];
   const outcomeColor =
@@ -563,19 +531,8 @@ function SignalRow({
   const date = new Date(signal.createdAt * 1000);
 
   return (
-    <label
-      className={`flex items-center gap-3 rounded-lg px-4 py-3 cursor-pointer transition-colors ${
-        selected
-          ? "bg-genius-50 border-2 border-genius-300"
-          : "bg-slate-50 border border-slate-200 hover:border-slate-300"
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={onToggle}
-        className="w-4 h-4 rounded text-genius-500 border-slate-300"
-      />
+    <div className="flex items-center gap-3 rounded-lg px-4 py-3 bg-genius-50 border border-genius-200">
+      <div className="w-2 h-2 rounded-full bg-genius-400 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-800 truncate">
@@ -603,6 +560,6 @@ function SignalRow({
           )}
         </div>
       </div>
-    </label>
+    </div>
   );
 }

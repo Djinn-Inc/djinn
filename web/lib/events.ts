@@ -28,7 +28,7 @@ const RAW_DEPLOY_BLOCK = Number(process.env.NEXT_PUBLIC_DEPLOY_BLOCK ?? "0");
 const FALLBACK_LOOKBACK = 500_000;
 let _resolvedDeployBlock: number | null = null;
 
-async function resolveDeployBlock(provider: ethers.Provider): Promise<number> {
+export async function resolveDeployBlock(provider: ethers.Provider): Promise<number> {
   if (RAW_DEPLOY_BLOCK > 0) return RAW_DEPLOY_BLOCK;
   if (_resolvedDeployBlock !== null) return _resolvedDeployBlock;
   try {
@@ -140,7 +140,7 @@ export function resetEventCaches(): void {
  * Query contract events in chunks to handle large block ranges safely.
  * Falls back to querying the full range if provider doesn't support getBlockNumber.
  */
-async function queryFilterChunked(
+export async function queryFilterChunked(
   contract: ethers.Contract,
   filter: ethers.ContractEventName,
   fromBlock: number,

@@ -43,14 +43,107 @@ def _sanitize_url(url: str) -> str:
 log = structlog.get_logger()
 
 
+async def _settle_outcomes(
+    outcome_attestor: OutcomeAttestor,
+    chain_client: ChainClient,
+    resolved: list[object],
+    neuron: DjinnValidator,
+) -> None:
+    """Write consensus outcomes on-chain for newly resolved signals.
+
+    For each resolved signal that reaches consensus:
+    1. Look up the genius address from SignalCommitment
+    2. Look up all purchases for the signal from Escrow
+    3. Call Account.recordOutcome() and Escrow.setOutcome() for each purchase
+    """
+    from djinn_validator.core.outcomes import OutcomeAttestation
+
+    # Count validators with permits for consensus threshold
+    total_validators = 0
+    try:
+        total_validators = sum(
+            1 for uid in range(neuron.metagraph.n.item())
+            if neuron.metagraph.validator_permit[uid]
+        )
+    except Exception:
+        total_validators = 1  # Fallback: just this validator
+
+    settled_count = 0
+    for attestation in resolved:
+        if not isinstance(attestation, OutcomeAttestation):
+            continue
+
+        signal_id = attestation.signal_id
+        consensus = outcome_attestor.check_consensus(signal_id, total_validators)
+        if consensus is None:
+            continue
+
+        # Convert string signal_id to int for on-chain lookup
+        try:
+            signal_id_int = int(signal_id)
+        except (ValueError, TypeError):
+            log.warning("non_numeric_signal_id", signal_id=signal_id)
+            continue
+
+        # Get genius address from on-chain signal
+        signal_data = await chain_client.get_signal(signal_id_int)
+        genius = signal_data.get("genius", "")
+        if not genius or genius == "0x" + "0" * 40:
+            log.warning("signal_genius_not_found", signal_id=signal_id)
+            continue
+
+        # Get all purchases for this signal
+        purchase_ids = await chain_client.get_purchases_by_signal(signal_id_int)
+        if not purchase_ids:
+            log.debug("no_purchases_for_signal", signal_id=signal_id)
+            continue
+
+        for pid in purchase_ids:
+            purchase = await chain_client.get_purchase(pid)
+            if not purchase:
+                continue
+
+            idiot = purchase.get("idiot", "")
+            if not idiot or idiot == "0x" + "0" * 40:
+                continue
+
+            # Skip already settled
+            if purchase.get("outcome", 0) != 0:
+                continue
+
+            try:
+                result = await chain_client.settle_purchase(
+                    genius=genius,
+                    idiot=idiot,
+                    purchase_id=pid,
+                    outcome=consensus.value,
+                )
+                if result.get("account_tx") or result.get("escrow_tx"):
+                    settled_count += 1
+            except Exception as e:
+                log.error(
+                    "settle_purchase_failed",
+                    signal_id=signal_id,
+                    purchase_id=pid,
+                    err=str(e),
+                )
+
+    if settled_count:
+        log.info("outcomes_settled_on_chain", count=settled_count)
+
+
 async def epoch_loop(
     neuron: DjinnValidator,
     scorer: MinerScorer,
     share_store: ShareStore,
     outcome_attestor: OutcomeAttestor,
+    chain_client: ChainClient | None = None,
 ) -> None:
     """Main validator epoch loop: sync metagraph, score miners, set weights."""
-    log.info("epoch_loop_started")
+    log.info(
+        "epoch_loop_started",
+        settlement_enabled=chain_client is not None and chain_client.can_write,
+    )
     consecutive_errors = 0
 
     while True:
@@ -96,6 +189,12 @@ async def epoch_loop(
             resolved = await outcome_attestor.resolve_all_pending(hotkey)
             if resolved:
                 log.info("outcomes_resolved", count=len(resolved))
+
+            # Settle resolved outcomes on-chain
+            if resolved and chain_client and chain_client.can_write:
+                await _settle_outcomes(
+                    outcome_attestor, chain_client, resolved, neuron,
+                )
 
             # Prune old resolved signals to prevent memory growth
             outcome_attestor.cleanup_resolved()
@@ -191,6 +290,8 @@ async def async_main() -> None:
         escrow_address=config.escrow_address,
         signal_address=config.signal_commitment_address,
         account_address=config.account_address,
+        private_key=config.base_validator_private_key,
+        chain_id=config.base_chain_id,
     )
 
     # Initialize Bittensor neuron
@@ -236,6 +337,8 @@ async def async_main() -> None:
         bt_connected=bt_ok,
         rpc_url=_sanitize_url(config.base_rpc_url),
         shares_held=share_store.count,
+        settlement_enabled=chain_client.can_write,
+        settlement_address=chain_client.validator_address or "none",
         log_format=os.getenv("LOG_FORMAT", "console"),
     )
 
@@ -245,7 +348,9 @@ async def async_main() -> None:
         asyncio.create_task(mpc_cleanup_loop(mpc_coordinator)),
     ]
     if bt_ok:
-        running_tasks.append(asyncio.create_task(epoch_loop(neuron, scorer, share_store, outcome_attestor)))
+        running_tasks.append(asyncio.create_task(
+            epoch_loop(neuron, scorer, share_store, outcome_attestor, chain_client)
+        ))
 
     shutdown_event = asyncio.Event()
 

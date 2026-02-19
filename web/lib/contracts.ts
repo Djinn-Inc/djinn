@@ -92,6 +92,7 @@ export const ACCOUNT_ABI = [
   "function getCurrentCycle(address genius, address idiot) external view returns (uint256)",
   "function isAuditReady(address genius, address idiot) external view returns (bool)",
   "function getSignalCount(address genius, address idiot) external view returns (uint256)",
+  "event PurchaseRecorded(address indexed genius, address indexed idiot, uint256 purchaseId, uint256 signalCount)",
 ] as const;
 
 export const AUDIT_ABI = [

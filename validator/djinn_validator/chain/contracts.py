@@ -1,19 +1,23 @@
 """On-chain interaction layer for Base chain smart contracts.
 
 Provides typed wrappers around contract calls used by the validator:
-- Escrow.purchase() — gate share release on payment
+- Escrow.getPurchase/getPurchasesBySignal — read purchase data
 - SignalCommitment.getSignal() — read signal metadata
 - Account.recordOutcome() — write attested outcomes
+- Escrow.setOutcome() — write purchase outcomes
 
 Supports multiple RPC URLs with automatic failover on connection errors.
+Optionally supports transaction signing when a private key is provided.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
+from eth_account import Account as EthAccount
 from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 
@@ -51,6 +55,16 @@ ESCROW_ABI = [
             },
         ],
         "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "purchaseId", "type": "uint256"},
+            {"name": "outcome", "type": "uint8"},
+        ],
+        "name": "setOutcome",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function",
     },
 ]
@@ -134,6 +148,8 @@ class ChainClient:
         escrow_address: str = "",
         signal_address: str = "",
         account_address: str = "",
+        private_key: str = "",
+        chain_id: int = 8453,
     ) -> None:
         if isinstance(rpc_url, str):
             self._rpc_urls = [u.strip() for u in rpc_url.split(",") if u.strip()]
@@ -145,6 +161,7 @@ class ChainClient:
         self._escrow_address = escrow_address
         self._signal_address = signal_address
         self._account_address = account_address
+        self._chain_id = chain_id
         self._circuit_breaker = CircuitBreaker(
             name="rpc",
             failure_threshold=3,
@@ -152,6 +169,19 @@ class ChainClient:
         )
         self._w3 = self._create_provider(self._rpc_urls[0])
         self._setup_contracts()
+
+        # Transaction signing (optional — required for settlement writes)
+        self._private_key = private_key
+        self._validator_address: str | None = None
+        self._nonce_lock = asyncio.Lock()
+        if private_key:
+            try:
+                acct = EthAccount.from_key(private_key)
+                self._validator_address = acct.address
+                log.info("chain_client_signer_configured", address=acct.address)
+            except Exception as e:
+                log.error("invalid_validator_private_key", err=str(e))
+                self._private_key = ""
 
     def _create_provider(self, url: str) -> AsyncWeb3:
         return AsyncWeb3(
@@ -334,10 +364,202 @@ class ChainClient:
             log.error("is_audit_ready_failed", genius=genius, idiot=idiot, err=str(e))
             return False
 
+    # ------------------------------------------------------------------
+    # Read helpers for settlement
+    # ------------------------------------------------------------------
+
+    async def get_purchases_by_signal(self, signal_id: int) -> list[int]:
+        """Return all purchase IDs for a given signal."""
+        if self._escrow is None:
+            return []
+        try:
+            return await self._with_failover(
+                lambda: self._escrow.functions.getPurchasesBySignal(signal_id).call()  # type: ignore[union-attr]
+            )
+        except Exception as e:
+            log.error("get_purchases_by_signal_failed", signal_id=signal_id, err=str(e))
+            return []
+
+    async def get_purchase(self, purchase_id: int) -> dict[str, Any]:
+        """Read a single Purchase struct from Escrow."""
+        if self._escrow is None:
+            return {}
+        try:
+            p = await self._with_failover(
+                lambda: self._escrow.functions.getPurchase(purchase_id).call()  # type: ignore[union-attr]
+            )
+            # Purchase tuple: (idiot, signalId, notional, feePaid, creditUsed, usdcPaid, odds, outcome, purchasedAt)
+            return {
+                "idiot": p[0],
+                "signalId": p[1],
+                "notional": p[2],
+                "feePaid": p[3],
+                "creditUsed": p[4],
+                "usdcPaid": p[5],
+                "odds": p[6],
+                "outcome": p[7],  # 0=Pending, 1=Favorable, 2=Unfavorable, 3=Void
+                "purchasedAt": p[8],
+            }
+        except Exception as e:
+            log.error("get_purchase_failed", purchase_id=purchase_id, err=str(e))
+            return {}
+
+    # ------------------------------------------------------------------
+    # Write methods for settlement (require private key)
+    # ------------------------------------------------------------------
+
+    @property
+    def can_write(self) -> bool:
+        """True if the client has a private key configured for signing transactions."""
+        return bool(self._private_key and self._validator_address)
+
+    @property
+    def validator_address(self) -> str | None:
+        """The Base address derived from the configured private key."""
+        return self._validator_address
+
+    async def _send_tx(
+        self,
+        contract: AsyncContract,
+        fn_name: str,
+        *args: Any,
+        gas_limit: int = 300_000,
+    ) -> str:
+        """Build, sign, and send a contract transaction. Returns tx hash hex.
+
+        Uses a nonce lock to prevent nonce collisions when multiple txs are
+        sent concurrently within the same epoch.
+        """
+        if not self.can_write:
+            raise RuntimeError("No private key configured — cannot send transactions")
+
+        fn = getattr(contract.functions, fn_name)(*args)
+
+        async with self._nonce_lock:
+            nonce = await self._with_failover(
+                lambda: self._w3.eth.get_transaction_count(self._validator_address)  # type: ignore[arg-type]
+            )
+
+            # Estimate gas with fallback
+            try:
+                gas = await fn.estimate_gas({"from": self._validator_address})
+                gas = int(gas * 1.3)  # 30% buffer
+            except Exception:
+                gas = gas_limit
+
+            gas_price = await self._with_failover(lambda: self._w3.eth.gas_price)
+
+            tx = await fn.build_transaction({
+                "from": self._validator_address,
+                "gas": gas,
+                "gasPrice": gas_price,
+                "nonce": nonce,
+                "chainId": self._chain_id,
+            })
+
+            signed = EthAccount.sign_transaction(tx, self._private_key)
+            tx_hash = await self._with_failover(
+                lambda: self._w3.eth.send_raw_transaction(signed.raw_transaction)
+            )
+
+        return tx_hash.hex()
+
+    async def record_outcome(
+        self,
+        genius: str,
+        idiot: str,
+        purchase_id: int,
+        outcome: int,
+    ) -> str:
+        """Write an outcome to Account.recordOutcome(). Returns tx hash."""
+        if self._account is None:
+            raise RuntimeError("Account contract not configured")
+
+        genius_addr = self._w3.to_checksum_address(genius)
+        idiot_addr = self._w3.to_checksum_address(idiot)
+
+        return await self._send_tx(
+            self._account, "recordOutcome",
+            genius_addr, idiot_addr, purchase_id, outcome,
+        )
+
+    async def set_escrow_outcome(
+        self,
+        purchase_id: int,
+        outcome: int,
+    ) -> str:
+        """Write an outcome to Escrow.setOutcome(). Returns tx hash."""
+        if self._escrow is None:
+            raise RuntimeError("Escrow contract not configured")
+
+        return await self._send_tx(
+            self._escrow, "setOutcome",
+            purchase_id, outcome,
+        )
+
+    async def settle_purchase(
+        self,
+        genius: str,
+        idiot: str,
+        purchase_id: int,
+        outcome: int,
+    ) -> dict[str, str | None]:
+        """Settle a single purchase: write outcome to both Account and Escrow.
+
+        Returns dict with 'account_tx' and 'escrow_tx' hashes (None on error).
+        Skips purchases whose on-chain outcome is already set.
+        """
+        result: dict[str, str | None] = {"account_tx": None, "escrow_tx": None}
+
+        # Check if already settled on-chain
+        purchase = await self.get_purchase(purchase_id)
+        if purchase and purchase.get("outcome", 0) != 0:
+            log.debug(
+                "purchase_already_settled",
+                purchase_id=purchase_id,
+                on_chain_outcome=purchase["outcome"],
+            )
+            return result
+
+        # Write to Account.recordOutcome
+        try:
+            tx = await self.record_outcome(genius, idiot, purchase_id, outcome)
+            result["account_tx"] = tx
+            log.info(
+                "account_outcome_recorded",
+                purchase_id=purchase_id,
+                outcome=outcome,
+                tx_hash=tx,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "OutcomeAlreadyRecorded" in err_str:
+                log.debug("account_outcome_already_recorded", purchase_id=purchase_id)
+            else:
+                log.error("account_record_outcome_failed", purchase_id=purchase_id, err=err_str)
+                return result
+
+        # Write to Escrow.setOutcome
+        try:
+            tx = await self.set_escrow_outcome(purchase_id, outcome)
+            result["escrow_tx"] = tx
+            log.info(
+                "escrow_outcome_set",
+                purchase_id=purchase_id,
+                outcome=outcome,
+                tx_hash=tx,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "OutcomeAlreadySet" in err_str:
+                log.debug("escrow_outcome_already_set", purchase_id=purchase_id)
+            else:
+                log.error("escrow_set_outcome_failed", purchase_id=purchase_id, err=err_str)
+
+        return result
+
     async def close(self) -> None:
         """Close the underlying HTTP provider session."""
-        import asyncio
-
         provider = self._w3.provider
         if hasattr(provider, "_request_session") and provider._request_session:
             session = provider._request_session
