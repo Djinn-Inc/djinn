@@ -168,9 +168,17 @@ class DjinnValidator:
                 uids=uids,
                 weights=vals,
                 wait_for_inclusion=True,
+                wait_for_finalization=False,
             )
-            log.info("weights_set", uids=uids, success=result)
-            return bool(result.success if hasattr(result, 'success') else result)
+            success = bool(result.success if hasattr(result, 'success') else result)
+            log.info(
+                "weights_set",
+                uids=uids,
+                success=success,
+                error=getattr(result, 'error', None),
+                message=getattr(result, 'message', None),
+            )
+            return success
         except Exception as e:
             log.error("set_weights_failed", error=str(e))
             return False
@@ -212,11 +220,22 @@ class DjinnValidator:
             return 0
 
     def should_set_weights(self) -> bool:
-        """Check if enough blocks have passed since last weight update."""
-        if self.subtensor is None:
+        """Check if enough blocks have passed since last weight update.
+
+        Uses the on-chain last_update for this UID (which includes serve_axon)
+        to avoid the Bittensor SDK's "too soon" rejection.
+        """
+        if self.subtensor is None or self.uid is None or self.metagraph is None:
             return False
-        current = self.block
-        return (current - self._last_weight_block) >= self.MIN_WEIGHT_INTERVAL
+        try:
+            current = self.block
+            # Use chain-tracked last_update to match SDK's internal check
+            last_update = int(self.metagraph.last_update[self.uid].item())
+            interval = current - last_update
+            return interval >= self.MIN_WEIGHT_INTERVAL
+        except Exception:
+            # Fall back to local tracking
+            return (self.block - self._last_weight_block) >= self.MIN_WEIGHT_INTERVAL
 
     def record_weight_set(self) -> None:
         """Record the block at which weights were last set."""

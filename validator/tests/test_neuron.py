@@ -31,7 +31,7 @@ class TestSetupWithoutBittensor:
 
     def test_setup_catches_exceptions(self) -> None:
         mock_bt = MagicMock()
-        mock_bt.wallet.side_effect = RuntimeError("no wallet")
+        mock_bt.Wallet.side_effect = RuntimeError("no wallet")
         v = DjinnValidator()
         with patch("djinn_validator.bt.neuron.bt", mock_bt):
             assert v.setup() is False
@@ -44,10 +44,10 @@ class TestSetupSuccess:
         wallet = MagicMock()
         wallet.hotkey.ss58_address = hotkey
         wallet.coldkeypub.ss58_address = "5ColdKey"
-        mock_bt.wallet.return_value = wallet
+        mock_bt.Wallet.return_value = wallet
 
         subtensor = MagicMock()
-        mock_bt.subtensor.return_value = subtensor
+        mock_bt.Subtensor.return_value = subtensor
 
         metagraph = MagicMock()
         metagraph.n.item.return_value = n
@@ -68,7 +68,7 @@ class TestSetupSuccess:
 
     def test_setup_not_registered(self) -> None:
         mock_bt = self._make_mock_bt(hotkey="unknown")
-        mock_bt.subtensor.return_value.metagraph.return_value.hotkeys = ["other"]
+        mock_bt.Subtensor.return_value.metagraph.return_value.hotkeys = ["other"]
         v = DjinnValidator()
         with patch("djinn_validator.bt.neuron.bt", mock_bt):
             assert v.setup() is False
@@ -155,28 +155,36 @@ class TestShouldSetWeights:
         v = DjinnValidator()
         assert v.should_set_weights() is False
 
-    def test_first_time_after_min_blocks(self) -> None:
-        """Should set weights when MIN_WEIGHT_INTERVAL blocks have passed."""
-        v = DjinnValidator()
-        v.subtensor = MagicMock()
-        v.subtensor.block = 100
-        assert v.should_set_weights() is True
-
-    def test_too_soon_after_last_set(self) -> None:
-        """Should not set weights before MIN_WEIGHT_INTERVAL blocks."""
-        v = DjinnValidator()
-        v.subtensor = MagicMock()
-        v.subtensor.block = 150
-        v._last_weight_block = 100
-        assert v.should_set_weights() is False
-
-    def test_exact_boundary(self) -> None:
-        """Exactly MIN_WEIGHT_INTERVAL blocks triggers weight set."""
+    def test_chain_based_check_enough_blocks(self) -> None:
+        """Should set weights when chain last_update is old enough."""
         v = DjinnValidator()
         v.subtensor = MagicMock()
         v.subtensor.block = 200
-        v._last_weight_block = 100
+        v.uid = 5
+        v.metagraph = MagicMock()
+        v.metagraph.last_update = [MagicMock() for _ in range(10)]
+        v.metagraph.last_update[5].item.return_value = 50  # 200 - 50 = 150 >= 100
         assert v.should_set_weights() is True
+
+    def test_chain_based_check_too_soon(self) -> None:
+        """Should not set weights when chain last_update is too recent."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.subtensor.block = 150
+        v.uid = 3
+        v.metagraph = MagicMock()
+        v.metagraph.last_update = [MagicMock() for _ in range(10)]
+        v.metagraph.last_update[3].item.return_value = 100  # 150 - 100 = 50 < 100
+        assert v.should_set_weights() is False
+
+    def test_fallback_to_local_tracking(self) -> None:
+        """Falls back to local tracking when chain check fails."""
+        v = DjinnValidator()
+        v.subtensor = MagicMock()
+        v.subtensor.block = 200
+        v.uid = None  # No UID triggers fallback
+        v._last_weight_block = 100
+        assert v.should_set_weights() is False  # uid=None returns False early
 
     def test_record_weight_set(self) -> None:
         """record_weight_set stores current block."""
@@ -226,7 +234,7 @@ class TestSetupWalletNotFound:
     def test_wallet_not_found(self) -> None:
         """FileNotFoundError in setup returns False with specific logging."""
         mock_bt = MagicMock()
-        mock_bt.wallet.side_effect = FileNotFoundError("~/.bittensor/wallets/default/hotkeys/default")
+        mock_bt.Wallet.side_effect = FileNotFoundError("~/.bittensor/wallets/default/hotkeys/default")
         v = DjinnValidator()
         with patch("djinn_validator.bt.neuron.bt", mock_bt):
             assert v.setup() is False
