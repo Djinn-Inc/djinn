@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { discoverMinerUrl } from "@/lib/bt-metagraph";
 
 const ALLOWED_PATHS = new Set(["health", "v1/check"]);
 
-function getMinerUrl(): string {
-  return (
-    process.env.MINER_URL ||
-    process.env.NEXT_PUBLIC_MINER_URL ||
-    "http://localhost:8422"
-  );
+async function getMinerUrl(): Promise<string> {
+  // 1. Explicit env var takes priority
+  const envUrl = process.env.MINER_URL || process.env.NEXT_PUBLIC_MINER_URL;
+  if (envUrl) return envUrl;
+
+  // 2. Metagraph discovery
+  try {
+    const discovered = await discoverMinerUrl();
+    if (discovered) return discovered;
+  } catch {
+    // fall through
+  }
+
+  // 3. Localhost fallback
+  return "http://localhost:8422";
 }
 
 async function proxy(
@@ -19,7 +29,7 @@ async function proxy(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const target = `${getMinerUrl()}/${path}`;
+  const target = `${await getMinerUrl()}/${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };

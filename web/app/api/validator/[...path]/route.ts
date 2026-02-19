@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { discoverValidatorUrl } from "@/lib/bt-metagraph";
 
 const ALLOWED_PATHS = new Set(["health", "v1/signal"]);
 const PURCHASE_RE = /^v1\/signal\/[a-zA-Z0-9_-]+\/purchase$/;
 
-function getValidatorUrl(): string {
-  return (
-    process.env.VALIDATOR_URL ||
-    process.env.NEXT_PUBLIC_VALIDATOR_URL ||
-    "http://localhost:8421"
-  );
+async function getValidatorUrl(): Promise<string> {
+  // 1. Explicit env var takes priority (allows manual override)
+  const envUrl = process.env.VALIDATOR_URL || process.env.NEXT_PUBLIC_VALIDATOR_URL;
+  if (envUrl) return envUrl;
+
+  // 2. Metagraph discovery — reads the BT chain for SN103 validator axons
+  try {
+    const discovered = await discoverValidatorUrl();
+    if (discovered) return discovered;
+  } catch {
+    // fall through
+  }
+
+  // 3. Localhost fallback for local dev
+  return "http://localhost:8421";
 }
 
 function isAllowed(path: string): boolean {
@@ -24,7 +34,7 @@ async function proxy(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const target = `${getValidatorUrl()}/${path}`;
+  const target = `${await getValidatorUrl()}/${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -43,8 +53,7 @@ async function proxy(
         "Content-Type": res.headers.get("Content-Type") || "application/json",
       },
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  } catch {
     return NextResponse.json(
       { error: "Validator unavailable" },
       { status: 502 },
