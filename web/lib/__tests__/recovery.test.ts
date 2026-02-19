@@ -5,6 +5,7 @@ import {
   decryptRecoveryBlob,
 } from "../recovery";
 import type { SavedSignalData } from "../hooks/useSettledSignals";
+import type { PurchasedSignalData } from "../preferences";
 
 const MOCK_SIGNATURE =
   "0x" + "ab".repeat(65); // 65 bytes like a real ECDSA signature
@@ -58,15 +59,43 @@ describe("deriveRecoveryKey", () => {
   });
 });
 
+const MOCK_PURCHASES: PurchasedSignalData[] = [
+  {
+    signalId: "55555",
+    realIndex: 2,
+    pick: "Celtics +4.5",
+    sportsbook: "FanDuel",
+    notional: "500",
+    purchasedAt: 1708350000,
+  },
+];
+
 describe("encrypt/decrypt recovery blob roundtrip", () => {
-  it("encrypts and decrypts signal data", async () => {
+  it("encrypts and decrypts signal data (v1)", async () => {
     const key = await deriveRecoveryKey(MOCK_SIGNATURE);
     const blob = await encryptRecoveryBlob(MOCK_SIGNALS, key);
     expect(blob.constructor.name).toBe("Uint8Array");
     expect(blob.length).toBeGreaterThan(0);
 
     const recovered = await decryptRecoveryBlob(blob, key);
-    expect(recovered).toEqual(MOCK_SIGNALS);
+    expect(recovered.signals).toEqual(MOCK_SIGNALS);
+    expect(recovered.purchases).toEqual([]);
+  });
+
+  it("encrypts and decrypts signals + purchases (v2)", async () => {
+    const key = await deriveRecoveryKey(MOCK_SIGNATURE);
+    const blob = await encryptRecoveryBlob(MOCK_SIGNALS, key, MOCK_PURCHASES);
+    const recovered = await decryptRecoveryBlob(blob, key);
+    expect(recovered.signals).toEqual(MOCK_SIGNALS);
+    expect(recovered.purchases).toEqual(MOCK_PURCHASES);
+  });
+
+  it("v2 with empty purchases falls back to v1 format", async () => {
+    const key = await deriveRecoveryKey(MOCK_SIGNATURE);
+    const blob = await encryptRecoveryBlob(MOCK_SIGNALS, key, []);
+    const recovered = await decryptRecoveryBlob(blob, key);
+    expect(recovered.signals).toEqual(MOCK_SIGNALS);
+    expect(recovered.purchases).toEqual([]);
   });
 
   it("fails to decrypt with wrong key", async () => {
@@ -81,7 +110,8 @@ describe("encrypt/decrypt recovery blob roundtrip", () => {
     const key = await deriveRecoveryKey(MOCK_SIGNATURE);
     const blob = await encryptRecoveryBlob([], key);
     const recovered = await decryptRecoveryBlob(blob, key);
-    expect(recovered).toEqual([]);
+    expect(recovered.signals).toEqual([]);
+    expect(recovered.purchases).toEqual([]);
   });
 
   it("rejects invalid blob format", async () => {
@@ -92,9 +122,9 @@ describe("encrypt/decrypt recovery blob roundtrip", () => {
     );
   });
 
-  it("blob fits within 4KB for ~10 signals", async () => {
+  it("blob fits within 4KB for reasonable usage", async () => {
     const key = await deriveRecoveryKey(MOCK_SIGNATURE);
-    const signals = Array.from({ length: 10 }, (_, i) => ({
+    const signals = Array.from({ length: 8 }, (_, i) => ({
       signalId: String(i),
       preimage: "123456789012345678",
       realIndex: (i % 10) + 1,
@@ -103,7 +133,15 @@ describe("encrypt/decrypt recovery blob roundtrip", () => {
       slaMultiplierBps: 15000,
       createdAt: 1708300000 + i,
     }));
-    const blob = await encryptRecoveryBlob(signals, key);
+    const purchases = Array.from({ length: 4 }, (_, i) => ({
+      signalId: String(100 + i),
+      realIndex: (i % 10) + 1,
+      pick: "Team B +2.5",
+      sportsbook: "DraftKings",
+      notional: "200",
+      purchasedAt: 1708400000 + i,
+    }));
+    const blob = await encryptRecoveryBlob(signals, key, purchases);
     expect(blob.length).toBeLessThan(4096);
   });
 });

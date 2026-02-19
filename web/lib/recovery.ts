@@ -18,15 +18,29 @@ import { encrypt, decrypt, toHex, fromHex } from "./crypto";
 import { getKeyRecoveryContract, ADDRESSES } from "./contracts";
 import { getReadProvider } from "./hooks";
 import type { SavedSignalData } from "./hooks/useSettledSignals";
+import type { PurchasedSignalData } from "./preferences";
 
 const RECOVERY_SIGN_MESSAGE = "Djinn Key Recovery v1";
 const MAX_BLOB_SIZE = 4096;
 
 // ---- Types ----
 
-interface RecoveryBlobPayload {
+interface RecoveryBlobPayloadV1 {
   version: 1;
   signals: SavedSignalData[];
+}
+
+interface RecoveryBlobPayloadV2 {
+  version: 2;
+  signals: SavedSignalData[];
+  purchases: PurchasedSignalData[];
+}
+
+type RecoveryBlobPayload = RecoveryBlobPayloadV1 | RecoveryBlobPayloadV2;
+
+export interface RecoveryResult {
+  signals: SavedSignalData[];
+  purchases: PurchasedSignalData[];
 }
 
 // ---- Key Derivation ----
@@ -46,8 +60,12 @@ export async function deriveRecoveryKey(signature: string): Promise<Uint8Array> 
 export async function encryptRecoveryBlob(
   signals: SavedSignalData[],
   recoveryKey: Uint8Array,
+  purchases?: PurchasedSignalData[],
 ): Promise<Uint8Array> {
-  const payload: RecoveryBlobPayload = { version: 1, signals };
+  const payload: RecoveryBlobPayload =
+    purchases && purchases.length > 0
+      ? { version: 2, signals, purchases }
+      : { version: 1, signals };
   const plaintext = JSON.stringify(payload);
   const { ciphertext, iv } = await encrypt(plaintext, recoveryKey);
   return new TextEncoder().encode(`${iv}:${ciphertext}`);
@@ -56,7 +74,7 @@ export async function encryptRecoveryBlob(
 export async function decryptRecoveryBlob(
   blob: Uint8Array,
   recoveryKey: Uint8Array,
-): Promise<SavedSignalData[]> {
+): Promise<RecoveryResult> {
   const packed = new TextDecoder().decode(blob);
   const colonIdx = packed.indexOf(":");
   if (colonIdx < 0) throw new Error("Invalid recovery blob format");
@@ -64,13 +82,19 @@ export async function decryptRecoveryBlob(
   const ciphertext = packed.slice(colonIdx + 1);
   const json = await decrypt(ciphertext, iv, recoveryKey);
   const payload = JSON.parse(json);
-  if (payload?.version !== 1) {
+  if (payload?.version !== 1 && payload?.version !== 2) {
     throw new Error(`Unsupported recovery blob version: ${payload?.version}`);
   }
   if (!Array.isArray(payload.signals)) {
     throw new Error("Invalid recovery blob: signals is not an array");
   }
-  return payload.signals as SavedSignalData[];
+  return {
+    signals: payload.signals as SavedSignalData[],
+    purchases:
+      payload.version === 2 && Array.isArray(payload.purchases)
+        ? (payload.purchases as PurchasedSignalData[])
+        : [],
+  };
 }
 
 // ---- On-Chain Read (view, no gas) ----
@@ -130,22 +154,25 @@ export async function storeRecovery(
   walletClient: { writeContract: (args: any) => Promise<`0x${string}`> },
   signals: SavedSignalData[],
   waitForTxFn: (hash: `0x${string}`) => Promise<void>,
+  purchases?: PurchasedSignalData[],
 ): Promise<`0x${string}`> {
-  if (signals.length === 0) throw new Error("No signals to store for recovery");
+  if (signals.length === 0 && (!purchases || purchases.length === 0)) {
+    throw new Error("No data to store for recovery");
+  }
   if (ADDRESSES.keyRecovery === "0x0000000000000000000000000000000000000000") {
     throw new Error("KeyRecovery contract not configured");
   }
 
   const signature = await signMessageFn(RECOVERY_SIGN_MESSAGE);
   const recoveryKey = await deriveRecoveryKey(signature);
-  const blob = await encryptRecoveryBlob(signals, recoveryKey);
+  const blob = await encryptRecoveryBlob(signals, recoveryKey, purchases);
   return storeRecoveryBlobOnChain(walletClient, blob, waitForTxFn);
 }
 
 export async function loadRecovery(
   userAddress: string,
   signMessageFn: (message: string) => Promise<string>,
-): Promise<SavedSignalData[] | null> {
+): Promise<RecoveryResult | null> {
   const blob = await readRecoveryBlobFromChain(userAddress);
   if (!blob) return null;
 

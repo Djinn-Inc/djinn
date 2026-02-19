@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
 import { useSignal, usePurchaseSignal } from "@/lib/hooks";
 import { getValidatorClient, getValidatorClients, getMinerClient } from "@/lib/api";
 import { decrypt, fromHex, bigIntToKey, reconstructSecret } from "@/lib/crypto";
@@ -34,6 +34,7 @@ export default function PurchaseSignal() {
   const params = useParams();
   const router = useRouter();
   const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   let signalId: bigint | undefined;
   try {
     signalId = params.id ? BigInt(params.id as string) : undefined;
@@ -388,6 +389,30 @@ export default function PurchaseSignal() {
               notional: notional,
               purchasedAt: Math.floor(Date.now() / 1000),
             });
+
+            // Store recovery blob on-chain (non-blocking — localStorage is primary)
+            if (walletClient) {
+              import("@/lib/contracts").then(({ ADDRESSES }) => {
+                if (ADDRESSES.keyRecovery === "0x0000000000000000000000000000000000000000") return;
+                Promise.all([
+                  import("@wagmi/core"),
+                  import("@/app/providers"),
+                  import("@/lib/recovery"),
+                  import("@/lib/preferences"),
+                  import("@/lib/hooks/useSettledSignals"),
+                ]).then(([{ waitForTransactionReceipt }, { wagmiConfig }, { storeRecovery }, { getPurchasedSignals }, { getSavedSignals }]) => {
+                  storeRecovery(
+                    (msg) => walletClient.signMessage({ message: msg }),
+                    walletClient,
+                    getSavedSignals(buyerAddress),
+                    async (h) => { await waitForTransactionReceipt(wagmiConfig, { hash: h }); },
+                    getPurchasedSignals(buyerAddress),
+                  ).catch((err) => {
+                    console.warn("[recovery] Failed to store idiot recovery blob:", err);
+                  });
+                });
+              });
+            }
           }
         } catch (decryptErr) {
           console.warn("Decryption error:", decryptErr);

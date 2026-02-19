@@ -19,6 +19,7 @@ import {
   type ProofReadySignal,
 } from "@/lib/hooks/useSettledSignals";
 import { readRecoveryBlobFromChain, loadRecovery } from "@/lib/recovery";
+import { savePurchasedSignal } from "@/lib/preferences";
 
 type ProofState = "idle" | "generating" | "complete" | "error";
 
@@ -87,12 +88,17 @@ export default function TrackRecordPage() {
     setRecoveryState("loading");
     setRecoveryError(null);
     try {
-      const signals = await loadRecovery(
+      const result = await loadRecovery(
         address,
         (msg) => walletClient.signMessage({ message: msg }),
       );
-      if (signals && signals.length > 0) {
-        saveSavedSignals(address, signals);
+      if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
+        if (result.signals.length > 0) {
+          saveSavedSignals(address, result.signals);
+        }
+        for (const p of result.purchases) {
+          savePurchasedSignal(address, p);
+        }
         setRecoveryState("recovered");
         refresh();
       } else {

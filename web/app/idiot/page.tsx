@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
 import { useRouter } from "next/navigation";
 import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance, useEarlyExit, useAccountState, humanizeError } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
@@ -10,10 +10,14 @@ import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
+import { getPurchasedSignals, savePurchasedSignal } from "@/lib/preferences";
+import { getSavedSignals, saveSavedSignals } from "@/lib/hooks/useSettledSignals";
+import { readRecoveryBlobFromChain, loadRecovery } from "@/lib/recovery";
 import SignalPlot from "@/components/SignalPlot";
 
 export default function IdiotDashboard() {
   const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const { balance: escrowBalance, loading: escrowLoading, refresh: refreshEscrow } =
     useEscrowBalance(address);
   const { balance: walletUsdc, loading: walletUsdcLoading, refresh: refreshWalletUsdc } = useWalletUsdcBalance(address);
@@ -42,6 +46,48 @@ export default function IdiotDashboard() {
   const { signals, loading: signalsLoading } = useActiveSignals(sportFilter || undefined);
   const { data: leaderboard } = useLeaderboard();
   const router = useRouter();
+
+  // Key recovery: if no local purchased data, check for on-chain recovery blob
+  const [recoveryState, setRecoveryState] = useState<
+    "idle" | "checking" | "prompting" | "loading" | "recovered" | "none" | "failed"
+  >("idle");
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const localPurchaseCount = address ? getPurchasedSignals(address).length : 0;
+
+  useEffect(() => {
+    if (!address || purchasesLoading || localPurchaseCount > 0 || recoveryState !== "idle") return;
+    setRecoveryState("checking");
+    readRecoveryBlobFromChain(address)
+      .then((blob) => setRecoveryState(blob ? "prompting" : "none"))
+      .catch(() => setRecoveryState("none"));
+  }, [address, purchasesLoading, localPurchaseCount, recoveryState]);
+
+  const handleRecover = useCallback(async () => {
+    if (!address || !walletClient) return;
+    setRecoveryState("loading");
+    setRecoveryError(null);
+    try {
+      const result = await loadRecovery(
+        address,
+        (msg) => walletClient.signMessage({ message: msg }),
+      );
+      if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
+        if (result.signals.length > 0) {
+          saveSavedSignals(address, result.signals);
+        }
+        for (const p of result.purchases) {
+          savePurchasedSignal(address, p);
+        }
+        setRecoveryState("recovered");
+      } else {
+        setRecoveryState("failed");
+        setRecoveryError("Recovery blob was empty or could not be decrypted");
+      }
+    } catch (err) {
+      setRecoveryState("failed");
+      setRecoveryError(err instanceof Error ? err.message : "Recovery failed");
+    }
+  }, [address, walletClient]);
 
   const geniusScoreMap = useMemo(() => {
     const map = new Map<string, { qualityScore: number; totalSignals: number; roi: number; proofCount: number; favCount: number; unfavCount: number }>();
@@ -209,6 +255,54 @@ export default function IdiotDashboard() {
           <p className="text-xs text-slate-500 mt-1">Total signals bought</p>
         </div>
       </div>
+
+      {/* Key Recovery Banner */}
+      {recoveryState === "prompting" && (
+        <div className="card mb-8 border-amber-200 bg-amber-50">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-800">Recovery Backup Detected</h3>
+              <p className="text-xs text-amber-700 mt-1">
+                No local purchase data found, but a recovery backup exists on-chain.
+                Sign a message to restore your data.
+              </p>
+              <button
+                onClick={handleRecover}
+                className="mt-3 px-4 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+              >
+                Restore from Backup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recoveryState === "loading" && (
+        <div className="card mb-8 border-blue-200 bg-blue-50">
+          <p className="text-sm text-blue-700">Restoring data from on-chain backup... Sign the message in your wallet.</p>
+        </div>
+      )}
+
+      {recoveryState === "recovered" && (
+        <div className="card mb-8 border-green-200 bg-green-50">
+          <p className="text-sm text-green-700">Data restored successfully from on-chain backup.</p>
+        </div>
+      )}
+
+      {recoveryState === "failed" && (
+        <div className="card mb-8 border-red-200 bg-red-50">
+          <p className="text-sm text-red-600">{recoveryError || "Recovery failed"}</p>
+          <button
+            onClick={handleRecover}
+            className="mt-2 text-xs text-red-700 underline hover:text-red-800"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {/* Escrow Management */}
       <section className="mb-8">
