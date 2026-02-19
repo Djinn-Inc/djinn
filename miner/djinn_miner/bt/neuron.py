@@ -37,6 +37,7 @@ class DjinnMiner:
         hotkey_name: str = "default",
         axon_port: int = 8422,
         external_ip: str | None = None,
+        external_port: int | None = None,
     ) -> None:
         self.netuid = netuid
         self.network = network
@@ -44,6 +45,7 @@ class DjinnMiner:
         self._hotkey_name = hotkey_name
         self._axon_port = axon_port
         self._external_ip = external_ip
+        self._external_port = external_port
 
         self.wallet: Any = None
         self.subtensor: Any = None
@@ -112,17 +114,17 @@ class DjinnMiner:
         if bt is None or self.wallet is None:
             return
 
-        self.axon = bt.Axon(
-            wallet=self.wallet,
-            port=self._axon_port,
-            external_ip=self._external_ip,
-        )
+        axon_kwargs: dict[str, Any] = {
+            "wallet": self.wallet,
+            "port": self._axon_port,
+        }
+        if self._external_ip:
+            axon_kwargs["external_ip"] = self._external_ip
+        if self._external_port:
+            axon_kwargs["external_port"] = self._external_port
 
-        # Serve the axon to register our IP/port on the network
-        self.subtensor.serve_axon(
-            netuid=self.netuid,
-            axon=self.axon,
-        )
+        self.axon = bt.Axon(**axon_kwargs)
+        self.subtensor.serve_axon(netuid=self.netuid, axon=self.axon)
         log.info(
             "axon_served",
             port=self._axon_port,

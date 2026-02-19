@@ -124,6 +124,8 @@ async def async_main() -> None:
         wallet_name=config.bt_wallet_name,
         hotkey_name=config.bt_wallet_hotkey,
         axon_port=config.api_port,
+        external_ip=config.external_ip or None,
+        external_port=config.external_port or None,
     )
 
     bt_ok = neuron.setup()

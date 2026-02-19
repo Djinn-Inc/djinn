@@ -53,6 +53,10 @@ class Config:
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = _int_env("API_PORT", "8421")
 
+    # External address for metagraph discovery (set when behind NAT/proxy)
+    external_ip: str = os.getenv("EXTERNAL_IP", "")
+    external_port: int = _int_env("EXTERNAL_PORT", "0")
+
     # Sports data
     sports_api_key: str = os.getenv("SPORTS_API_KEY", "")
 

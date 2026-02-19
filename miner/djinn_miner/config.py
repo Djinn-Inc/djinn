@@ -38,6 +38,10 @@ class Config:
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = _int_env("API_PORT", "8422")
 
+    # External address for metagraph discovery (set when behind NAT/proxy)
+    external_ip: str = os.getenv("EXTERNAL_IP", "")
+    external_port: int = _int_env("EXTERNAL_PORT", "0")
+
     # The Odds API
     odds_api_key: str = os.getenv("ODDS_API_KEY", "")
     odds_api_base_url: str = os.getenv("ODDS_API_BASE_URL", "https://api.the-odds-api.com")

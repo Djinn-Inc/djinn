@@ -34,15 +34,22 @@ class DjinnValidator:
         network: str = "finney",
         wallet_name: str = "default",
         hotkey_name: str = "default",
+        axon_port: int = 8421,
+        external_ip: str | None = None,
+        external_port: int | None = None,
     ) -> None:
         self.netuid = netuid
         self.network = network
         self._wallet_name = wallet_name
         self._hotkey_name = hotkey_name
+        self._axon_port = axon_port
+        self._external_ip = external_ip
+        self._external_port = external_port
 
         self.wallet: Any = None
         self.subtensor: Any = None
         self.metagraph: Any = None
+        self.axon: Any = None
         self.uid: int | None = None
         self._running = False
         self._last_weight_block: int = 0
@@ -82,6 +89,9 @@ class DjinnValidator:
                 log.warning("not_registered", hotkey=hotkey, netuid=self.netuid)
                 return False
 
+            # Serve axon so web clients can discover us via metagraph
+            self._setup_axon()
+
             return True
 
         except FileNotFoundError as e:
@@ -90,6 +100,33 @@ class DjinnValidator:
         except Exception as e:
             log.error("setup_failed", error=str(e), error_type=type(e).__name__, exc_info=True)
             return False
+
+    def _setup_axon(self) -> None:
+        """Create and serve the Bittensor axon for metagraph discovery.
+
+        Advertises our IP/port on the metagraph so web clients
+        can find validators. The actual API is served by FastAPI.
+        """
+        if bt is None or self.wallet is None:
+            return
+
+        axon_kwargs: dict[str, Any] = {
+            "wallet": self.wallet,
+            "port": self._axon_port,
+        }
+        if self._external_ip:
+            axon_kwargs["external_ip"] = self._external_ip
+        if self._external_port:
+            axon_kwargs["external_port"] = self._external_port
+
+        self.axon = bt.Axon(**axon_kwargs)
+        self.subtensor.serve_axon(netuid=self.netuid, axon=self.axon)
+        log.info(
+            "axon_served",
+            port=self._axon_port,
+            external_ip=self._external_ip or "auto",
+            external_port=self._external_port or self._axon_port,
+        )
 
     @staticmethod
     def _safe_item(tensor_or_val: Any) -> int:
