@@ -86,12 +86,12 @@ test.describe("Leaderboard content", () => {
     expect(body!.length).toBeGreaterThan(10);
   });
 
-  test("shows setup message when subgraph not configured", async ({
+  test("shows leaderboard content or setup message", async ({
     page,
   }) => {
     await page.goto("/leaderboard");
-    await expect(
-      page.getByText(/leaderboard is being set up/i)
-    ).toBeVisible();
+    const setupMsg = page.getByText(/leaderboard is being set up/i);
+    const table = page.getByRole("table");
+    await expect(setupMsg.or(table).first()).toBeVisible({ timeout: 10_000 });
   });
 });

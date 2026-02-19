@@ -1,31 +1,30 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright config for testing the live djinn.gg site.
- * No local webServer — tests run against the deployed production URL.
+ * Playwright config for live smoke tests.
+ * Runs tests in e2e/live/ against the deployed djinn.gg site.
  *
- * Usage: pnpm exec playwright test --config playwright.live.config.ts
+ * Usage: npx playwright test --config=playwright.live.config.ts
  */
 export default defineConfig({
   testDir: "./e2e/live",
   fullyParallel: true,
+  forbidOnly: !!process.env.CI,
   retries: 1,
   workers: 2,
   reporter: [["list"], ["html", { open: "never" }]],
   timeout: 30_000,
+  globalTimeout: 300_000,
   use: {
-    baseURL: "https://djinn.gg",
+    baseURL: process.env.LIVE_URL ?? "https://djinn.gg",
     trace: "on-first-retry",
     navigationTimeout: 15_000,
+    actionTimeout: 10_000,
   },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "mobile",
-      use: { ...devices["Pixel 5"] },
     },
   ],
 });

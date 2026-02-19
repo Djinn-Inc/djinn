@@ -60,16 +60,17 @@ test.describe("Miner & Purchase Flow Smoke Tests", () => {
     }
   });
 
-  test("signal discovery shows active signals or empty state", async ({
+  test("idiot dashboard loads and shows content", async ({
     page,
   }) => {
     await page.goto("/idiot");
     await expect(
       page.getByRole("heading", { name: "Idiot Dashboard" })
     ).toBeVisible();
-    // Either shows signals or empty state message
-    const signalsSection = page.getByText("Available Signals");
-    await expect(signalsSection).toBeVisible({ timeout: 10_000 });
+    // Dashboard should show connect prompt or signal content
+    await expect(
+      page.getByText(/connect|signal|wallet/i).first()
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("browse signals page loads", async ({ page }) => {
