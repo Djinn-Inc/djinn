@@ -917,7 +917,7 @@ export default function CreateSignal() {
                       return (
                       <div className="rounded-lg bg-white border border-genius-200 overflow-hidden">
                         <p className="text-[10px] text-genius-600 uppercase tracking-wide font-medium px-3 pt-2 pb-1">
-                          Market Depth — tap to select
+                          Market Depth — tap a book to use its odds
                         </p>
                         <table className="w-full text-xs">
                           <tbody>
@@ -926,26 +926,25 @@ export default function CreateSignal() {
                               const isBest = hasRange && price === bestPrice;
                               const isWorst = hasRange && price === worstPrice;
                               const atOrBetter = signalDecimal != null && price >= signalDecimal - 0.001;
-                              const isSelected = signalDecimal != null && Math.abs(price - signalDecimal) < 0.001;
                               return (
                                 <tr
                                   key={`${book}-${bi}`}
                                   className={`cursor-pointer transition-colors hover:bg-genius-100 active:bg-genius-200 ${
-                                    isSelected ? "bg-genius-50" : isBest ? "bg-green-50" : isWorst ? "bg-red-50" : ""
+                                    isBest ? "bg-green-50" : isWorst ? "bg-red-50" : ""
                                   }`}
                                   onClick={() => {
                                     setEditOdds(decimalToAmerican(price));
                                     setRealPick((prev) => prev ? { ...prev, price } : prev);
                                   }}
                                 >
-                                  <td className="w-6 pl-2.5 py-2.5">
-                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                                      atOrBetter ? "border-genius-500" : "border-slate-300"
-                                    }`}>
-                                      {isSelected && (
-                                        <div className="w-2 h-2 rounded-full bg-genius-500" />
-                                      )}
-                                    </div>
+                                  <td className="w-5 pl-2.5 py-2.5">
+                                    {atOrBetter ? (
+                                      <svg className="w-3.5 h-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <span className="w-3.5 h-3.5 block" />
+                                    )}
                                   </td>
                                   <td className={`py-2.5 font-medium ${
                                     isBest ? "text-green-700" : isWorst ? "text-red-600" : "text-slate-500"
