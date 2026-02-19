@@ -34,41 +34,14 @@ const ARTICLES: Article[] = [
     tag: "article",
   },
   {
-    title: "OUTsider INsights #9 \u2014 Zach Talks to Tao Outsider",
-    source: "TAO Daily",
-    date: "Feb 17, 2026",
-    url: "https://taodaily.io/outsider-insights-9-zach-talks-to-tao-outsider/",
-    description:
-      "Interview with Chris Zacharia discussing the Bittensor ecosystem, Bitstarter, and the subnets launching through the platform including Djinn.",
-    image: "https://taodaily.io/wp-content/uploads/2026/02/outsider-insights.png",
-    tag: "interview",
-  },
-  {
     title: "DJINN SUBNET 103: Bittensor\u2019s Industrial Cloud Execution",
     source: "SubnetEdge",
     date: "Jan 2026",
     url: "https://subnetedge.substack.com/p/djinn-subnet-103-bittensors-industrial",
     description:
       "Deep dive into Djinn\u2019s architecture, the team behind it, its partnership with Tensora Group, and its positioning as a decentralized intelligence marketplace.",
+    image: "https://subnetedge.substack.com/api/v1/post_cover?id=154974735",
     tag: "article",
-  },
-  {
-    title: "Bitstarter Kicks Off First Crowdfunding Platform for Bittensor With Livestream Investment Round",
-    source: "The Block",
-    date: "Jan 2026",
-    url: "https://www.theblock.co/press-releases/379945/bitstarter-kicks-off-first-crowdfunding-platform-for-bittensor-with-livestream-investment-round",
-    description:
-      "Coverage of the Bitstarter platform launch, the crowdfunding mechanism through which Djinn raised its initial funding on Bittensor.",
-    tag: "ecosystem",
-  },
-  {
-    title: "The Apprentice: Bittensor Edition",
-    source: "A Bittensor Journey",
-    date: "Jan 2026",
-    url: "https://www.abittensorjourney.com/p/the-apprentice-bittensor-edition",
-    description:
-      "Analysis of Bitstarter as an incubator for Bittensor subnets, featuring Djinn as one of the key launches.",
-    tag: "ecosystem",
   },
 ];
 
@@ -150,56 +123,58 @@ export default function Press() {
         </div>
       </section>
 
-      {/* Remaining articles */}
-      <section className="mb-16">
-        <div className="space-y-4">
-          {ARTICLES.filter((a) => !a.image).map((article) => (
-            <a
-              key={article.url}
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group card flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span
-                    className={`text-xs font-medium px-2 py-0.5 rounded-full ${TAG_STYLES[article.tag].bg} ${TAG_STYLES[article.tag].text}`}
-                  >
-                    {TAG_STYLES[article.tag].label}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {article.source}
-                  </span>
-                  <span className="text-xs text-slate-300">&middot;</span>
-                  <span className="text-xs text-slate-400">
-                    {article.date}
-                  </span>
-                </div>
-                <h3 className="font-semibold text-slate-900 mb-1 group-hover:text-idiot-600 transition-colors">
-                  {article.title}
-                </h3>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  {article.description}
-                </p>
-              </div>
-              <svg
-                className="w-5 h-5 text-slate-300 group-hover:text-idiot-500 shrink-0 transition-colors hidden sm:block"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+      {/* Remaining articles (text-only, no image) */}
+      {ARTICLES.filter((a) => !a.image).length > 0 && (
+        <section className="mb-16">
+          <div className="space-y-4">
+            {ARTICLES.filter((a) => !a.image).map((article) => (
+              <a
+                key={article.url}
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group card flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-lg transition-shadow"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                />
-              </svg>
-            </a>
-          ))}
-        </div>
-      </section>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span
+                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${TAG_STYLES[article.tag].bg} ${TAG_STYLES[article.tag].text}`}
+                    >
+                      {TAG_STYLES[article.tag].label}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {article.source}
+                    </span>
+                    <span className="text-xs text-slate-300">&middot;</span>
+                    <span className="text-xs text-slate-400">
+                      {article.date}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-slate-900 mb-1 group-hover:text-idiot-600 transition-colors">
+                    {article.title}
+                  </h3>
+                  <p className="text-sm text-slate-500 leading-relaxed">
+                    {article.description}
+                  </p>
+                </div>
+                <svg
+                  className="w-5 h-5 text-slate-300 group-hover:text-idiot-500 shrink-0 transition-colors hidden sm:block"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  />
+                </svg>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Directory listings */}
       <section className="mb-16">
@@ -250,12 +225,12 @@ export default function Press() {
             For press inquiries, interviews, or partnership opportunities, reach
             out on{" "}
             <a
-              href="https://x.com/djaboratory"
+              href="https://x.com/djinn_gg"
               target="_blank"
               rel="noopener noreferrer"
               className="text-idiot-600 hover:text-idiot-700 underline underline-offset-2"
             >
-              X @djaboratory
+              X @djinn_gg
             </a>
             .
           </p>
