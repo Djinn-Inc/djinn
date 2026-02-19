@@ -4,10 +4,11 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount, useWalletClient } from "wagmi";
 import { useRouter } from "next/navigation";
-import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance, useEarlyExit, useAccountState, humanizeError } from "@/lib/hooks";
+import { useEscrowBalance, useCreditBalance, useDepositEscrow, useWithdrawEscrow, useWalletUsdcBalance, useEarlyExit, humanizeError } from "@/lib/hooks";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { usePurchaseHistory } from "@/lib/hooks/usePurchaseHistory";
 import { useIdiotAuditHistory } from "@/lib/hooks/useAuditHistory";
+import { useActiveRelationships, type ActiveRelationship } from "@/lib/hooks/useActiveRelationships";
 import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 import { getPurchasedSignals, savePurchasedSignal } from "@/lib/preferences";
@@ -751,8 +752,8 @@ export default function IdiotDashboard() {
         )}
       </section>
 
-      {/* Early Exit */}
-      <EarlyExitSection role="idiot" myAddress={address} />
+      {/* Active Relationships */}
+      <RelationshipsSection address={address} />
 
       {/* Audit History */}
       <section>
@@ -864,105 +865,109 @@ export default function IdiotDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Early Exit Section
+// Active Relationships Section (auto-discovered)
 // ---------------------------------------------------------------------------
 
-function EarlyExitSection({
-  role,
-  myAddress,
-}: {
-  role: "genius" | "idiot";
-  myAddress: string | undefined;
-}) {
-  const [counterparty, setCounterparty] = useState("");
-  const { earlyExit, loading, error } = useEarlyExit();
-  const [success, setSuccess] = useState(false);
+function RelationshipsSection({ address }: { address: string | undefined }) {
+  const { relationships, loading: relLoading } = useActiveRelationships(address, "idiot");
+  const { earlyExit, loading: exitLoading, error: exitError } = useEarlyExit();
+  const [exitingPair, setExitingPair] = useState<string | null>(null);
+  const [successPair, setSuccessPair] = useState<string | null>(null);
 
-  const genius = role === "genius" ? myAddress : counterparty;
-  const idiot = role === "idiot" ? myAddress : counterparty;
-  const { signalCount, isAuditReady, loading: stateLoading } = useAccountState(
-    genius || undefined,
-    idiot || undefined,
-  );
-
-  const handleEarlyExit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!myAddress || !counterparty) return;
-    setSuccess(false);
+  const handleEarlyExit = async (rel: ActiveRelationship) => {
+    if (!address) return;
+    const key = `${rel.genius}:${rel.idiot}`;
+    setExitingPair(key);
+    setSuccessPair(null);
     try {
-      const g = role === "genius" ? myAddress : counterparty;
-      const i = role === "idiot" ? myAddress : counterparty;
-      await earlyExit(g, i);
-      setSuccess(true);
+      await earlyExit(rel.genius, rel.idiot);
+      setSuccessPair(key);
+      setExitingPair(null);
     } catch {
-      // error is set in the hook
+      setExitingPair(null);
     }
   };
-
-  const otherRole = role === "genius" ? "Idiot" : "Genius";
 
   return (
     <section className="mb-8">
       <h2 className="text-xl font-semibold text-slate-900 mb-4">
-        Early Exit
+        Active Relationships
       </h2>
-      <div className="card">
-        <p className="text-sm text-slate-500 mb-4">
-          End a relationship early (before 10 signals settle). All outstanding
-          damages are settled in Djinn Credits only &mdash; no USDC movement.
-          All signal outcomes must be finalized first.
-        </p>
-        <form onSubmit={handleEarlyExit} className="space-y-3">
-          <div>
-            <label htmlFor="earlyExitCounterparty" className="label">
-              {otherRole} Address
-            </label>
-            <input
-              id="earlyExitCounterparty"
-              type="text"
-              placeholder="0x..."
-              className="input"
-              value={counterparty}
-              onChange={(e) => { setCounterparty(e.target.value); setSuccess(false); }}
-            />
-          </div>
-
-          {counterparty.length === 42 && !stateLoading && (
-            <div className="rounded-lg bg-slate-50 p-3 text-sm">
-              <span className="text-slate-500">Signals in current cycle: </span>
-              <span className="font-medium text-slate-900">{signalCount}</span>
-              {isAuditReady && (
-                <span className="text-amber-600 ml-2">(10 reached — use normal audit instead)</span>
-              )}
-              {signalCount === 0 && (
-                <span className="text-slate-400 ml-2">(no active relationship)</span>
-              )}
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3" role="alert">
-              <p className="text-xs text-red-600">{error}</p>
-            </div>
-          )}
-
-          {success && (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-3" role="status">
-              <p className="text-xs text-green-700">
-                Early exit completed. Damages settled in Djinn Credits.
-              </p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !counterparty || isAuditReady || signalCount === 0}
-            className="btn-secondary"
-          >
-            {loading ? "Processing..." : "Trigger Early Exit"}
-          </button>
-        </form>
-      </div>
+      {relLoading ? (
+        <div className="card">
+          <p className="text-center text-slate-500 py-8">Loading relationships...</p>
+        </div>
+      ) : relationships.length === 0 ? (
+        <div className="card">
+          <p className="text-center text-slate-500 py-8">
+            No active relationships. Relationships form when you purchase a signal from a Genius.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {relationships.map((rel) => {
+            const key = `${rel.genius}:${rel.idiot}`;
+            const isExiting = exitingPair === key;
+            const isSuccess = successPair === key;
+            return (
+              <div key={key} className="card">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">
+                      Genius: {truncateAddress(rel.genius)}
+                    </p>
+                    <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+                      <span>Cycle {rel.currentCycle}</span>
+                      <span>
+                        {rel.signalCount} / 10 signals
+                      </span>
+                      <span className={rel.qualityScore >= 0 ? "text-green-600" : "text-red-500"}>
+                        QS: {rel.qualityScore >= 0 ? "+" : ""}{rel.qualityScore}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    {rel.isAuditReady ? (
+                      <span className="rounded-full px-3 py-1 text-xs font-medium bg-idiot-100 text-idiot-600 border border-idiot-200">
+                        Audit Ready
+                      </span>
+                    ) : (
+                      <>
+                        {isSuccess ? (
+                          <span className="text-xs text-green-600 font-medium">Settled</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleEarlyExit(rel)}
+                            disabled={exitLoading || isExiting}
+                            className="btn-secondary text-xs py-1.5 px-3"
+                          >
+                            {isExiting ? "Settling..." : "Early Exit"}
+                          </button>
+                        )}
+                      </>
+                    )}
+                    <div className="w-20 bg-slate-100 rounded-full h-1.5">
+                      <div
+                        className="bg-idiot-500 h-1.5 rounded-full transition-all"
+                        style={{ width: `${(rel.signalCount / 10) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {isExiting && exitError && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-2 mt-2" role="alert">
+                    <p className="text-xs text-red-600">{exitError}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <p className="text-xs text-slate-400 mt-2">
+            Early exit settles damages in Djinn Credits only (no USDC). All signal outcomes must be finalized first.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
