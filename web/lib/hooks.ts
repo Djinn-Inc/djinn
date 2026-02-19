@@ -820,7 +820,12 @@ export function useSubmitTrackRecord() {
         setStep("waiting");
         const startBlock = await getBlockNumber(wagmiConfig);
         let currentBlock = startBlock;
+        const maxWaitMs = 60_000; // 60s timeout
+        const waitStart = Date.now();
         while (currentBlock <= startBlock) {
+          if (Date.now() - waitStart > maxWaitMs) {
+            throw new Error("Timed out waiting for next block. Please try again.");
+          }
           await new Promise(r => setTimeout(r, 2000));
           currentBlock = await getBlockNumber(wagmiConfig);
         }

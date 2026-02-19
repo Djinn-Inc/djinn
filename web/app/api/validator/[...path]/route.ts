@@ -46,7 +46,7 @@ async function proxy(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Validator unavailable", detail: msg, target },
+      { error: "Validator unavailable" },
       { status: 502 },
     );
   }

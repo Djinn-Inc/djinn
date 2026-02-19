@@ -63,11 +63,14 @@ export async function decryptRecoveryBlob(
   const iv = packed.slice(0, colonIdx);
   const ciphertext = packed.slice(colonIdx + 1);
   const json = await decrypt(ciphertext, iv, recoveryKey);
-  const payload = JSON.parse(json) as RecoveryBlobPayload;
-  if (payload.version !== 1) {
-    throw new Error(`Unsupported recovery blob version: ${payload.version}`);
+  const payload = JSON.parse(json);
+  if (payload?.version !== 1) {
+    throw new Error(`Unsupported recovery blob version: ${payload?.version}`);
   }
-  return payload.signals;
+  if (!Array.isArray(payload.signals)) {
+    throw new Error("Invalid recovery blob: signals is not an array");
+  }
+  return payload.signals as SavedSignalData[];
 }
 
 // ---- On-Chain Read (view, no gas) ----

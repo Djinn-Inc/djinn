@@ -57,24 +57,29 @@ interface GraphQLResponse<T> {
 async function querySubgraph<T>(query: string, variables?: Record<string, unknown>): Promise<T | null> {
   if (!SUBGRAPH_URL) return null;
 
-  const resp = await fetch(SUBGRAPH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
+  try {
+    const resp = await fetch(SUBGRAPH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
 
-  if (!resp.ok) {
-    console.warn(`Subgraph query failed: ${resp.status}`);
+    if (!resp.ok) {
+      console.warn(`Subgraph query failed: ${resp.status}`);
+      return null;
+    }
+
+    const json: GraphQLResponse<T> = await resp.json();
+    if (json.errors?.length) {
+      console.warn("Subgraph errors:", json.errors);
+      return null;
+    }
+
+    return json.data ?? null;
+  } catch (err) {
+    console.warn("Subgraph query network error:", err);
     return null;
   }
-
-  const json: GraphQLResponse<T> = await resp.json();
-  if (json.errors?.length) {
-    console.warn("Subgraph errors:", json.errors);
-    return null;
-  }
-
-  return json.data ?? null;
 }
 
 /** Check if the subgraph is configured */

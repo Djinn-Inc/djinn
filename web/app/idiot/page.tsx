@@ -615,8 +615,8 @@ export default function IdiotDashboard() {
                       )}
                     </td>
                     <td className="py-3">
-                      <span className="rounded-full px-2 py-0.5 text-xs bg-amber-100 text-amber-700">
-                        Pending
+                      <span className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600">
+                        Purchased
                       </span>
                     </td>
                     <td className="py-3 text-slate-500">Block {p.blockNumber}</td>

@@ -104,6 +104,7 @@ export function useSettledSignals(geniusAddress: string | undefined) {
       const saved = getSavedSignals(geniusAddress);
       if (saved.length === 0) {
         setSignals([]);
+        setLoading(false);
         return;
       }
 

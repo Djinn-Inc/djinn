@@ -690,7 +690,7 @@ export default function PurchaseSignal() {
                       <button
                         key={book}
                         type="button"
-                        onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
+                        onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); setAvailableIndices([]); }}
                         className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                           selectedSportsbook === book
                             ? "bg-idiot-500 text-white"
@@ -715,7 +715,7 @@ export default function PurchaseSignal() {
                     <button
                       key={book}
                       type="button"
-                      onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); }}
+                      onClick={() => { setSelectedSportsbook(book); setMarketOdds(null); setAvailableIndices([]); }}
                       className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                         selectedSportsbook === book
                           ? "bg-idiot-500 text-white"
@@ -754,6 +754,7 @@ export default function PurchaseSignal() {
                     placeholder="100.00"
                     min="0.01"
                     step="0.01"
+                    max={signal.maxNotional > 0n ? Number(signal.maxNotional) / 1e6 : undefined}
                     className="input"
                     required
                   />
