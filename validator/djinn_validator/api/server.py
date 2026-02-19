@@ -153,6 +153,7 @@ def create_app(
     rate_limit_capacity: int = 60,
     rate_limit_rate: int = 10,
     mpc_availability_timeout: float = 15.0,
+    shares_threshold: int = 7,
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     bt_network = os.environ.get("BT_NETWORK", "")
@@ -637,7 +638,7 @@ def create_app(
     _orchestrator = MPCOrchestrator(
         coordinator=_mpc,
         neuron=neuron,
-        threshold=7,
+        threshold=shares_threshold,
     )
     _cleanup_resources.append(_orchestrator)
 

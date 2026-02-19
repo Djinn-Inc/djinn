@@ -78,7 +78,7 @@ class Config:
     # Protocol constants
     signals_per_cycle: int = 10
     shares_total: int = 10
-    shares_threshold: int = 7
+    shares_threshold: int = _int_env("SHAMIR_THRESHOLD", "7")
     mpc_quorum: float = 2 / 3
     protocol_fee_bps: int = 50
     odds_precision: int = 1_000_000
