@@ -291,6 +291,7 @@ def create_app(
         try:
             share_y = int(req.share_y, 16)
             encrypted = bytes.fromhex(req.encrypted_key_share)
+            encrypted_index = bytes.fromhex(req.encrypted_index_share) if req.encrypted_index_share else b""
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="Invalid hex encoding in share data")
 
@@ -307,6 +308,7 @@ def create_app(
                 genius_address=req.genius_address,
                 share=share,
                 encrypted_key_share=encrypted,
+                encrypted_index_share=encrypted_index,
             )
         except ValueError as e:
             detail = str(e)

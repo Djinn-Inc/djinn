@@ -32,6 +32,7 @@ class StoreShareRequest(BaseModel):
     share_x: int = Field(ge=1, le=10)
     share_y: str = Field(max_length=66)  # Hex-encoded BN254 field element (64 hex + 0x)
     encrypted_key_share: str = Field(max_length=4096)  # Hex-encoded encrypted AES key share
+    encrypted_index_share: str = Field(default="", max_length=4096)  # Hex-encoded index share for MPC
 
     @field_validator("share_y")
     @classmethod
@@ -42,6 +43,13 @@ class StoreShareRequest(BaseModel):
     @classmethod
     def validate_encrypted_key_share(cls, v: str) -> str:
         return _validate_hex(v, "encrypted_key_share")
+
+    @field_validator("encrypted_index_share")
+    @classmethod
+    def validate_encrypted_index_share(cls, v: str) -> str:
+        if not v:
+            return v
+        return _validate_hex(v, "encrypted_index_share")
 
 
 class StoreShareResponse(BaseModel):

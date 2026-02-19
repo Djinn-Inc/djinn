@@ -31,6 +31,7 @@ class SignalShareRecord:
     genius_address: str
     share: Share
     encrypted_key_share: bytes  # Share of the AES key, encrypted to this validator
+    encrypted_index_share: bytes = b""  # Share of the real index, for MPC executability check
     stored_at: float = field(default_factory=time.time)
     released_to: set[str] = field(default_factory=set)
 
@@ -71,7 +72,7 @@ class ShareStore:
                 time.sleep(delay)
         raise RuntimeError("unreachable")
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def _create_tables(self) -> None:
         self._conn.executescript("""
@@ -84,6 +85,7 @@ class ShareStore:
                 share_x INTEGER NOT NULL,
                 share_y TEXT NOT NULL,
                 encrypted_key_share BLOB NOT NULL,
+                encrypted_index_share BLOB NOT NULL DEFAULT x'',
                 stored_at REAL NOT NULL,
                 PRIMARY KEY (signal_id, share_x)
             );
@@ -91,9 +93,9 @@ class ShareStore:
                 signal_id TEXT NOT NULL,
                 buyer_address TEXT NOT NULL,
                 released_at REAL NOT NULL,
-                PRIMARY KEY (signal_id, buyer_address),
-                FOREIGN KEY (signal_id) REFERENCES shares(signal_id) ON DELETE CASCADE
+                PRIMARY KEY (signal_id, buyer_address)
             );
+            CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id);
         """)
         self._conn.commit()
         self._migrate()
@@ -130,6 +132,7 @@ class ShareStore:
             # can store multiple shares per signal (needed for single-validator testing
             # and for future multi-share configurations)
             log.info("schema_migration", from_version=max(current, 2), to_version=3)
+            self._conn.execute("PRAGMA foreign_keys=OFF")
             self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS shares_v3 (
                     signal_id TEXT NOT NULL,
@@ -137,13 +140,42 @@ class ShareStore:
                     share_x INTEGER NOT NULL,
                     share_y TEXT NOT NULL,
                     encrypted_key_share BLOB NOT NULL,
+                    encrypted_index_share BLOB NOT NULL DEFAULT x'',
                     stored_at REAL NOT NULL,
                     PRIMARY KEY (signal_id, share_x)
                 );
-                INSERT OR IGNORE INTO shares_v3 SELECT * FROM shares;
+                INSERT OR IGNORE INTO shares_v3
+                    (signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at)
+                    SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at
+                    FROM shares;
                 DROP TABLE shares;
                 ALTER TABLE shares_v3 RENAME TO shares;
             """)
+            # Recreate releases without FK constraint (use index instead)
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS releases_v3 (
+                    signal_id TEXT NOT NULL,
+                    buyer_address TEXT NOT NULL,
+                    released_at REAL NOT NULL,
+                    PRIMARY KEY (signal_id, buyer_address)
+                );
+                INSERT OR IGNORE INTO releases_v3 SELECT * FROM releases;
+                DROP TABLE IF EXISTS releases;
+                ALTER TABLE releases_v3 RENAME TO releases;
+                CREATE INDEX IF NOT EXISTS idx_releases_signal_id ON releases(signal_id);
+            """)
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.commit()
+
+        if current < 4:
+            # v4: add encrypted_index_share column for MPC executability check
+            log.info("schema_migration", from_version=max(current, 3), to_version=4)
+            try:
+                self._conn.execute(
+                    "ALTER TABLE shares ADD COLUMN encrypted_index_share BLOB NOT NULL DEFAULT x''"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             self._conn.commit()
 
         self._set_schema_version(self.SCHEMA_VERSION)
@@ -155,6 +187,7 @@ class ShareStore:
         genius_address: str,
         share: Share,
         encrypted_key_share: bytes,
+        encrypted_index_share: bytes = b"",
     ) -> None:
         """Store a new key share for a signal."""
         if not _SAFE_ID_RE.match(signal_id):
@@ -166,12 +199,15 @@ class ShareStore:
         with self._lock:
             try:
                 self._conn.execute(
-                    "INSERT INTO shares (signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (signal_id, genius_address, share.x, str(share.y), encrypted_key_share, time.time()),
+                    "INSERT INTO shares (signal_id, genius_address, share_x, share_y, "
+                    "encrypted_key_share, encrypted_index_share, stored_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (signal_id, genius_address, share.x, str(share.y),
+                     encrypted_key_share, encrypted_index_share, time.time()),
                 )
                 self._conn.commit()
-                log.info("share_stored", signal_id=signal_id, genius=genius_address)
+                log.info("share_stored", signal_id=signal_id, genius=genius_address,
+                         has_index_share=len(encrypted_index_share) > 0)
             except sqlite3.IntegrityError:
                 log.warning("share_already_stored", signal_id=signal_id)
                 raise ValueError(f"Share already stored for signal {signal_id}")
@@ -179,7 +215,8 @@ class ShareStore:
     def get(self, signal_id: str) -> SignalShareRecord | None:
         """Retrieve a share record by signal ID."""
         row = self._conn.execute(
-            "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, stored_at "
+            "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
+            "encrypted_index_share, stored_at "
             "FROM shares WHERE signal_id = ?",
             (signal_id,),
         ).fetchone()
@@ -199,7 +236,8 @@ class ShareStore:
             genius_address=row[1],
             share=Share(x=row[2], y=int(row[3])),
             encrypted_key_share=row[4],
-            stored_at=row[5],
+            encrypted_index_share=row[5] or b"",
+            stored_at=row[6],
             released_to=released,
         )
 

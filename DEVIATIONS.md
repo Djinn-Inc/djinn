@@ -165,13 +165,12 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Why:** Focused on genius recovery first (higher stakes — genius needs preimages for ZK proofs). Idiot recovery is lower priority since the decrypted pick is ephemeral information.
 **Impact:** If an idiot clears browser cache, they cannot re-decrypt a previously purchased signal from another device. The purchase itself is recorded on-chain, so settlement/audit is unaffected.
 
-## DEV-016: Index Shares Not Distributed for MPC [PARTIAL — SEE DEV-003/DEV-006]
+## DEV-016: Index Shares Not Distributed for MPC [RESOLVED]
 
 **Whitepaper Section:** Section 5 (Creation), Appendix C
 **Whitepaper Says:** "Splits the real signal's index into 10 pieces via a separate Shamir sharing (for the MPC executability check)" — this happens at signal creation in the browser.
-**What we did:** The web client distributes AES key shares to validators but does NOT Shamir-split the real index or send index shares. The MPC protocol on the validator side (DEV-006 through DEV-012) is fully implemented and assumes it receives index shares, but the web client never sends them.
-**Why:** The validator MPC was built independently from the web client. The web → validator share distribution API (`POST /v1/signal`) sends `encrypted_key_share` but not `encrypted_index_share` as shown in the whitepaper API reference (Appendix A).
-**Impact:** The miner executability check works (client-side, non-MPC), but the privacy-preserving MPC executability check cannot run. This is the gap between the validator protocol and the web client integration. Needs: (1) Shamir-split the realIndex in the browser, (2) send index shares alongside key shares to validators.
+**What we did:** The web client already Shamir-splits the realIndex and sends `encrypted_index_share` alongside `encrypted_key_share`. The validator API (`StoreShareRequest`), share store (SQLite schema v4), and server endpoint now accept and persist index shares for MPC use.
+**Resolution:** Web client was already correct. Added `encrypted_index_share` field to validator API model, database schema (migration v4), and store/retrieve logic. Full MPC executability check pipeline is now wired end-to-end.
 
 ## DEV-017: Per-Sport Track Records — Client-Side Filter [PARTIAL]
 
