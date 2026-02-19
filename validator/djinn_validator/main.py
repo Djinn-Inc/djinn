@@ -26,6 +26,7 @@ from djinn_validator.config import Config
 from djinn_validator.core.mpc_coordinator import MPCCoordinator
 from djinn_validator.core.outcomes import OutcomeAttestor
 from djinn_validator.core.purchase import PurchaseOrchestrator
+from djinn_validator.core.challenges import challenge_miners
 from djinn_validator.core.scoring import MinerScorer
 from djinn_validator.core.shares import ShareStore
 
@@ -145,6 +146,9 @@ async def epoch_loop(
         settlement_enabled=chain_client is not None and chain_client.can_write,
     )
     consecutive_errors = 0
+    # Throttle miner challenges: once every CHALLENGE_INTERVAL_EPOCHS epochs (~10 min)
+    CHALLENGE_INTERVAL_EPOCHS = 50  # 50 * 12s = 10 minutes
+    epoch_count = 0
 
     while True:
         try:
@@ -181,6 +185,25 @@ async def epoch_loop(
                         url=url,
                         responded=responded,
                     )
+
+            # Challenge miners for accuracy scoring (throttled)
+            epoch_count += 1
+            if epoch_count % CHALLENGE_INTERVAL_EPOCHS == 0:
+                sports_api_key = os.environ.get("SPORTS_API_KEY", "")
+                if sports_api_key and miner_uids:
+                    miner_axons = []
+                    for uid in miner_uids:
+                        axon = neuron.get_axon_info(uid)
+                        miner_axons.append({
+                            "uid": uid,
+                            "hotkey": axon.get("hotkey", f"uid-{uid}"),
+                            "ip": axon.get("ip", ""),
+                            "port": axon.get("port", 0),
+                        })
+                    try:
+                        await challenge_miners(scorer, miner_axons, sports_api_key)
+                    except Exception as e:
+                        log.warning("challenge_miners_error", err=str(e))
 
             # Resolve any pending signal outcomes
             hotkey = ""
