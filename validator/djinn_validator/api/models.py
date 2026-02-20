@@ -405,6 +405,10 @@ class OTSharesResponse(BaseModel):
 # ------------------------------------------------------------------
 
 
+_REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9_\-.:]{1,256}$")
+_BURN_TX_HASH_RE = re.compile(r"^(0x)?[0-9a-fA-F]{1,128}$")
+
+
 class AttestRequest(BaseModel):
     """POST /v1/attest — Request TLSNotary attestation of a web page."""
 
@@ -417,6 +421,29 @@ class AttestRequest(BaseModel):
     def validate_https(cls, v: str) -> str:
         if not v.startswith("https://"):
             raise ValueError("URL must use HTTPS")
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if not parsed.hostname:
+            raise ValueError("URL must have a valid hostname")
+        # Block private/reserved IPs to prevent SSRF
+        hostname = parsed.hostname.lower()
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
+            raise ValueError("URL must not point to private/internal addresses")
+        return v
+
+    @field_validator("request_id")
+    @classmethod
+    def validate_request_id(cls, v: str) -> str:
+        if not _REQUEST_ID_RE.match(v):
+            raise ValueError("request_id must be 1-256 alphanumeric chars, hyphens, underscores, dots, or colons")
+        return v
+
+    @field_validator("burn_tx_hash")
+    @classmethod
+    def validate_burn_tx_hash(cls, v: str) -> str:
+        if not _BURN_TX_HASH_RE.match(v):
+            raise ValueError("burn_tx_hash must be a hex string (with optional 0x prefix)")
         return v
 
 

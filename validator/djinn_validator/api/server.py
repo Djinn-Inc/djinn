@@ -201,6 +201,13 @@ def create_app(
                 with _ot_lock:
                     _cleanup_stale_ot_states_locked()
                 _mpc.cleanup_expired()
+                # Prune purchase locks to prevent unbounded growth
+                async with _purchase_locks_guard:
+                    to_remove = [k for k, lock in _purchase_locks.items() if not lock.locked()]
+                    for k in to_remove:
+                        del _purchase_locks[k]
+                    if to_remove:
+                        log.debug("purchase_locks_pruned", count=len(to_remove))
             except Exception:
                 log.warning("periodic_cleanup_error", exc_info=True)
 
@@ -648,6 +655,9 @@ def create_app(
                     miner_axons.append({"uid": uid, "ip": ip, "port": port})
 
         if not miner_axons:
+            # Refund the burn credit since no miner can process the request
+            if burn_ledger is not None:
+                burn_ledger.refund_credit(req.burn_tx_hash)
             return AttestResponse(
                 request_id=req.request_id,
                 url=req.url,
@@ -680,6 +690,9 @@ def create_app(
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
             ATTESTATION_VERIFIED.labels(valid="false").inc()
+            # Refund the burn credit since the miner never processed the request
+            if burn_ledger is not None:
+                burn_ledger.refund_credit(req.burn_tx_hash)
             log.warning("attest_miner_unreachable", miner_uid=selected["uid"], err=str(e))
             return AttestResponse(
                 request_id=req.request_id,
@@ -688,10 +701,16 @@ def create_app(
                 error=f"Miner unreachable: {e}",
             )
 
+        def _refund() -> None:
+            """Refund the consumed burn credit on miner failure."""
+            if burn_ledger is not None:
+                burn_ledger.refund_credit(req.burn_tx_hash)
+
         if resp.status_code != 200:
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
             ATTESTATION_VERIFIED.labels(valid="false").inc()
+            _refund()
             return AttestResponse(
                 request_id=req.request_id,
                 url=req.url,
@@ -699,11 +718,25 @@ def create_app(
                 error=f"Miner returned status {resp.status_code}",
             )
 
-        miner_data = resp.json()
+        try:
+            miner_data = resp.json()
+        except Exception:
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            _refund()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error="Miner returned malformed response",
+            )
+
         if not miner_data.get("success"):
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
             ATTESTATION_VERIFIED.labels(valid="false").inc()
+            _refund()
             return AttestResponse(
                 request_id=req.request_id,
                 url=req.url,
@@ -716,6 +749,7 @@ def create_app(
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
             ATTESTATION_VERIFIED.labels(valid="false").inc()
+            _refund()
             return AttestResponse(
                 request_id=req.request_id,
                 url=req.url,
@@ -727,7 +761,19 @@ def create_app(
         from djinn_validator.core import tlsn as tlsn_verifier
         from urllib.parse import urlparse
 
-        proof_bytes = bytes.fromhex(proof_hex)
+        try:
+            proof_bytes = bytes.fromhex(proof_hex)
+        except (ValueError, TypeError):
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            _refund()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error="Miner returned invalid proof hex",
+            )
         expected_server = urlparse(req.url).hostname
 
         try:

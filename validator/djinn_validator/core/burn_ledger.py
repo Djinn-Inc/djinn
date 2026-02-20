@@ -125,6 +125,27 @@ class BurnLedger:
             )
             return True
 
+    def refund_credit(self, tx_hash: str) -> bool:
+        """Refund one credit for a burn transaction (e.g., on miner failure).
+
+        Decrements used_credits by 1 so the credit can be reused.
+        Returns True if a credit was refunded, False if nothing to refund.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT used_credits FROM consumed_burns WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            if row is None or row[0] < 1:
+                return False
+            self._conn.execute(
+                "UPDATE consumed_burns SET used_credits = used_credits - 1 WHERE tx_hash = ?",
+                (tx_hash,),
+            )
+            self._conn.commit()
+            log.info("burn_credit_refunded", tx_hash=tx_hash[:16] + "...")
+            return True
+
     def close(self) -> None:
         """Close the database connection."""
         try:

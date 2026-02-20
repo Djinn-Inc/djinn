@@ -1181,7 +1181,7 @@ class TestAttestEndpoint:
         resp = client.post("/v1/attest", json={
             "url": "https://example.com",
             "request_id": "test-invalid-burn",
-            "burn_tx_hash": "0xbadtx",
+            "burn_tx_hash": "0xbad000dead000beef",
         })
         assert resp.status_code == 403
         assert "not found" in resp.json()["detail"]
@@ -1198,7 +1198,7 @@ class TestAttestEndpoint:
         burn_ledger = BurnLedger()
 
         # Pre-record the burn as consumed
-        burn_ledger.record_burn("0xalready_used", "5ColdKey", 0.0001)
+        burn_ledger.record_burn("0xa1ead000000000000001", "5ColdKey", 0.0001)
 
         app = create_app(
             store, purchase_orch, outcome_attestor,
@@ -1209,7 +1209,7 @@ class TestAttestEndpoint:
         resp = client.post("/v1/attest", json={
             "url": "https://example.com",
             "request_id": "test-consumed",
-            "burn_tx_hash": "0xalready_used",
+            "burn_tx_hash": "0xa1ead000000000000001",
         })
         assert resp.status_code == 403
         assert "credits" in resp.json()["detail"].lower() or "already" in resp.json()["detail"].lower()
@@ -1243,16 +1243,53 @@ class TestAttestEndpoint:
         resp = client.post("/v1/attest", json={
             "url": "https://example.com",
             "request_id": "test-valid-burn",
-            "burn_tx_hash": "0xvalid_burn_hash",
+            "burn_tx_hash": "0xaa00bb11cc22dd33",
         })
         assert resp.status_code == 200
         data = resp.json()
         # Burn gate passed, but no miners → success=False with "No reachable miners"
+        # Credit is refunded since no miners could process the request
         assert data["success"] is False
         assert "No reachable miners" in data["error"]
 
-        # Verify the burn was recorded
-        assert burn_ledger.is_consumed("0xvalid_burn_hash") is True
+        # Verify the burn credit was refunded (since no miner processed it)
+        assert burn_ledger.is_consumed("0xaa00bb11cc22dd33") is False
 
         store.close()
         burn_ledger.close()
+
+    def test_attest_rejects_non_hex_burn_tx(self, client: TestClient) -> None:
+        """burn_tx_hash with non-hex characters should be rejected with 422."""
+        resp = client.post("/v1/attest", json={
+            "url": "https://example.com",
+            "request_id": "test-hex",
+            "burn_tx_hash": "not_a_hex_string!",
+        })
+        assert resp.status_code == 422
+
+    def test_attest_rejects_invalid_request_id(self, client: TestClient) -> None:
+        """request_id with disallowed characters should be rejected."""
+        resp = client.post("/v1/attest", json={
+            "url": "https://example.com",
+            "request_id": "id with spaces",
+            "burn_tx_hash": "0xaabb",
+        })
+        assert resp.status_code == 422
+
+    def test_attest_rejects_localhost_url(self, client: TestClient) -> None:
+        """SSRF: URLs pointing to localhost should be rejected."""
+        resp = client.post("/v1/attest", json={
+            "url": "https://localhost/secret",
+            "request_id": "test-ssrf",
+            "burn_tx_hash": "0xaabb",
+        })
+        assert resp.status_code == 422
+
+    def test_attest_rejects_private_ip_url(self, client: TestClient) -> None:
+        """SSRF: URLs pointing to private IPs should be rejected."""
+        resp = client.post("/v1/attest", json={
+            "url": "https://192.168.1.1/admin",
+            "request_id": "test-ssrf-priv",
+            "burn_tx_hash": "0xaabb",
+        })
+        assert resp.status_code == 422

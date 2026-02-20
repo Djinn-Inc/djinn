@@ -91,3 +91,47 @@ class TestMultiCreditBurns:
         assert ledger.record_burn("0xmin", "5Key", 0.0001, min_amount=0.0001) is True
         assert ledger.remaining_credits("0xmin") == 0
         assert ledger.is_consumed("0xmin") is True
+
+
+class TestRefundCredit:
+    """Tests for credit refund on miner failure."""
+
+    def test_refund_restores_credit(self, ledger: BurnLedger) -> None:
+        """Refunding a consumed credit makes it available again."""
+        ledger.record_burn("0xrefund1", "5Key", 0.0001)
+        assert ledger.is_consumed("0xrefund1") is True
+        assert ledger.remaining_credits("0xrefund1") == 0
+
+        assert ledger.refund_credit("0xrefund1") is True
+        assert ledger.is_consumed("0xrefund1") is False
+        assert ledger.remaining_credits("0xrefund1") == 1
+
+    def test_refund_unknown_tx_returns_false(self, ledger: BurnLedger) -> None:
+        """Refunding an unknown tx hash returns False."""
+        assert ledger.refund_credit("0xunknown") is False
+
+    def test_refund_then_reuse(self, ledger: BurnLedger) -> None:
+        """After refund, the credit can be consumed again."""
+        ledger.record_burn("0xreuse", "5Key", 0.0001)
+        assert ledger.is_consumed("0xreuse") is True
+
+        ledger.refund_credit("0xreuse")
+        assert ledger.record_burn("0xreuse", "5Key", 0.0001) is True
+        assert ledger.is_consumed("0xreuse") is True
+
+    def test_refund_multi_credit(self, ledger: BurnLedger) -> None:
+        """Refund works with multi-credit burns."""
+        ledger.record_burn("0xmulti", "5Key", 0.0003, min_amount=0.0001)
+        ledger.record_burn("0xmulti", "5Key", 0.0003, min_amount=0.0001)
+        ledger.record_burn("0xmulti", "5Key", 0.0003, min_amount=0.0001)
+        assert ledger.is_consumed("0xmulti") is True
+
+        ledger.refund_credit("0xmulti")
+        assert ledger.remaining_credits("0xmulti") == 1
+        assert ledger.is_consumed("0xmulti") is False
+
+    def test_cannot_refund_below_zero(self, ledger: BurnLedger) -> None:
+        """Refunding when used_credits is 0 returns False."""
+        ledger.record_burn("0xzero", "5Key", 0.0001)
+        ledger.refund_credit("0xzero")  # used goes to 0
+        assert ledger.refund_credit("0xzero") is False  # Can't go below 0

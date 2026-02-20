@@ -263,7 +263,7 @@ class DjinnValidator:
 
             # Scan recent blocks for the extrinsic (burns should be recent)
             current_block = substrate.get_block_number(None)
-            search_depth = 50  # ~10 minutes of blocks
+            search_depth = 300  # ~50 minutes of blocks
 
             for block_num in range(current_block, max(current_block - search_depth, 0), -1):
                 block_hash = substrate.get_block_hash(block_num)
