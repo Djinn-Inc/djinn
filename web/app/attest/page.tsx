@@ -22,7 +22,7 @@ interface BatchItem {
   error: string | null;
 }
 
-const BURN_ADDRESS = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM";
+const BURN_ADDRESS = "5GrsjiBeCErhUGj339vu5GubTgyJMyZLGQqUFBJAtKrCziU9";
 const COST_PER_ATTEST = 0.0001;
 
 export default function AttestPage() {

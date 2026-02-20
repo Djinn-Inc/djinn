@@ -1168,7 +1168,7 @@ class TestAttestEndpoint:
         mock_neuron.uid = 1
         mock_neuron.metagraph = None
         mock_neuron.wallet = None
-        mock_neuron.verify_burn = MagicMock(return_value=(False, "Extrinsic not found on chain", 0.0))
+        mock_neuron.verify_burn = MagicMock(return_value=(False, "Extrinsic not found on chain", 0.0, ""))
         mock_neuron.get_miner_uids = MagicMock(return_value=[])
 
         app = create_app(
@@ -1230,7 +1230,7 @@ class TestAttestEndpoint:
         mock_neuron.uid = 1
         mock_neuron.metagraph = None
         mock_neuron.wallet = None
-        mock_neuron.verify_burn = MagicMock(return_value=(True, "", 0.0001))
+        mock_neuron.verify_burn = MagicMock(return_value=(True, "", 0.0001, "5TestSenderColdkey123"))
         mock_neuron.get_miner_uids = MagicMock(return_value=[])
 
         app = create_app(

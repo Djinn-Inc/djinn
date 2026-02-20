@@ -165,7 +165,7 @@ def create_app(
     shares_threshold: int = 7,
     burn_ledger: BurnLedger | None = None,
     attest_burn_amount: float = 0.0001,
-    attest_burn_address: str = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
+    attest_burn_address: str = "5GrsjiBeCErhUGj339vu5GubTgyJMyZLGQqUFBJAtKrCziU9",
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     bt_network = os.environ.get("BT_NETWORK", "")
@@ -617,8 +617,9 @@ def create_app(
 
             # Verify the burn on-chain (only needed on first use of this tx hash)
             actual_amount = attest_burn_amount
+            sender = "unknown"
             if not is_known and neuron:
-                valid, err_msg, actual_amount = neuron.verify_burn(
+                valid, err_msg, actual_amount, sender = neuron.verify_burn(
                     req.burn_tx_hash, attest_burn_amount, attest_burn_address,
                 )
                 if not valid:
@@ -628,7 +629,7 @@ def create_app(
 
             # Consume one credit (record_burn handles first-use and subsequent uses)
             if not burn_ledger.record_burn(
-                req.burn_tx_hash, "unknown", actual_amount, min_amount=attest_burn_amount,
+                req.burn_tx_hash, sender, actual_amount, min_amount=attest_burn_amount,
             ):
                 ATTESTATION_GATED.labels(reason="already_consumed").inc()
                 raise HTTPException(

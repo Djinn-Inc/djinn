@@ -79,7 +79,7 @@ class Config:
     attest_burn_amount: float = _float_env("ATTEST_BURN_AMOUNT", "0.0001")
     attest_burn_address: str = os.getenv(
         "ATTEST_BURN_ADDRESS",
-        "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",  # Well-known unrecoverable SS58 address
+        "5GrsjiBeCErhUGj339vu5GubTgyJMyZLGQqUFBJAtKrCziU9",  # Djinn-specific burn wallet (seed discarded)
     )
 
     # Protocol constants

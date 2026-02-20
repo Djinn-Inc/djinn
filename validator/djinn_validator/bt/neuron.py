@@ -243,16 +243,16 @@ class DjinnValidator:
 
     def verify_burn(
         self, tx_hash: str, min_amount: float, burn_address: str
-    ) -> tuple[bool, str, float]:
+    ) -> tuple[bool, str, float, str]:
         """Verify a substrate transfer to the burn address via RPC.
 
         Scans recent blocks (last ~50) for the extrinsic hash, then validates
         the transfer destination and amount.
 
-        Returns (valid, error_message, amount_tao).
+        Returns (valid, error_message, amount_tao, sender_ss58).
         """
         if not self.subtensor:
-            return True, "", min_amount  # Dev mode: skip verification
+            return True, "", min_amount, "dev-mode"  # Dev mode: skip verification
 
         try:
             substrate = self.subtensor.substrate
@@ -290,6 +290,14 @@ class DjinnValidator:
                     call_module = call.get("call_module", "")
                     call_function = call.get("call_function", "")
 
+                    # Extract sender SS58 address from the extrinsic
+                    sender = ""
+                    ex_address = ex.value.get("address", "")
+                    if isinstance(ex_address, str):
+                        sender = ex_address
+                    elif isinstance(ex_address, dict):
+                        sender = ex_address.get("Id", "")
+
                     if call_module != "Balances" or call_function not in (
                         "transfer",
                         "transfer_keep_alive",
@@ -298,7 +306,7 @@ class DjinnValidator:
                         return False, (
                             f"Extrinsic is not a balance transfer "
                             f"(got {call_module}.{call_function})"
-                        ), 0.0
+                        ), 0.0, sender
 
                     call_args = {
                         a["name"]: a["value"]
@@ -316,21 +324,27 @@ class DjinnValidator:
                         return False, (
                             f"Transfer destination {dest} does not match "
                             f"burn address {burn_address}"
-                        ), 0.0
+                        ), 0.0, sender
 
                     if amount_tao < min_amount:
                         return False, (
                             f"Transfer amount {amount_tao} TAO is less than "
                             f"required {min_amount} TAO"
-                        ), amount_tao
+                        ), amount_tao, sender
 
-                    return True, "", amount_tao
+                    log.info(
+                        "burn_verified",
+                        tx_hash=tx_hash[:16] + "...",
+                        sender=sender,
+                        amount_tao=amount_tao,
+                    )
+                    return True, "", amount_tao, sender
 
             return False, (
                 f"Extrinsic {tx_hash} not found in the last {search_depth} blocks. "
                 f"Ensure the burn transaction is confirmed and recent."
-            ), 0.0
+            ), 0.0, ""
 
         except Exception as e:
             log.warning("verify_burn_error", tx_hash=tx_hash, error=str(e))
-            return False, f"Failed to verify burn transaction: {e}", 0.0
+            return False, f"Failed to verify burn transaction: {e}", 0.0, ""
