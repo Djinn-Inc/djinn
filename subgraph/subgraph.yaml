@@ -190,7 +190,7 @@ dataSources:
     name: TrackRecord
     network: base-sepolia
     source:
-      address: "0x09de6d7B81ED73707364ee772eAdA7c191c8a4FC"
+      address: "0xd3FA108474eb4EfC79649a17472c5F7d729Ac08b"
       abi: TrackRecord
       startBlock: 37892788
     mapping:

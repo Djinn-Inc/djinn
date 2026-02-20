@@ -79,6 +79,7 @@ export function handleSignalCommitted(event: SignalCommitted): void {
   signal.maxPriceBps = event.params.maxPriceBps;
   signal.slaMultiplierBps = event.params.slaMultiplierBps;
   signal.maxNotional = event.params.maxNotional;
+  signal.minNotional = BigInt.zero();
   signal.expiresAt = event.params.expiresAt;
   signal.status = "Active";
   signal.createdAt = event.block.timestamp;

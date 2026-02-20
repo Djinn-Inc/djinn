@@ -40,6 +40,8 @@ type Signal @entity {
   slaMultiplierBps: BigInt!
   "Maximum notional per purchase (USDC, 6 decimals). 0 means no per-signal cap."
   maxNotional: BigInt!
+  "Minimum notional per purchase (USDC, 6 decimals). 0 means no minimum."
+  minNotional: BigInt!
   "Unix timestamp after which the signal expires"
   expiresAt: BigInt!
   "Current status of the signal"
