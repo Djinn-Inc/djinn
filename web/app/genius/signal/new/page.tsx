@@ -17,7 +17,7 @@ import {
   deriveMasterSeedTyped,
   deriveSignalKey,
 } from "@/lib/crypto";
-import { discoverValidatorClients } from "@/lib/api";
+import { discoverValidatorClients, getMinerClient } from "@/lib/api";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { fetchProtocolStats } from "@/lib/subgraph";
 import { formatUsdc } from "@/lib/types";
@@ -31,6 +31,7 @@ import {
   formatOdds,
   usesDecimalOdds,
   serializeLine,
+  toCandidateLine,
   type OddsEvent,
   type AvailableBet,
   type StructuredLine,
@@ -271,6 +272,27 @@ export default function CreateSignal() {
         );
         setStep("configure");
         return;
+      }
+
+      // Pre-flight: miner executability check — verify all lines are real available markets.
+      // This prevents Geniuses from creating signals with fake/expired lines to game track records.
+      const candidateLines = allLines.map((line, i) => toCandidateLine(line, i + 1));
+      try {
+        const minerClient = getMinerClient();
+        const checkResult = await minerClient.checkLines({ lines: candidateLines });
+        const realLineIdx = realIndex + 1; // Protocol uses 1-indexed
+        const realLineResult = checkResult.results.find((r) => r.index === realLineIdx);
+        if (!realLineResult || !realLineResult.available) {
+          setStepError(
+            "Your pick is not currently available at any sportsbook. " +
+            "The line may have moved or the game may have started. Please select a different bet.",
+          );
+          setStep("browse");
+          return;
+        }
+      } catch (minerErr) {
+        console.warn("Miner executability check failed:", minerErr);
+        // On testnet, allow creation if miner is unreachable — in production this should block
       }
 
       setStep("committing");
@@ -1248,9 +1270,9 @@ export default function CreateSignal() {
 
         <SecretModal
           open={isProcessing}
-          title={step === "preflight" ? "Connecting to Validators" : step === "committing" ? "Encrypting & Committing Signal" : "Distributing Key Shares"}
+          title={step === "preflight" ? "Verifying Signal" : step === "committing" ? "Encrypting & Committing Signal" : "Distributing Key Shares"}
           message={step === "preflight"
-            ? "Discovering and verifying validator availability on the Bittensor network..."
+            ? "Checking validator availability and verifying your lines are live on sportsbooks..."
             : step === "committing"
             ? "Your pick is being encrypted locally, then the encrypted blob is committed on-chain. Nobody can see your pick."
             : "Splitting your encryption key into shares and distributing them to validators. Your full key never leaves this device."}
