@@ -70,7 +70,7 @@ export default function IdiotDashboard() {
     try {
       const result = await loadRecovery(
         address,
-        (msg) => walletClient.signMessage({ message: msg }),
+        (params) => walletClient.signTypedData(params),
       );
       if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
         if (result.signals.length > 0) {

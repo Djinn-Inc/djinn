@@ -50,10 +50,11 @@ export default function TrackRecordPage() {
     refresh,
   } = useSettledSignals(address);
 
-  // Filter to signals that have at least one settled purchase, optionally by sport
+  // Filter to signals that are verified AND have at least one settled purchase
   const proofableSignals = useMemo(
     () => settledSignals.filter((s) => {
       if (s.purchases.length === 0) return false;
+      if (!s.minerVerified) return false;
       if (sportFilter && s.sport !== sportFilter) return false;
       return true;
     }),

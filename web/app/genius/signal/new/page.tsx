@@ -276,6 +276,8 @@ export default function CreateSignal() {
 
       // Pre-flight: miner executability check — verify all lines are real available markets.
       // This prevents Geniuses from creating signals with fake/expired lines to game track records.
+      // Signals that fail verification are marked "unverified" and excluded from track record proofs.
+      let minerVerified = false;
       const candidateLines = allLines.map((line, i) => toCandidateLine(line, i + 1));
       try {
         const minerClient = getMinerClient();
@@ -290,9 +292,9 @@ export default function CreateSignal() {
           setStep("browse");
           return;
         }
+        minerVerified = true;
       } catch (minerErr) {
-        console.warn("Miner executability check failed:", minerErr);
-        // On testnet, allow creation if miner is unreachable — in production this should block
+        console.warn("Miner executability check failed, signal will be marked unverified:", minerErr);
       }
 
       setStep("committing");
@@ -442,6 +444,7 @@ export default function CreateSignal() {
         minOddsAmerican: editOdds || null,
         slaMultiplierBps: Math.round(slaNum * 100),
         createdAt: Math.floor(Date.now() / 1000),
+        minerVerified,
       };
       const existing = getSavedSignals(geniusAddress);
       const updated = [...existing, newEntry];

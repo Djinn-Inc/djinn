@@ -18,6 +18,8 @@ export interface SavedSignalData {
   minOddsAmerican?: string | null;
   slaMultiplierBps: number;
   createdAt: number;
+  /** Whether the miner verified lines were live at creation time. */
+  minerVerified?: boolean;
 }
 
 /** A signal ready for track record proof generation, merging private + on-chain data. */
@@ -31,6 +33,8 @@ export interface ProofReadySignal {
   purchases: ProofReadyPurchase[];
   status: string;
   createdAt: number;
+  /** Whether the miner verified lines at creation (or implicitly at purchase). */
+  minerVerified: boolean;
 }
 
 export interface ProofReadyPurchase {
@@ -214,6 +218,11 @@ export function useSettledSignals(geniusAddress: string | undefined) {
           }
         }
 
+        // A signal is considered verified if:
+        // 1. Miner verified at creation time, OR
+        // 2. It has purchases (purchase flow requires miner MPC check)
+        const verified = s.minerVerified === true || purchases.length > 0;
+
         results.push({
           signalId: s.signalId,
           preimage: s.preimage,
@@ -223,6 +232,7 @@ export function useSettledSignals(geniusAddress: string | undefined) {
           purchases,
           status: subSig?.status ?? "Unknown",
           createdAt: s.createdAt,
+          minerVerified: verified,
         });
       }
 

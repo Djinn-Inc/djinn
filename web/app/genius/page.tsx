@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import QualityScore from "@/components/QualityScore";
@@ -8,7 +8,7 @@ import { useCollateral, useDepositCollateral, useWithdrawCollateral, useWalletUs
 import { useActiveSignals } from "@/lib/hooks/useSignals";
 import { useAuditHistory } from "@/lib/hooks/useAuditHistory";
 import { useTrackRecordProofs } from "@/lib/hooks/useTrackRecordProofs";
-import { useSettledSignals } from "@/lib/hooks/useSettledSignals";
+import { useSettledSignals, getSavedSignals } from "@/lib/hooks/useSettledSignals";
 import { useActiveRelationships, type ActiveRelationship } from "@/lib/hooks/useActiveRelationships";
 import { formatUsdc, parseUsdc, formatBps, truncateAddress } from "@/lib/types";
 
@@ -22,7 +22,15 @@ export default function GeniusDashboard() {
   const { audits, loading: auditsLoading, aggregateQualityScore } = useAuditHistory(address);
   const { proofs, loading: proofsLoading, error: proofsError } = useTrackRecordProofs(address);
   const { signals: settledSignals } = useSettledSignals(address);
-  const proofableCount = settledSignals.filter((s) => s.purchases.length > 0).length;
+  const proofableCount = settledSignals.filter((s) => s.purchases.length > 0 && s.minerVerified).length;
+
+  // Map signal IDs to their minerVerified status from localStorage
+  const verifiedMap = useMemo(() => {
+    const saved = getSavedSignals(address);
+    const map = new Map<string, boolean>();
+    for (const s of saved) map.set(s.signalId, s.minerVerified === true);
+    return map;
+  }, [address]);
 
   const [showExpired, setShowExpired] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
@@ -237,6 +245,11 @@ export default function GeniusDashboard() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {!verifiedMap.get(s.signalId.toString()) && (
+                            <span className="rounded-full px-3 py-1 text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                              Unverified
+                            </span>
+                          )}
                           {isActive ? (
                             <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200">
                               Active
