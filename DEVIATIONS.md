@@ -200,3 +200,23 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Contracts changed:** IDjinn.sol (struct), SignalCommitment.sol (storage + state transitions), Escrow.sol (cumulative tracking, minNotional check)
 **No changes needed:** Collateral.sol (already uses `+=`), Audit.sol (works on individual purchases)
 **Impact:** Economic (more fee revenue per signal), user-facing (fill progress UI, minNotional setting).
+
+## DEV-019: Web Attestation Service — Pure Bittensor, No Base Contract
+
+**Date:** 2026-02-20
+**Whitepaper Section:** Section 15 — Web Attestation Service
+**Whitepaper Says:** "A user submits a URL and fee to the Web Attestation contract on Base." — USDC fee on Base, on-chain proof hash storage, single additional smart contract.
+**What we did:** Implemented the Web Attestation Service as a pure Bittensor-native service with no Base chain involvement. Users submit URLs for free via the web app. Validators dispatch to miners. Miners generate TLSNotary proofs. Miners earn emission credit for attestation work through the existing scoring pipeline (accuracy, speed, coverage, uptime). No smart contract, no USDC fee, no on-chain proof storage.
+**Why:** Keeps the attestation service simple and permissionless. Emissions already incentivize miners — adding a separate USDC fee contract introduces unnecessary complexity for an MVP. The alpha token gains value from the subnet doing useful work. Paid tiers can be added later via an optional Base contract if demand warrants.
+**Impact:** Users get free attestation (emission-funded vs fee-funded). No additional smart contract deployment needed. Proofs are returned directly to users as downloadable files rather than stored on-chain. Arweave storage deferred to future iteration.
+
+## DEV-020: Alpha Burn Gate for Web Attestation [EXTENDS DEV-019]
+
+**Date:** 2026-02-20
+**Whitepaper Section:** Section 15 — Web Attestation Service
+**Whitepaper Says:** "A user submits a URL and fee to the Web Attestation contract on Base." — USDC fee on Base chain via a smart contract.
+**What we did:** Added an alpha burn gate to the attestation service. Users burn 0.0001 TAO (~$0.02) of SN103 alpha to a well-known unrecoverable SS58 address before each attestation. The validator verifies the burn on-chain via substrate RPC and tracks consumed extrinsic hashes in a SQLite ledger to prevent double-spend. No Base chain involvement.
+**Why:** Each attestation costs real miner compute (30-90s CPU for TLSNotary MPC). Without a fee, nothing deters spam and no revenue flows to the subnet. Alpha burn is pure Bittensor — no smart contract, no bridge, no USDC. Permanently removes alpha from circulation, benefiting all SN103 stakers.
+**Architecture:** User burns alpha → provides extrinsic hash → validator queries substrate to verify transfer destination and amount → checks SQLite ledger for double-spend → dispatches to miner if valid.
+**Future:** Add USDC and TAO payment options alongside alpha. MVP = alpha burn only.
+**Impact:** Attestation is no longer free but essentially free for legitimate users (~$0.02). At volume (1,000/day = $20/day burned permanently). Spam is deterred. Burn address: `5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM`.

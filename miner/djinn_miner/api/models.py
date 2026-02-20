@@ -104,3 +104,29 @@ class ReadinessResponse(BaseModel):
 
     ready: bool
     checks: dict[str, bool] = Field(default_factory=dict)
+
+
+class AttestRequest(BaseModel):
+    """POST /v1/attest — Request TLSNotary attestation of a web page."""
+
+    url: str = Field(max_length=2048, description="HTTPS URL to attest")
+    request_id: str = Field(max_length=256, description="Unique request ID for tracking")
+
+    @field_validator("url")
+    @classmethod
+    def validate_https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("URL must use HTTPS")
+        return v
+
+
+class AttestResponse(BaseModel):
+    """Response from web attestation proof generation."""
+
+    request_id: str
+    url: str
+    success: bool
+    proof_hex: str | None = Field(default=None, description="TLSNotary presentation bytes (hex-encoded)")
+    server_name: str | None = Field(default=None, description="TLS server identity")
+    timestamp: int = Field(description="Unix timestamp of attestation")
+    error: str | None = None

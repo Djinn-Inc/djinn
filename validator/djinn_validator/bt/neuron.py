@@ -240,3 +240,56 @@ class DjinnValidator:
     def record_weight_set(self) -> None:
         """Record the block at which weights were last set."""
         self._last_weight_block = self.block
+
+    def verify_burn(
+        self, tx_hash: str, min_amount: float, burn_address: str
+    ) -> tuple[bool, str]:
+        """Verify a substrate transfer to the burn address via RPC.
+
+        Returns (valid, error_message).
+        """
+        if not self.subtensor:
+            return True, ""  # Dev mode: skip verification
+
+        try:
+            substrate = self.subtensor.substrate
+            # Query the extrinsic by hash
+            block_hash = substrate.get_block_hash(None)  # latest
+            # Search recent blocks for the extrinsic
+            extrinsic_data = substrate.retrieve_extrinsic_by_hash(tx_hash)
+            if extrinsic_data is None:
+                return False, f"Extrinsic {tx_hash} not found on chain"
+
+            # Extract transfer details from the extrinsic
+            call = extrinsic_data.value.get("call", {})
+            call_module = call.get("call_module", "")
+            call_function = call.get("call_function", "")
+
+            if call_module != "Balances" or call_function not in (
+                "transfer",
+                "transfer_keep_alive",
+                "transfer_allow_death",
+            ):
+                return False, f"Extrinsic is not a balance transfer (got {call_module}.{call_function})"
+
+            call_args = {a["name"]: a["value"] for a in call.get("call_args", [])}
+            dest = call_args.get("dest", "")
+            # Handle MultiAddress encoding
+            if isinstance(dest, dict):
+                dest = dest.get("Id", "")
+            value = call_args.get("value", 0)
+
+            # Convert from rao (1 TAO = 1e9 rao)
+            amount_tao = value / 1e9
+
+            if dest != burn_address:
+                return False, f"Transfer destination {dest} does not match burn address {burn_address}"
+
+            if amount_tao < min_amount:
+                return False, f"Transfer amount {amount_tao} TAO is less than required {min_amount} TAO"
+
+            return True, ""
+
+        except Exception as e:
+            log.warning("verify_burn_error", tx_hash=tx_hash, error=str(e))
+            return False, f"Failed to verify burn transaction: {e}"

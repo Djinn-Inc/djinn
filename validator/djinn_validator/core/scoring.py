@@ -95,6 +95,19 @@ class MinerMetrics:
         if responded:
             self.health_checks_responded += 1
 
+    def record_attestation(self, latency: float, proof_valid: bool) -> None:
+        """Record a web attestation challenge result.
+
+        Attestation work contributes to accuracy (valid proof = correct),
+        coverage (proof submitted), and speed (latency) metrics — the same
+        axes as sports challenges.
+        """
+        self.queries_total += 1
+        if proof_valid:
+            self.queries_correct += 1
+            self.proofs_submitted += 1
+        self.latencies.append(latency)
+
 
 class MinerScorer:
     """Computes normalized scores across all miners for weight setting."""

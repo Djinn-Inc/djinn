@@ -398,3 +398,36 @@ class OTSharesResponse(BaseModel):
     session_id: str
     # Partial triple shares: [{a: hex, b: hex, c: hex}, ...]
     triple_shares: list[dict[str, str]] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------------
+# Web Attestation (whitepaper §15 — pure Bittensor, no Base chain)
+# ------------------------------------------------------------------
+
+
+class AttestRequest(BaseModel):
+    """POST /v1/attest — Request TLSNotary attestation of a web page."""
+
+    url: str = Field(max_length=2048, description="HTTPS URL to attest")
+    request_id: str = Field(max_length=256, description="Unique request ID for tracking")
+    burn_tx_hash: str = Field(max_length=128, description="Substrate extrinsic hash proving alpha burn")
+
+    @field_validator("url")
+    @classmethod
+    def validate_https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("URL must use HTTPS")
+        return v
+
+
+class AttestResponse(BaseModel):
+    """Response from web attestation proof generation and verification."""
+
+    request_id: str
+    url: str
+    success: bool
+    verified: bool = False
+    proof_hex: str | None = Field(default=None, description="TLSNotary presentation bytes (hex)")
+    server_name: str | None = None
+    timestamp: int = Field(default=0, description="Unix timestamp of attestation")
+    error: str | None = None

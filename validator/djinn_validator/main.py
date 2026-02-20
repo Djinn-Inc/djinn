@@ -26,7 +26,8 @@ from djinn_validator.config import Config
 from djinn_validator.core.mpc_coordinator import MPCCoordinator
 from djinn_validator.core.outcomes import OutcomeAttestor
 from djinn_validator.core.purchase import PurchaseOrchestrator
-from djinn_validator.core.challenges import challenge_miners
+from djinn_validator.core.burn_ledger import BurnLedger
+from djinn_validator.core.challenges import challenge_miners, challenge_miners_attestation
 from djinn_validator.core.scoring import MinerScorer
 from djinn_validator.core.shares import ShareStore
 
@@ -188,6 +189,7 @@ async def epoch_loop(
 
             # Challenge miners for accuracy scoring (throttled)
             epoch_count += 1
+            ATTESTATION_CHALLENGE_INTERVAL = 100  # 100 * 12s = ~20 min
             if epoch_count % CHALLENGE_INTERVAL_EPOCHS == 0:
                 sports_api_key = os.environ.get("SPORTS_API_KEY", "")
                 if sports_api_key and miner_uids:
@@ -204,6 +206,22 @@ async def epoch_loop(
                         await challenge_miners(scorer, miner_axons, sports_api_key)
                     except Exception as e:
                         log.warning("challenge_miners_error", err=str(e))
+
+            # Attestation challenges: run less frequently than sports (~20 min)
+            if epoch_count % ATTESTATION_CHALLENGE_INTERVAL == 0 and miner_uids:
+                miner_axons = []
+                for uid in miner_uids:
+                    axon = neuron.get_axon_info(uid)
+                    miner_axons.append({
+                        "uid": uid,
+                        "hotkey": axon.get("hotkey", f"uid-{uid}"),
+                        "ip": axon.get("ip", ""),
+                        "port": axon.get("port", 0),
+                    })
+                try:
+                    await challenge_miners_attestation(scorer, miner_axons)
+                except Exception as e:
+                    log.warning("attest_challenge_error", err=str(e))
 
             # Resolve any pending signal outcomes
             hotkey = ""
@@ -302,8 +320,9 @@ async def async_main() -> None:
     for w in warnings:
         log.warning("config_warning", msg=w)
 
-    # Initialize components — SQLite persistence for key shares
+    # Initialize components — SQLite persistence for key shares and burn ledger
     share_store = ShareStore(db_path="data/shares.db")
+    burn_ledger = BurnLedger(db_path="data/burns.db")
     purchase_orch = PurchaseOrchestrator(share_store)
     outcome_attestor = OutcomeAttestor(sports_api_key=config.sports_api_key)
     scorer = MinerScorer()
@@ -349,6 +368,9 @@ async def async_main() -> None:
         rate_limit_rate=config.rate_limit_rate,
         mpc_availability_timeout=config.mpc_availability_timeout,
         shares_threshold=config.shares_threshold,
+        burn_ledger=burn_ledger,
+        attest_burn_amount=config.attest_burn_amount,
+        attest_burn_address=config.attest_burn_address,
     )
 
     log.info(
@@ -415,6 +437,10 @@ async def async_main() -> None:
         share_store.close()
     except Exception as e:
         log.warning("share_store_close_error", error=str(e))
+    try:
+        burn_ledger.close()
+    except Exception as e:
+        log.warning("burn_ledger_close_error", error=str(e))
     log.info("shutdown_complete")
 
 

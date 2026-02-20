@@ -241,3 +241,34 @@ class TestMinerScorer:
         result = MinerScorer._normalize(raw)
         assert sum(result.values()) == pytest.approx(1.0)
         assert all(math.isfinite(v) for v in result.values())
+
+
+class TestRecordAttestation:
+    """Tests for MinerMetrics.record_attestation (web attestation scoring)."""
+
+    def test_valid_attestation_increments_correct_and_proof(self) -> None:
+        m = MinerMetrics(uid=0, hotkey="hk0")
+        m.record_attestation(latency=2.5, proof_valid=True)
+        assert m.queries_total == 1
+        assert m.queries_correct == 1
+        assert m.proofs_submitted == 1
+        assert m.latencies == [2.5]
+
+    def test_invalid_attestation_does_not_increment_correct(self) -> None:
+        m = MinerMetrics(uid=0, hotkey="hk0")
+        m.record_attestation(latency=5.0, proof_valid=False)
+        assert m.queries_total == 1
+        assert m.queries_correct == 0
+        assert m.proofs_submitted == 0
+        assert m.latencies == [5.0]
+
+    def test_attestation_and_sports_accumulate(self) -> None:
+        """Attestation and sports queries both count toward the same metrics."""
+        m = MinerMetrics(uid=0, hotkey="hk0")
+        m.record_query(correct=True, latency=1.0, proof_submitted=False)
+        m.record_attestation(latency=3.0, proof_valid=True)
+        assert m.queries_total == 2
+        assert m.queries_correct == 2
+        assert m.proofs_submitted == 1  # Only attestation submitted a proof
+        assert m.accuracy_score() == pytest.approx(1.0)
+        assert m.coverage_score() == pytest.approx(0.5)  # 1 proof / 2 queries

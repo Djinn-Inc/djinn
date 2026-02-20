@@ -517,3 +517,83 @@ class TestEndpointTimeouts:
         resp = client.post("/v1/proof", json={"query_id": "q-timeout"})
         assert resp.status_code == 504
         assert "timed out" in resp.json()["detail"]
+
+
+class TestAttestEndpoint:
+    """Tests for the POST /v1/attest web attestation endpoint."""
+
+    def test_attest_rejects_non_https(self, app: TestClient) -> None:
+        resp = app.post(
+            "/v1/attest",
+            json={"url": "http://example.com", "request_id": "test-1"},
+        )
+        assert resp.status_code == 422  # Pydantic validation error
+
+    def test_attest_requires_url(self, app: TestClient) -> None:
+        resp = app.post("/v1/attest", json={"request_id": "test-1"})
+        assert resp.status_code == 422
+
+    def test_attest_requires_request_id(self, app: TestClient) -> None:
+        resp = app.post("/v1/attest", json={"url": "https://example.com"})
+        assert resp.status_code == 422
+
+    def test_attest_binary_unavailable(self, app: TestClient) -> None:
+        """When TLSNotary binary is not installed, returns graceful error."""
+        with patch("djinn_miner.core.tlsn.is_available", return_value=False):
+            resp = app.post(
+                "/v1/attest",
+                json={"url": "https://example.com", "request_id": "test-2"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
+        assert "not available" in data["error"]
+        assert data["request_id"] == "test-2"
+        assert data["url"] == "https://example.com"
+
+    def test_attest_success(self, app: TestClient) -> None:
+        """Mock a successful TLSNotary proof and verify response shape."""
+        from djinn_miner.core.tlsn import TLSNProofResult
+
+        mock_result = TLSNProofResult(
+            success=True,
+            presentation_bytes=b"\xde\xad\xbe\xef" * 10,
+            server="example.com",
+        )
+        with (
+            patch("djinn_miner.core.tlsn.is_available", return_value=True),
+            patch("djinn_miner.core.tlsn.generate_proof", new_callable=AsyncMock, return_value=mock_result),
+        ):
+            resp = app.post(
+                "/v1/attest",
+                json={"url": "https://example.com", "request_id": "test-3"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["request_id"] == "test-3"
+        assert data["url"] == "https://example.com"
+        assert data["server_name"] == "example.com"
+        assert data["proof_hex"] == "deadbeef" * 10
+        assert data["timestamp"] > 0
+
+    def test_attest_proof_failure(self, app: TestClient) -> None:
+        """TLSNotary proof generation fails gracefully."""
+        from djinn_miner.core.tlsn import TLSNProofResult
+
+        mock_result = TLSNProofResult(
+            success=False,
+            error="connection refused",
+        )
+        with (
+            patch("djinn_miner.core.tlsn.is_available", return_value=True),
+            patch("djinn_miner.core.tlsn.generate_proof", new_callable=AsyncMock, return_value=mock_result),
+        ):
+            resp = app.post(
+                "/v1/attest",
+                json={"url": "https://example.com", "request_id": "test-4"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
+        assert "connection refused" in data["error"]

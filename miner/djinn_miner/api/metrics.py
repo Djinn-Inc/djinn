@@ -67,6 +67,18 @@ CIRCUIT_BREAKER_STATE = Gauge(
     ["target"],
 )
 
+ATTESTATION_REQUESTS = Counter(
+    "djinn_miner_attestation_requests_total",
+    "Total web attestation requests",
+    ["status"],  # success, error
+)
+
+ATTESTATION_DURATION = Histogram(
+    "djinn_miner_attestation_duration_seconds",
+    "Time to generate TLSNotary attestation proof",
+    buckets=(1.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0),
+)
+
 
 def metrics_response() -> bytes:
     """Generate Prometheus-compatible metrics text."""

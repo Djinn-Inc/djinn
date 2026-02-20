@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 from djinn_miner.api.metrics import (
+    ATTESTATION_DURATION,
+    ATTESTATION_REQUESTS,
     CHECKS_PROCESSED,
     LINES_CHECKED,
     PROOFS_GENERATED,
@@ -25,6 +27,8 @@ from djinn_miner.api.middleware import (
     get_cors_origins,
 )
 from djinn_miner.api.models import (
+    AttestRequest,
+    AttestResponse,
     CheckRequest,
     CheckResponse,
     HealthResponse,
@@ -178,6 +182,92 @@ def create_app(
         PROOFS_GENERATED.labels(type=proof_type).inc()
         log.info("proof_generated", query_id=request.query_id, status=result.status, type=proof_type)
         return result
+
+    @app.post("/v1/attest", response_model=AttestResponse)
+    async def attest_url(request: AttestRequest) -> AttestResponse:
+        """Web Attestation: generate a TLSNotary proof for an arbitrary HTTPS URL.
+
+        Part of the Web Attestation Service (whitepaper §15). Miners
+        use the same TLSNotary infrastructure as sports proofs to attest
+        arbitrary web content.
+        """
+        from djinn_miner.core import tlsn as tlsn_module
+
+        start = time.perf_counter()
+        timestamp = int(time.time())
+
+        if not tlsn_module.is_available():
+            ATTESTATION_REQUESTS.labels(status="error").inc()
+            log.warning("attest_tlsn_unavailable", url=request.url)
+            return AttestResponse(
+                request_id=request.request_id,
+                url=request.url,
+                success=False,
+                timestamp=timestamp,
+                error="TLSNotary prover binary not available",
+            )
+
+        try:
+            result = await asyncio.wait_for(
+                tlsn_module.generate_proof(request.url, timeout=90.0),
+                timeout=120.0,
+            )
+        except TimeoutError:
+            ATTESTATION_REQUESTS.labels(status="error").inc()
+            ATTESTATION_DURATION.observe(time.perf_counter() - start)
+            log.error("attest_timeout", url=request.url, request_id=request.request_id)
+            return AttestResponse(
+                request_id=request.request_id,
+                url=request.url,
+                success=False,
+                timestamp=timestamp,
+                error="Attestation timed out",
+            )
+        except asyncio.CancelledError:
+            log.info("attest_cancelled", request_id=request.request_id)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service shutting down"},
+            )
+
+        elapsed = time.perf_counter() - start
+        ATTESTATION_DURATION.observe(elapsed)
+
+        if not result.success:
+            ATTESTATION_REQUESTS.labels(status="error").inc()
+            log.warning(
+                "attest_failed",
+                url=request.url,
+                request_id=request.request_id,
+                error=result.error,
+            )
+            return AttestResponse(
+                request_id=request.request_id,
+                url=request.url,
+                success=False,
+                timestamp=timestamp,
+                error=result.error,
+            )
+
+        proof_hex = result.presentation_bytes.hex() if result.presentation_bytes else None
+        ATTESTATION_REQUESTS.labels(status="success").inc()
+        log.info(
+            "attest_complete",
+            url=request.url,
+            request_id=request.request_id,
+            server=result.server,
+            proof_size=len(result.presentation_bytes or b""),
+            elapsed_s=round(elapsed, 1),
+        )
+
+        return AttestResponse(
+            request_id=request.request_id,
+            url=request.url,
+            success=True,
+            proof_hex=proof_hex,
+            server_name=result.server or None,
+            timestamp=timestamp,
+        )
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:

@@ -6,6 +6,7 @@ Endpoints from Appendix A of the whitepaper:
 - POST /v1/signal/{id}/register      — Register purchased signal for outcome tracking
 - POST /v1/signal/{id}/outcome       — Submit outcome attestation
 - POST /v1/signals/resolve           — Resolve all pending signal outcomes
+- POST /v1/attest                    — Web attestation: TLSNotary proof of any URL (§15)
 - POST /v1/analytics/attempt         — Fire-and-forget analytics
 - GET  /health                       — Health check
 
@@ -25,6 +26,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+import httpx
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +34,10 @@ from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from djinn_validator.api.metrics import (
     ACTIVE_SHARES,
+    ATTESTATION_DISPATCHED,
+    ATTESTATION_DURATION,
+    ATTESTATION_GATED,
+    ATTESTATION_VERIFIED,
     OUTCOMES_ATTESTED,
     PURCHASES_PROCESSED,
     SHARES_STORED,
@@ -46,6 +52,8 @@ from djinn_validator.api.middleware import (
 )
 from djinn_validator.api.models import (
     AnalyticsRequest,
+    AttestRequest,
+    AttestResponse,
     HealthResponse,
     MPCAbortRequest,
     MPCAbortResponse,
@@ -139,6 +147,7 @@ def _signal_id_to_uint256(signal_id: str) -> int:
 if TYPE_CHECKING:
     from djinn_validator.bt.neuron import DjinnValidator
     from djinn_validator.chain.contracts import ChainClient
+    from djinn_validator.core.burn_ledger import BurnLedger
 
 log = structlog.get_logger()
 
@@ -154,6 +163,9 @@ def create_app(
     rate_limit_rate: int = 10,
     mpc_availability_timeout: float = 15.0,
     shares_threshold: int = 7,
+    burn_ledger: BurnLedger | None = None,
+    attest_burn_amount: float = 0.0001,
+    attest_burn_address: str = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
 ) -> FastAPI:
     """Create the FastAPI application with injected dependencies."""
     bt_network = os.environ.get("BT_NETWORK", "")
@@ -565,6 +577,193 @@ def create_app(
             outcome=req.outcome,
             consensus_reached=consensus is not None,
             consensus_outcome=consensus.value if consensus else None,
+        )
+
+    # ------------------------------------------------------------------
+    # Web Attestation (whitepaper §15 — pure Bittensor)
+    # ------------------------------------------------------------------
+
+    # Round-robin index for miner selection
+    _attest_miner_idx = [0]
+
+    @app.post("/v1/attest", response_model=AttestResponse)
+    async def attest_url(req: AttestRequest) -> AttestResponse:
+        """Dispatch a TLSNotary attestation request to a miner and verify the proof.
+
+        Flow:
+        1. Pick a miner from the metagraph (round-robin)
+        2. POST the URL to the miner's /v1/attest endpoint
+        3. Verify the returned TLSNotary proof
+        4. Return the verified proof to the caller
+        """
+        import time as _t
+
+        start = _t.perf_counter()
+        ATTESTATION_DISPATCHED.inc()
+
+        # --- Burn gate: verify alpha burn before dispatching ---
+        if burn_ledger is not None:
+            # Check double-spend first (cheaper than RPC)
+            if burn_ledger.is_consumed(req.burn_tx_hash):
+                ATTESTATION_GATED.labels(reason="already_consumed").inc()
+                raise HTTPException(
+                    status_code=403,
+                    detail="Burn transaction already used for a previous attestation",
+                )
+
+            # Verify the burn on-chain
+            if neuron:
+                valid, err_msg = neuron.verify_burn(
+                    req.burn_tx_hash, attest_burn_amount, attest_burn_address,
+                )
+                if not valid:
+                    reason = "insufficient_amount" if "less than" in err_msg else "invalid_tx"
+                    ATTESTATION_GATED.labels(reason=reason).inc()
+                    raise HTTPException(status_code=403, detail=err_msg)
+
+            # Record the burn to prevent re-use
+            if not burn_ledger.record_burn(req.burn_tx_hash, "unknown", attest_burn_amount):
+                ATTESTATION_GATED.labels(reason="already_consumed").inc()
+                raise HTTPException(
+                    status_code=403,
+                    detail="Burn transaction already used for a previous attestation",
+                )
+
+        # Get list of reachable miners
+        miner_axons: list[dict] = []
+        if neuron:
+            for uid in neuron.get_miner_uids():
+                axon = neuron.get_axon_info(uid)
+                ip = axon.get("ip", "")
+                port = axon.get("port", 0)
+                if ip and port:
+                    miner_axons.append({"uid": uid, "ip": ip, "port": port})
+
+        if not miner_axons:
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error="No reachable miners available",
+            )
+
+        # Round-robin miner selection
+        idx = _attest_miner_idx[0] % len(miner_axons)
+        _attest_miner_idx[0] = idx + 1
+        selected = miner_axons[idx]
+
+        miner_url = f"http://{selected['ip']}:{selected['port']}/v1/attest"
+        log.info(
+            "attest_dispatching",
+            url=req.url,
+            request_id=req.request_id,
+            miner_uid=selected["uid"],
+        )
+
+        # Dispatch to miner
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    miner_url,
+                    json={"url": req.url, "request_id": req.request_id},
+                    timeout=120.0,
+                )
+        except httpx.HTTPError as e:
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            log.warning("attest_miner_unreachable", miner_uid=selected["uid"], err=str(e))
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error=f"Miner unreachable: {e}",
+            )
+
+        if resp.status_code != 200:
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error=f"Miner returned status {resp.status_code}",
+            )
+
+        miner_data = resp.json()
+        if not miner_data.get("success"):
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error=miner_data.get("error", "Miner attestation failed"),
+            )
+
+        proof_hex = miner_data.get("proof_hex")
+        if not proof_hex:
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=False,
+                error="Miner returned no proof data",
+            )
+
+        # Verify the TLSNotary proof
+        from djinn_validator.core import tlsn as tlsn_verifier
+        from urllib.parse import urlparse
+
+        proof_bytes = bytes.fromhex(proof_hex)
+        expected_server = urlparse(req.url).hostname
+
+        try:
+            verify_result = await asyncio.wait_for(
+                tlsn_verifier.verify_proof(proof_bytes, expected_server=expected_server),
+                timeout=30.0,
+            )
+        except TimeoutError:
+            elapsed = _t.perf_counter() - start
+            ATTESTATION_DURATION.observe(elapsed)
+            ATTESTATION_VERIFIED.labels(valid="false").inc()
+            return AttestResponse(
+                request_id=req.request_id,
+                url=req.url,
+                success=True,
+                verified=False,
+                proof_hex=proof_hex,
+                server_name=miner_data.get("server_name"),
+                timestamp=miner_data.get("timestamp", 0),
+                error="Proof verification timed out",
+            )
+
+        elapsed = _t.perf_counter() - start
+        ATTESTATION_DURATION.observe(elapsed)
+        ATTESTATION_VERIFIED.labels(valid=str(verify_result.verified).lower()).inc()
+
+        log.info(
+            "attest_complete",
+            url=req.url,
+            request_id=req.request_id,
+            verified=verify_result.verified,
+            server=verify_result.server_name,
+            elapsed_s=round(elapsed, 1),
+        )
+
+        return AttestResponse(
+            request_id=req.request_id,
+            url=req.url,
+            success=True,
+            verified=verify_result.verified,
+            proof_hex=proof_hex,
+            server_name=verify_result.server_name or miner_data.get("server_name"),
+            timestamp=miner_data.get("timestamp", 0),
+            error=verify_result.error if not verify_result.verified else None,
         )
 
     @app.post("/v1/analytics/attempt")

@@ -80,6 +80,29 @@ MPC_ACTIVE_SESSIONS = Gauge(
     "Number of active MPC sessions",
 )
 
+ATTESTATION_DISPATCHED = Counter(
+    "djinn_validator_attestation_dispatched_total",
+    "Total web attestation requests dispatched to miners",
+)
+
+ATTESTATION_VERIFIED = Counter(
+    "djinn_validator_attestation_verified_total",
+    "Total web attestation proofs verified",
+    ["valid"],  # true, false
+)
+
+ATTESTATION_GATED = Counter(
+    "djinn_validator_attestation_gated_total",
+    "Attestation requests rejected by burn gate",
+    ["reason"],  # invalid_tx, already_consumed, insufficient_amount
+)
+
+ATTESTATION_DURATION = Histogram(
+    "djinn_validator_attestation_duration_seconds",
+    "End-to-end attestation round-trip time",
+    buckets=(1.0, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0),
+)
+
 RATE_LIMIT_REJECTIONS = Counter(
     "djinn_validator_rate_limit_rejections_total",
     "Total requests rejected by rate limiter",

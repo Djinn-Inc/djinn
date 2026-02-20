@@ -1118,3 +1118,141 @@ class TestOTParamBounds:
             "field_prime": "zzzz",
         })
         assert resp.status_code in (400, 422)
+
+
+class TestAttestEndpoint:
+    """Tests for the POST /v1/attest web attestation endpoint."""
+
+    def test_attest_rejects_non_https(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/attest",
+            json={"url": "http://example.com", "request_id": "test-1", "burn_tx_hash": "0xabc"},
+        )
+        assert resp.status_code == 422
+
+    def test_attest_requires_url(self, client: TestClient) -> None:
+        resp = client.post("/v1/attest", json={"request_id": "test-1", "burn_tx_hash": "0xabc"})
+        assert resp.status_code == 422
+
+    def test_attest_missing_burn_tx(self, client: TestClient) -> None:
+        """burn_tx_hash is required — 422 without it."""
+        resp = client.post(
+            "/v1/attest",
+            json={"url": "https://example.com", "request_id": "test-no-burn"},
+        )
+        assert resp.status_code == 422
+
+    def test_attest_no_miners(self, client: TestClient) -> None:
+        """Without a neuron (no metagraph), no miners are available.
+        Default client has no burn_ledger, so burn gate is skipped."""
+        resp = client.post(
+            "/v1/attest",
+            json={"url": "https://example.com", "request_id": "test-2", "burn_tx_hash": "0xabc"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
+        assert "No reachable miners" in data["error"]
+
+    def test_attest_invalid_burn(self) -> None:
+        """Mock verify_burn returning (False, 'not found') → 403."""
+        from unittest.mock import MagicMock
+        from djinn_validator.core.burn_ledger import BurnLedger
+
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        burn_ledger = BurnLedger()
+
+        mock_neuron = MagicMock()
+        mock_neuron.uid = 1
+        mock_neuron.metagraph = None
+        mock_neuron.wallet = None
+        mock_neuron.verify_burn = MagicMock(return_value=(False, "Extrinsic not found on chain"))
+        mock_neuron.get_miner_uids = MagicMock(return_value=[])
+
+        app = create_app(
+            store, purchase_orch, outcome_attestor,
+            neuron=mock_neuron,
+            burn_ledger=burn_ledger,
+        )
+        client = TestClient(app)
+
+        resp = client.post("/v1/attest", json={
+            "url": "https://example.com",
+            "request_id": "test-invalid-burn",
+            "burn_tx_hash": "0xbadtx",
+        })
+        assert resp.status_code == 403
+        assert "not found" in resp.json()["detail"]
+        store.close()
+        burn_ledger.close()
+
+    def test_attest_consumed_burn(self) -> None:
+        """Reusing a burn tx hash → 403."""
+        from djinn_validator.core.burn_ledger import BurnLedger
+
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        burn_ledger = BurnLedger()
+
+        # Pre-record the burn as consumed
+        burn_ledger.record_burn("0xalready_used", "5ColdKey", 0.0001)
+
+        app = create_app(
+            store, purchase_orch, outcome_attestor,
+            burn_ledger=burn_ledger,
+        )
+        client = TestClient(app)
+
+        resp = client.post("/v1/attest", json={
+            "url": "https://example.com",
+            "request_id": "test-consumed",
+            "burn_tx_hash": "0xalready_used",
+        })
+        assert resp.status_code == 403
+        assert "already used" in resp.json()["detail"]
+        store.close()
+        burn_ledger.close()
+
+    def test_attest_valid_burn(self) -> None:
+        """Valid burn + no miners → normal flow (no miners available)."""
+        from unittest.mock import MagicMock
+        from djinn_validator.core.burn_ledger import BurnLedger
+
+        store = ShareStore()
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+        burn_ledger = BurnLedger()
+
+        mock_neuron = MagicMock()
+        mock_neuron.uid = 1
+        mock_neuron.metagraph = None
+        mock_neuron.wallet = None
+        mock_neuron.verify_burn = MagicMock(return_value=(True, ""))
+        mock_neuron.get_miner_uids = MagicMock(return_value=[])
+
+        app = create_app(
+            store, purchase_orch, outcome_attestor,
+            neuron=mock_neuron,
+            burn_ledger=burn_ledger,
+        )
+        client = TestClient(app)
+
+        resp = client.post("/v1/attest", json={
+            "url": "https://example.com",
+            "request_id": "test-valid-burn",
+            "burn_tx_hash": "0xvalid_burn_hash",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        # Burn gate passed, but no miners → success=False with "No reachable miners"
+        assert data["success"] is False
+        assert "No reachable miners" in data["error"]
+
+        # Verify the burn was recorded
+        assert burn_ledger.is_consumed("0xvalid_burn_hash") is True
+
+        store.close()
+        burn_ledger.close()

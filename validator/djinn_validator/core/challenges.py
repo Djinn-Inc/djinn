@@ -265,3 +265,105 @@ async def challenge_miners(
     if challenged:
         log.info("challenge_round_complete", sport=sport, miners_challenged=challenged)
     return challenged
+
+
+# Known-good HTTPS URLs for attestation challenges. The validator
+# fetches these itself to confirm the miner's proof is for the correct server.
+_ATTESTATION_CHALLENGE_URLS = [
+    "https://www.example.com/",
+    "https://httpbin.org/get",
+    "https://api.github.com/zen",
+]
+
+
+async def challenge_miners_attestation(
+    scorer: MinerScorer,
+    miner_axons: list[dict],
+) -> int:
+    """Run a TLSNotary attestation challenge against all reachable miners.
+
+    Picks a known-good URL and asks each miner to produce a TLSNotary
+    proof. The validator then verifies each returned proof. Successful
+    attestations contribute to accuracy, coverage, and speed metrics.
+
+    Returns the number of miners challenged.
+    """
+    url = random.choice(_ATTESTATION_CHALLENGE_URLS)
+    challenged = 0
+
+    async with httpx.AsyncClient() as client:
+        for axon in miner_axons:
+            uid = axon["uid"]
+            hotkey = axon["hotkey"]
+            ip = axon.get("ip", "")
+            port = axon.get("port", 0)
+
+            if not ip or not port:
+                continue
+
+            metrics = scorer.get_or_create(uid, hotkey)
+            miner_url = f"http://{ip}:{port}/v1/attest"
+            request_id = f"challenge-{uid}-{int(time.time())}"
+
+            start = time.perf_counter()
+            try:
+                resp = await client.post(
+                    miner_url,
+                    json={"url": url, "request_id": request_id},
+                    timeout=120.0,
+                )
+                latency = time.perf_counter() - start
+
+                if resp.status_code != 200:
+                    metrics.record_attestation(latency=latency, proof_valid=False)
+                    log.debug(
+                        "attest_challenge_error",
+                        uid=uid,
+                        status=resp.status_code,
+                    )
+                    challenged += 1
+                    continue
+
+                data = resp.json()
+                proof_valid = data.get("success", False) and bool(data.get("proof_hex"))
+
+                # If the miner produced a proof, try to verify it
+                if proof_valid:
+                    try:
+                        from djinn_validator.core import tlsn as tlsn_verifier
+                        from urllib.parse import urlparse
+                        import asyncio
+
+                        proof_bytes = bytes.fromhex(data["proof_hex"])
+                        expected_server = urlparse(url).hostname
+                        verify_result = await asyncio.wait_for(
+                            tlsn_verifier.verify_proof(proof_bytes, expected_server=expected_server),
+                            timeout=30.0,
+                        )
+                        proof_valid = verify_result.verified
+                    except Exception as e:
+                        log.debug("attest_challenge_verify_error", uid=uid, err=str(e))
+                        proof_valid = False
+
+                metrics.record_attestation(latency=latency, proof_valid=proof_valid)
+                log.info(
+                    "attest_challenge_scored",
+                    uid=uid,
+                    proof_valid=proof_valid,
+                    latency_s=round(latency, 3),
+                )
+                challenged += 1
+
+            except httpx.HTTPError as e:
+                latency = time.perf_counter() - start
+                metrics.record_attestation(latency=latency, proof_valid=False)
+                log.debug(
+                    "attest_challenge_unreachable",
+                    uid=uid,
+                    err=str(e),
+                )
+                challenged += 1
+
+    if challenged:
+        log.info("attest_challenge_round_complete", url=url, miners_challenged=challenged)
+    return challenged
