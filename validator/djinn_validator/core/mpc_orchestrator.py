@@ -278,7 +278,13 @@ class MPCOrchestrator:
         peers = self._get_peer_validators()
 
         if not peers:
-            # Dev mode: single-validator prototype
+            # Dev/single-validator mode: no peers discovered.
+            # This path is ONLY reached when neuron is None (dev) or no validators
+            # are on the metagraph. The single-validator prototype check uses
+            # threshold=1 reconstruction — acceptable here because there is no
+            # multi-party trust boundary (only one party holds a share).
+            # The secrecy guarantee applies to the DISTRIBUTED path where
+            # the coordinator must never access peer triple shares or z_i.
             log.info(
                 "mpc_single_validator_mode",
                 signal_id=signal_id,
@@ -289,7 +295,7 @@ class MPCOrchestrator:
             MPC_DURATION.labels(mode="single_validator").observe(time.monotonic() - start)
             return result
 
-        # Not enough local shares — try distributed protocol via HTTP
+        # Not enough local shares — run distributed protocol via HTTP
         MPC_SESSIONS.labels(mode="distributed").inc()
         result = await self._distributed_mpc(
             signal_id,
@@ -301,16 +307,17 @@ class MPCOrchestrator:
             MPC_DURATION.labels(mode="distributed").observe(time.monotonic() - start)
             return result
 
-        # Final fallback: single-validator mode
-        log.warning(
-            "mpc_fallback_single_validator",
+        # Distributed MPC failed — return unavailable as a fail-safe.
+        # In production, we never fall back to secret reconstruction because
+        # the coordinator must not learn the secret index.
+        log.error(
+            "mpc_distributed_failed",
             signal_id=signal_id,
-            reason="distributed MPC failed",
+            reason="distributed MPC failed — returning unavailable as fail-safe",
         )
-        MPC_ERRORS.labels(reason="distributed_fallback").inc()
-        result = self._single_validator_check(local_share, available_indices)
-        MPC_DURATION.labels(mode="single_validator").observe(time.monotonic() - start)
-        return result
+        MPC_ERRORS.labels(reason="distributed_failed").inc()
+        MPC_DURATION.labels(mode="distributed_failed").observe(time.monotonic() - start)
+        return MPCResult(available=False, participating_validators=0)
 
     async def _distributed_mpc(
         self,
@@ -550,6 +557,11 @@ class MPCOrchestrator:
 
         accepted_peers = [r for r in results if r is not None and not isinstance(r, BaseException)]
 
+        # CRITICAL: Purge all peer triple shares from coordinator memory.
+        # After distribution, the coordinator should only have its own shares.
+        # This ensures no single validator can reconstruct intermediate values.
+        self._coordinator.purge_peer_triple_shares(session.session_id, my_x)
+
         if len(accepted_peers) + 1 < self._threshold:
             log.warning(
                 "mpc_insufficient_accepted",
@@ -720,43 +732,60 @@ class MPCOrchestrator:
         if is_auth and prev_d is not None and prev_e is not None:
             my_state_auth.finalize_gate(prev_d, prev_e)
 
-        # Compute final output shares z_i for each participant
+        # Compute final output shares z_i.
+        # CRITICAL: Each participant computes its own z_i locally.
+        # The coordinator never accesses peer triple shares — this is the
+        # secrecy guarantee. Peers return only the scalar z_i value.
         z_vals: dict[int, int] = {}
-        last = n_gates - 1
 
+        # Coordinator computes its own z_i
         if is_auth:
-            # In authenticated mode, get z from our own state
             out = my_state_auth.get_output_share()
             if out:
                 z_vals[my_x] = out.y
-            # For peers, we don't have their authenticated z shares directly.
-            # The coordinator computes z from the last opened (d, e) and triple shares.
-            for vx in d_vals:
-                if vx == my_x:
-                    continue
-                auth_ts = self._coordinator.get_authenticated_triple_shares(
-                    session.session_id,
-                    vx,
-                )
-                if auth_ts is None:
-                    continue
-                z_i = (
-                    prev_d * prev_e
-                    + prev_d * auth_ts[last]["b"]["y"]
-                    + prev_e * auth_ts[last]["a"]["y"]
-                    + auth_ts[last]["c"]["y"]
-                ) % p
-                z_vals[vx] = z_i
         else:
-            for vx in d_vals:
-                ts = self._coordinator.get_triple_shares_for_participant(
-                    session.session_id,
-                    vx,
+            z_vals[my_x] = my_state_basic.compute_output_share(prev_d, prev_e)
+
+        # Collect z_i from each peer via /v1/mpc/finalize
+        async def _collect_z(peer: dict[str, Any]) -> tuple[int, int] | None:
+            try:
+                resp = await self._peer_request(
+                    "post",
+                    f"{peer['url']}/v1/mpc/finalize",
+                    peer_uid=peer["uid"],
+                    json={
+                        "session_id": session.session_id,
+                        "last_opened_d": hex(prev_d),
+                        "last_opened_e": hex(prev_e),
+                    },
                 )
-                if ts is None:
-                    continue
-                z_i = (prev_d * prev_e + prev_d * ts[last]["b"] + prev_e * ts[last]["a"] + ts[last]["c"]) % p
-                z_vals[vx] = z_i
+                if resp.status_code == 200:
+                    data = resp.json()
+                    peer_x = peer["uid"] + 1
+                    return peer_x, int(data["z_share"], 16)
+            except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as e:
+                log.warning("mpc_finalize_failed", peer_uid=peer["uid"], error=str(e))
+            return None
+
+        try:
+            z_results = await asyncio.wait_for(
+                asyncio.gather(*(_collect_z(p) for p in active_peers), return_exceptions=True),
+                timeout=GATHER_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            log.warning("mpc_finalize_timeout", timeout=GATHER_TIMEOUT)
+            self._mark_session_failed(session)
+            return None
+
+        for result in z_results:
+            if result is not None and not isinstance(result, BaseException):
+                peer_x, z_i = result
+                z_vals[peer_x] = z_i
+
+        if len(z_vals) < self._threshold:
+            log.warning("mpc_finalize_insufficient", collected=len(z_vals), threshold=self._threshold)
+            self._mark_session_failed(session)
+            return None
 
         # Reconstruct the final result: r * P(s) — zero iff s ∈ available set
         result_value = reconstruct_at_zero(z_vals, p)
@@ -1066,7 +1095,9 @@ class MPCOrchestrator:
     ) -> MPCResult:
         """Prototype single-validator availability check.
 
-        The aggregator reconstructs the secret. Used in dev mode.
+        Uses threshold=1 reconstruction for dev/testing mode.
+        NOT used in production — the distributed path with /v1/mpc/finalize
+        ensures no single validator can reconstruct the secret.
         """
         all_xs = [share.x]
         contrib = compute_local_contribution(share, all_xs)

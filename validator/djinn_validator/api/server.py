@@ -59,6 +59,8 @@ from djinn_validator.api.models import (
     MPCAbortResponse,
     MPCComputeGateRequest,
     MPCComputeGateResponse,
+    MPCFinalizeRequest,
+    MPCFinalizeResponse,
     MPCInitRequest,
     MPCInitResponse,
     MPCResultRequest,
@@ -1192,6 +1194,44 @@ def create_app(
                 )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/v1/mpc/finalize", response_model=MPCFinalizeResponse)
+    async def mpc_finalize(req: MPCFinalizeRequest, request: Request) -> MPCFinalizeResponse:
+        """Compute and return this validator's final output share z_i.
+
+        Called by the coordinator after the last gate's (d, e) are opened.
+        Each peer computes z_i locally using only its own triple shares
+        and the publicly opened d, e values. The coordinator never sees
+        the peer's raw triple shares.
+        """
+        await validate_signed_request(request, _get_validator_hotkeys())
+
+        with _participant_lock:
+            state = _participant_states.get(req.session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="No participant state for this session")
+
+        last_d = _parse_field_hex(req.last_opened_d, "last_opened_d")
+        last_e = _parse_field_hex(req.last_opened_e, "last_opened_e")
+
+        try:
+            if isinstance(state, DistributedParticipantState):
+                z_i = state.compute_output_share(last_d, last_e)
+            elif isinstance(state, AuthenticatedParticipantState):
+                state.finalize_gate(last_d, last_e)
+                out = state.get_output_share()
+                if out is None:
+                    raise HTTPException(status_code=500, detail="No output share")
+                z_i = out.y
+            else:
+                raise HTTPException(status_code=400, detail="Unknown participant state type")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        return MPCFinalizeResponse(
+            session_id=req.session_id,
+            z_share=hex(z_i),
+        )
 
     @app.post("/v1/mpc/result", response_model=MPCResultResponse)
     async def mpc_result(req: MPCResultRequest, request: Request) -> MPCResultResponse:

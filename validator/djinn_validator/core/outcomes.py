@@ -76,7 +76,7 @@ class SignalMetadata:
     home_team: str
     away_team: str
     pick: ParsedPick
-    purchased_at: float = field(default_factory=time.monotonic)
+    purchased_at: float = field(default_factory=time.time)
     resolved: bool = False
 
 
@@ -330,7 +330,7 @@ class OutcomeAttestor:
         """Register a purchased signal for outcome tracking."""
         if len(self._pending_signals) >= self.MAX_PENDING_SIGNALS:
             # Synchronous eviction of already-resolved signals at capacity
-            now = time.monotonic()
+            now = time.time()
             stale = [
                 sid for sid, m in list(self._pending_signals.items())
                 if m.resolved and now - m.purchased_at > 3600
@@ -634,7 +634,7 @@ class OutcomeAttestor:
         resolve_signal to prevent TOCTOU races.
         """
         async with self._lock:
-            now = time.monotonic()
+            now = time.time()
             removed = 0
 
             stale_ids = [

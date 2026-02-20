@@ -271,6 +271,19 @@ class MPCComputeGateResponse(BaseModel):
     e_mac: str | None = None  # Hex-encoded
 
 
+class MPCFinalizeRequest(BaseModel):
+    """POST /v1/mpc/finalize — Coordinator requests final output share z_i."""
+
+    session_id: str = Field(max_length=256, pattern=r"^[a-zA-Z0-9_\-]+$")
+    last_opened_d: str  # Hex-encoded
+    last_opened_e: str  # Hex-encoded
+
+
+class MPCFinalizeResponse(BaseModel):
+    session_id: str
+    z_share: str  # Hex-encoded output share
+
+
 class MPCAbortRequest(BaseModel):
     """POST /v1/mpc/abort — Coordinator broadcasts abort due to MAC failure."""
 
@@ -422,14 +435,23 @@ class AttestRequest(BaseModel):
         if not v.startswith("https://"):
             raise ValueError("URL must use HTTPS")
         from urllib.parse import urlparse
+        import ipaddress
 
         parsed = urlparse(v)
         if not parsed.hostname:
             raise ValueError("URL must have a valid hostname")
-        # Block private/reserved IPs to prevent SSRF
         hostname = parsed.hostname.lower()
-        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
+        # Block localhost by name
+        if hostname in ("localhost", "ip6-localhost", "ip6-loopback"):
             raise ValueError("URL must not point to private/internal addresses")
+        # Check if hostname is an IP literal and block non-global addresses
+        try:
+            addr = ipaddress.ip_address(hostname)
+        except ValueError:
+            pass  # Not an IP literal — it's a domain name, which is fine
+        else:
+            if not addr.is_global:
+                raise ValueError("URL must not point to private/internal addresses")
         return v
 
     @field_validator("request_id")

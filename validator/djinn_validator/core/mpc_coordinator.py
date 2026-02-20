@@ -266,6 +266,36 @@ class MPCCoordinator:
             shares_out.append({"a": a_val, "b": b_val, "c": c_val})
         return shares_out
 
+    def purge_peer_triple_shares(
+        self,
+        session_id: str,
+        coordinator_x: int,
+    ) -> None:
+        """Remove all triple shares except the coordinator's own.
+
+        Called after distributing shares to peers. This ensures the coordinator
+        can never access peer triple shares again — enforcing the secrecy
+        guarantee that no single validator can reconstruct intermediate values.
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return
+            # Rebuild each triple keeping only the coordinator's share
+            purged_triples = []
+            for triple in session.triples:
+                purged_triples.append(BeaverTriple(
+                    a_shares=tuple(s for s in triple.a_shares if s.x == coordinator_x),
+                    b_shares=tuple(s for s in triple.b_shares if s.x == coordinator_x),
+                    c_shares=tuple(s for s in triple.c_shares if s.x == coordinator_x),
+                ))
+            session.triples = purged_triples
+            log.info(
+                "peer_triple_shares_purged",
+                session_id=session_id,
+                coordinator_x=coordinator_x,
+            )
+
     def get_authenticated_triple_shares(
         self,
         session_id: str,

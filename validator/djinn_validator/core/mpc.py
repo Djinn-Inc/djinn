@@ -533,6 +533,27 @@ class DistributedParticipantState:
         self._gates_completed += 1
         return d_i, e_i
 
+    def compute_output_share(
+        self,
+        last_opened_d: int,
+        last_opened_e: int,
+    ) -> int:
+        """Compute the final output share z_i after the last gate opens.
+
+        Each participant computes z_i = d*e + d*b_i + e*a_i + c_i using
+        the publicly opened d and e from the last gate and their own
+        last triple shares. This value is then sent to the coordinator
+        for reconstruction — no other participant's shares are needed.
+        """
+        last = self._gates_completed - 1
+        p = self.prime
+        return (
+            last_opened_d * last_opened_e
+            + last_opened_d * self.triple_b[last]
+            + last_opened_e * self.triple_a[last]
+            + self.triple_c[last]
+        ) % p
+
 
 # ---------------------------------------------------------------------------
 # Prototype Implementation (kept for single-validator mode)
