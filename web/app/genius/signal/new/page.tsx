@@ -103,6 +103,7 @@ export default function CreateSignal() {
   const [maxPriceBps, setMaxPriceBps] = useState("10");
   const [slaMultiplier, setSlaMultiplier] = useState("100");
   const [maxNotional, setMaxNotional] = useState("100");
+  const [minNotional, setMinNotional] = useState("");
   const [expiresIn, setExpiresIn] = useState("24");
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
 
@@ -340,6 +341,7 @@ export default function CreateSignal() {
         maxPriceBps: BigInt(Math.round(maxPriceNum * 100)),
         slaMultiplierBps: BigInt(Math.round(slaNum * 100)),
         maxNotional: BigInt(Math.round(maxNotionalNum * 1e6)),
+        minNotional: minNotional ? BigInt(Math.round(parseFloat(minNotional) * 1e6)) : 0n,
         expiresAt,
         decoyLines: serializedLines,
         availableSportsbooks: selectedSportsbooks,
@@ -1190,7 +1192,7 @@ export default function CreateSignal() {
             }
             return (
               <p className="text-xs text-slate-500 mt-1">
-                Maximum notional a purchaser can specify. Caps your collateral exposure per purchase.
+                Total notional capacity for this signal. Multiple buyers can purchase until this is filled.
               </p>
             );
           })()}
@@ -1206,6 +1208,33 @@ export default function CreateSignal() {
               );
             }
             return null;
+          })()}
+        </div>
+
+        <div>
+          <label htmlFor="minNotional" className="label">Min Purchase (USDC) <span className="text-slate-400 font-normal">— optional</span></label>
+          <input
+            id="minNotional"
+            type="number"
+            value={minNotional}
+            onChange={(e) => setMinNotional(e.target.value)}
+            placeholder="0 (no minimum)"
+            min="0"
+            max={maxNotional || "1000000000"}
+            step="1"
+            className="input"
+          />
+          {(() => {
+            const minN = parseFloat(minNotional);
+            const maxN = parseFloat(maxNotional);
+            if (minNotional && !isNaN(minN) && !isNaN(maxN) && minN > maxN) {
+              return <p className="text-xs text-red-500 mt-1">Min purchase cannot exceed max notional</p>;
+            }
+            return (
+              <p className="text-xs text-slate-500 mt-1">
+                Minimum notional per purchase. Prevents many tiny buyers.
+              </p>
+            );
           })()}
         </div>
 

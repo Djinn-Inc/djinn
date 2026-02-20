@@ -73,6 +73,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     /// @notice Fee pool: genius -> idiot -> cycle -> total USDC fees collected
     mapping(address => mapping(address => mapping(uint256 => uint256))) public feePool;
 
+    /// @notice Cumulative notional purchased per signal
+    mapping(uint256 => uint256) public signalNotionalFilled;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -286,8 +289,14 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         Signal memory sig = signalCommitment.getSignal(signalId);
         if (sig.status != SignalStatus.Active) revert SignalNotActive(signalId);
         if (block.timestamp >= sig.expiresAt) revert SignalExpired(signalId);
-        if (sig.maxNotional > 0 && notional > sig.maxNotional) {
-            revert NotionalExceedsSignalMax(notional, sig.maxNotional);
+        if (sig.minNotional > 0 && notional < sig.minNotional) {
+            revert NotionalTooSmall(notional, sig.minNotional);
+        }
+        if (sig.maxNotional > 0) {
+            uint256 remaining = sig.maxNotional - signalNotionalFilled[signalId];
+            if (notional > remaining) {
+                revert NotionalExceedsSignalMax(notional, remaining);
+            }
         }
 
         // --- Calculate fee ---
@@ -303,8 +312,8 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         uint256 buyerBal = balances[msg.sender];
         if (buyerBal < usdcPaid) revert InsufficientBalance(buyerBal, usdcPaid);
 
-        // --- Mark signal as purchased (prevents re-entry/double-purchase) ---
-        signalCommitment.updateStatus(signalId, SignalStatus.Purchased);
+        // --- Track cumulative notional filled ---
+        signalNotionalFilled[signalId] += notional;
 
         // --- Deduct buyer's escrowed USDC ---
         balances[msg.sender] = buyerBal - usdcPaid;
@@ -391,6 +400,13 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         return _purchasesBySignal[signalId];
     }
 
+    /// @notice Returns the cumulative notional purchased for a signal
+    /// @param signalId The signal identifier
+    /// @return The total notional amount filled so far
+    function getSignalNotionalFilled(uint256 signalId) external view returns (uint256) {
+        return signalNotionalFilled[signalId];
+    }
+
     /// @notice Check if a signal can be purchased (sufficient collateral available)
     /// @param signalId The signal to check
     /// @param notional The intended notional amount
@@ -401,7 +417,11 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         Signal memory sig = signalCommitment.getSignal(signalId);
         if (sig.status != SignalStatus.Active) return (false, "Signal not active");
         if (block.timestamp >= sig.expiresAt) return (false, "Signal expired");
-        if (sig.maxNotional > 0 && notional > sig.maxNotional) return (false, "Notional exceeds signal max");
+        if (sig.minNotional > 0 && notional < sig.minNotional) return (false, "Below minimum notional");
+        if (sig.maxNotional > 0) {
+            uint256 remaining = sig.maxNotional - signalNotionalFilled[signalId];
+            if (notional > remaining) return (false, "Notional exceeds remaining capacity");
+        }
         if (notional < MIN_NOTIONAL) return (false, "Notional too small");
         if (notional > MAX_NOTIONAL) return (false, "Notional too large");
         return (true, "");

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAccount, useWalletClient } from "wagmi";
-import { useSignal, usePurchaseSignal } from "@/lib/hooks";
+import { useSignal, usePurchaseSignal, useSignalNotionalFilled } from "@/lib/hooks";
 import { getValidatorClient, getValidatorClients, getMinerClient } from "@/lib/api";
 import { decrypt, fromHex, bigIntToKey, reconstructSecret } from "@/lib/crypto";
 import type { ShamirShare } from "@/lib/crypto";
@@ -45,6 +45,7 @@ export default function PurchaseSignal() {
     useSignal(signalId);
   const { purchase, loading: purchaseLoading, error: purchaseError } =
     usePurchaseSignal();
+  const { filled: notionalFilled } = useSignalNotionalFilled(signalId?.toString());
 
   // Fetch genius stats for sidebar
   const geniusAddress = signal?.genius;
@@ -717,23 +718,46 @@ export default function PurchaseSignal() {
               <form onSubmit={handlePurchase} className="space-y-4">
                 <div>
                   <label htmlFor="notional" className="label">Notional (USDC)</label>
+                  {signal.maxNotional > 0n && (
+                    <div className="mb-2">
+                      <div className="flex justify-between text-xs text-slate-500 mb-1">
+                        <span>${formatUsdc(notionalFilled)} filled</span>
+                        <span>${formatUsdc(signal.maxNotional)} capacity</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2">
+                        <div
+                          className="bg-idiot-500 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, Number(notionalFilled * 100n / signal.maxNotional))}%` }}
+                        />
+                      </div>
+                      {notionalFilled >= signal.maxNotional && (
+                        <p className="text-xs text-red-500 mt-1 font-medium">This signal is fully filled</p>
+                      )}
+                    </div>
+                  )}
                   <input
                     id="notional"
                     type="number"
                     value={notional}
                     onChange={(e) => setNotional(e.target.value)}
                     placeholder="100.00"
-                    min="0.01"
+                    min={signal.minNotional > 0n ? Number(signal.minNotional) / 1e6 : 0.01}
                     step="0.01"
-                    max={signal.maxNotional > 0n ? Number(signal.maxNotional) / 1e6 : undefined}
+                    max={signal.maxNotional > 0n ? Number(signal.maxNotional - notionalFilled) / 1e6 : undefined}
                     className="input"
                     required
+                    disabled={signal.maxNotional > 0n && notionalFilled >= signal.maxNotional}
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Your protection amount. This sets the fee and how much the genius risks if the signal is wrong. What you do with the information is your business.
-                    {signal.maxNotional > 0n && (
+                    {signal.maxNotional > 0n && notionalFilled < signal.maxNotional && (
                       <span className="block mt-0.5 text-slate-400">
-                        Max: ${formatUsdc(signal.maxNotional)} (set by genius)
+                        Remaining: ${formatUsdc(signal.maxNotional - notionalFilled)} of ${formatUsdc(signal.maxNotional)}
+                      </span>
+                    )}
+                    {signal.minNotional > 0n && (
+                      <span className="block mt-0.5 text-slate-400">
+                        Min purchase: ${formatUsdc(signal.minNotional)}
                       </span>
                     )}
                   </p>

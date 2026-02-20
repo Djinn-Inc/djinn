@@ -101,6 +101,7 @@ contract AuditIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: sla,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()

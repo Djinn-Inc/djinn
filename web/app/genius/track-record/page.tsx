@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useWalletClient } from "wagmi";
 import {
@@ -78,43 +78,32 @@ export default function TrackRecordPage() {
   const [recoveryState, setRecoveryState] = useState<
     "idle" | "checking" | "prompting" | "loading" | "recovered" | "none" | "failed"
   >("idle");
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  // Auto-recover: if no local data, check for on-chain blob and recover automatically
   useEffect(() => {
-    if (!address || signalsLoading || savedCount > 0 || recoveryState !== "idle") return;
+    if (!address || !walletClient || signalsLoading || savedCount > 0 || recoveryState !== "idle") return;
     setRecoveryState("checking");
     readRecoveryBlobFromChain(address)
-      .then((blob) => setRecoveryState(blob ? "prompting" : "none"))
+      .then((blob) => {
+        if (blob) {
+          // Auto-trigger recovery (will prompt wallet signature)
+          setRecoveryState("loading");
+          return loadRecovery(address, (msg) => walletClient.signMessage({ message: msg }))
+            .then((result) => {
+              if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
+                if (result.signals.length > 0) saveSavedSignals(address, result.signals);
+                for (const p of result.purchases) savePurchasedSignal(address, p);
+                setRecoveryState("recovered");
+                refresh();
+              } else {
+                setRecoveryState("none");
+              }
+            });
+        }
+        setRecoveryState("none");
+      })
       .catch(() => setRecoveryState("none"));
-  }, [address, signalsLoading, savedCount, recoveryState]);
-
-  const handleRecover = useCallback(async () => {
-    if (!address || !walletClient) return;
-    setRecoveryState("loading");
-    setRecoveryError(null);
-    try {
-      const result = await loadRecovery(
-        address,
-        (msg) => walletClient.signMessage({ message: msg }),
-      );
-      if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
-        if (result.signals.length > 0) {
-          saveSavedSignals(address, result.signals);
-        }
-        for (const p of result.purchases) {
-          savePurchasedSignal(address, p);
-        }
-        setRecoveryState("recovered");
-        refresh();
-      } else {
-        setRecoveryState("failed");
-        setRecoveryError("Recovery blob was empty or could not be decrypted");
-      }
-    } catch (err) {
-      setRecoveryState("failed");
-      setRecoveryError(err instanceof Error ? err.message : "Recovery failed");
-    }
-  }, [address, walletClient, refresh]);
+  }, [address, walletClient, signalsLoading, savedCount, recoveryState, refresh]);
 
   if (!isConnected) {
     return (
@@ -352,51 +341,22 @@ export default function TrackRecordPage() {
               </div>
             )}
 
-            {!signalsLoading && savedCount === 0 && recoveryState === "prompting" && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-center">
-                <p className="text-sm text-blue-700 mb-2">
-                  No local signal data found, but a recovery backup was detected on-chain.
-                </p>
-                <p className="text-xs text-blue-600 mb-3">
-                  Sign a message with your wallet to decrypt and restore your signal data.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRecover}
-                  className="btn-primary text-sm px-4 py-2"
-                >
-                  Recover Signals
-                </button>
-              </div>
-            )}
-
-            {!signalsLoading && savedCount === 0 && recoveryState === "loading" && (
+            {!signalsLoading && savedCount === 0 && (recoveryState === "checking" || recoveryState === "loading") && (
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-center">
                 <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
-                <p className="text-sm text-blue-700">Decrypting recovery blob...</p>
+                <p className="text-sm text-blue-700">
+                  {recoveryState === "checking"
+                    ? "Checking for on-chain backup..."
+                    : "Recovering signal data... Sign the message in your wallet."}
+                </p>
               </div>
             )}
 
             {!signalsLoading && savedCount === 0 && recoveryState === "recovered" && (
               <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
                 <p className="text-sm text-green-700">
-                  Signal data recovered successfully. Reloading...
+                  Signal data recovered from on-chain backup.
                 </p>
-              </div>
-            )}
-
-            {!signalsLoading && savedCount === 0 && recoveryState === "failed" && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-center">
-                <p className="text-sm text-red-700 mb-2">
-                  {recoveryError || "Recovery failed"}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRecover}
-                  className="text-xs text-red-600 underline hover:text-red-800"
-                >
-                  Try again
-                </button>
               </div>
             )}
 
@@ -449,10 +409,12 @@ export default function TrackRecordPage() {
             {!signalsLoading && savedCount > 0 && proofableSignals.length === 0 && (
               <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
                 <p className="text-sm text-slate-600">
-                  You have {savedCount} saved signal{savedCount !== 1 ? "s" : ""}, but none have settled purchases yet.
+                  You have {savedCount} saved signal{savedCount !== 1 ? "s" : ""} with local data, but none have settled purchases yet.
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   Purchases need to be settled through the audit cycle before they can be included in a proof.
+                  Signals created in other browser sessions may not have local data saved &mdash; only signals
+                  created in this browser are tracked.
                 </p>
               </div>
             )}

@@ -104,6 +104,7 @@ contract EdgeCaseIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -249,12 +250,15 @@ contract EdgeCaseIntegrationTest is Test {
         escrow.purchase(sigId, NOTIONAL, ODDS);
     }
 
-    function test_cannotVoid_afterPurchase() public {
+    function test_cannotVoid_afterSettled() public {
         uint256 sigId = _createSignal();
-        _purchaseSignal(sigId);
 
-        // Genius tries to void after purchase
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalAlreadyPurchased.selector, sigId));
+        // Settle the signal via authorized caller
+        vm.prank(address(escrow));
+        signalCommitment.updateStatus(sigId, SignalStatus.Settled);
+
+        // Genius tries to void after settlement
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotVoidable.selector, sigId, SignalStatus.Settled));
         vm.prank(genius);
         signalCommitment.voidSignal(sigId);
     }
@@ -424,6 +428,7 @@ contract EdgeCaseIntegrationTest is Test {
                     maxPriceBps: MAX_PRICE_BPS,
                     slaMultiplierBps: highSla,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                     expiresAt: block.timestamp + 1 days,
                     decoyLines: _buildDecoyLines(),
                     availableSportsbooks: _buildSportsbooks()

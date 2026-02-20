@@ -121,6 +121,7 @@ contract ReentrancyTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()

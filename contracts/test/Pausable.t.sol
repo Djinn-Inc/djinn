@@ -371,6 +371,7 @@ contract PausableTest is Test {
                 maxPriceBps: 500,
                 slaMultiplierBps: 15000,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: decoys,
                 availableSportsbooks: books
@@ -397,6 +398,7 @@ contract PausableTest is Test {
                 maxPriceBps: 500,
                 slaMultiplierBps: 15000,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: decoys,
                 availableSportsbooks: books

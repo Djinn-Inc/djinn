@@ -347,6 +347,7 @@ export function useSignal(signalId: bigint | undefined) {
           maxPriceBps: toBigInt(raw.maxPriceBps),
           slaMultiplierBps: toBigInt(raw.slaMultiplierBps),
           maxNotional: toBigInt(raw.maxNotional),
+          minNotional: toBigInt(raw.minNotional),
           expiresAt: toBigInt(raw.expiresAt),
           decoyLines: Array.isArray(raw.decoyLines) ? raw.decoyLines.map(String) : [],
           availableSportsbooks: Array.isArray(raw.availableSportsbooks) ? raw.availableSportsbooks.map(String) : [],
@@ -427,7 +428,8 @@ const COLLATERAL_ABI = parseAbi([
 ]);
 
 const SIGNAL_COMMITMENT_VIEM_ABI = parseAbi([
-  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p)",
+  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 minNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p)",
+  "function voidSignal(uint256 signalId)",
 ]);
 
 const TRACK_RECORD_VIEM_ABI = parseAbi([
@@ -478,6 +480,7 @@ export function useCommitSignal() {
             maxPriceBps: params.maxPriceBps,
             slaMultiplierBps: params.slaMultiplierBps,
             maxNotional: params.maxNotional,
+            minNotional: params.minNotional,
             expiresAt: params.expiresAt,
             decoyLines: params.decoyLines,
             availableSportsbooks: params.availableSportsbooks,
@@ -942,4 +945,127 @@ export function useAccountState(genius?: string, idiot?: string) {
   }, [refresh]);
 
   return { signalCount, isAuditReady, loading, refresh };
+}
+
+// ---------------------------------------------------------------------------
+// Void (cancel) a signal
+// ---------------------------------------------------------------------------
+
+export function useVoidSignal() {
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  const voidSignal = useCallback(
+    async (signalId: bigint) => {
+      if (!walletClient || !address) throw new Error("Wallet not connected");
+      setLoading(true);
+      setError(null);
+      setTxHash(null);
+      try {
+        const hash = await walletClient.writeContract({
+          address: ADDRESSES.signalCommitment as Hex,
+          abi: SIGNAL_COMMITMENT_VIEM_ABI,
+          functionName: "voidSignal",
+          args: [signalId],
+        });
+        setTxHash(hash);
+        await waitForTx(hash);
+        return hash;
+      } catch (err) {
+        const msg = humanizeError(err, "Failed to cancel signal");
+        setError(msg);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [walletClient, address],
+  );
+
+  return { voidSignal, loading, error, txHash };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch purchases for a signal (how much notional has been taken)
+// ---------------------------------------------------------------------------
+
+export function useSignalNotionalFilled(signalId: string | undefined) {
+  const [filled, setFilled] = useState(0n);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!signalId) {
+      setFilled(0n);
+      return;
+    }
+    setLoading(true);
+    try {
+      const provider = getReadProvider();
+      const escrow = getEscrowContract(provider);
+      const val = await escrow.signalNotionalFilled(signalId);
+      setFilled(BigInt(val));
+    } catch {
+      // Contract may not have this signal
+    } finally {
+      setLoading(false);
+    }
+  }, [signalId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { filled, loading, refresh };
+}
+
+export function useSignalPurchases(signalId: string | undefined) {
+  const [purchases, setPurchases] = useState<
+    { purchaseId: bigint; notional: bigint; buyer: string; outcome: number }[]
+  >([]);
+  const [totalNotional, setTotalNotional] = useState(0n);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!signalId) {
+      setPurchases([]);
+      setTotalNotional(0n);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const provider = getReadProvider();
+      const escrow = getEscrowContract(provider);
+      const purchaseIds: bigint[] = await escrow.getPurchasesBySignal(signalId);
+
+      const results = [];
+      let total = 0n;
+      for (const pid of purchaseIds) {
+        const p = await escrow.getPurchase(pid);
+        const notional = BigInt(p.notional ?? 0);
+        results.push({
+          purchaseId: pid,
+          notional,
+          buyer: String(p.idiot ?? ""),
+          outcome: Number(p.outcome ?? 0),
+        });
+        total += notional;
+      }
+      setPurchases(results);
+      setTotalNotional(total);
+    } catch {
+      // Contract may not have this signal
+    } finally {
+      setLoading(false);
+    }
+  }, [signalId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { purchases, totalNotional, loading, refresh };
 }

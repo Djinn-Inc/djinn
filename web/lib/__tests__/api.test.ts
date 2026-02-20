@@ -38,6 +38,7 @@ describe("ValidatorClient", () => {
         share_x: 1,
         share_y: "0a1b2c",
         encrypted_key_share: "deadbeef",
+        encrypted_index_share: "aabbcc",
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
@@ -51,6 +52,7 @@ describe("ValidatorClient", () => {
             share_x: 1,
             share_y: "0a1b2c",
             encrypted_key_share: "deadbeef",
+            encrypted_index_share: "aabbcc",
           }),
         }),
       );
@@ -73,6 +75,7 @@ describe("ValidatorClient", () => {
           share_x: 1,
           share_y: "aa",
           encrypted_key_share: "bb",
+          encrypted_index_share: "cc",
         }),
       ).rejects.toThrow("500");
     });

@@ -33,6 +33,16 @@ const ARTICLES: Article[] = [
     image: "/press/taodaily-djinn.png",
     tag: "article",
   },
+  {
+    title: "Djinn Protocol Registers on Bittensor as Subnet 103",
+    source: "Djinn",
+    date: "Jan 20, 2026",
+    url: "https://x.com/djinn_gg",
+    description:
+      "Djinn Protocol officially launches on Bittensor Subnet 103, bringing decentralized sports intelligence to the network with encrypted predictions, verifiable track records, and USDC settlement on Base.",
+    image: "/press/djinn-sn103-launch.png",
+    tag: "ecosystem",
+  },
 ];
 
 const TAG_STYLES: Record<Article["tag"], { bg: string; text: string; label: string }> = {
@@ -178,20 +188,23 @@ export default function Press() {
               url: "https://subnetalpha.ai/subnet/djinn/",
               desc: "Subnet directory listing",
               logo: "/press/subnetalpha-logo.webp",
+              darkBg: true,
             },
             {
               name: "Taostats",
-              url: "https://taostats.io/subnets/netuid-103/",
+              url: "https://taostats.io/subnets/103",
               desc: "Network explorer",
               logo: "/press/taostats-logo.svg",
+              darkBg: false,
             },
             {
               name: "Bitstarter",
               url: "https://app.bitstarter.ai/subnets/djinn/",
               desc: "Crowdfunding platform",
               logo: "/press/bitstarter-logo.svg",
+              darkBg: false,
             },
-          ].map(({ name, url, desc, logo }) => (
+          ].map(({ name, url, desc, logo, darkBg }) => (
             <a
               key={url}
               href={url}
@@ -200,7 +213,7 @@ export default function Press() {
               className="card !p-4 text-center hover:shadow-lg transition-shadow group flex flex-col items-center gap-3"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logo} alt={name} className="h-6 object-contain" />
+              <img src={logo} alt={name} className={`h-6 object-contain ${darkBg ? "bg-slate-800 rounded px-2 py-1" : ""}`} />
               <div>
                 <h4 className="font-semibold text-slate-900 group-hover:text-idiot-600 transition-colors">
                   {name}

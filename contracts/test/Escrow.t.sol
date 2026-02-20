@@ -86,6 +86,7 @@ contract EscrowIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -207,9 +208,9 @@ contract EscrowIntegrationTest is Test {
         assertEq(collateral.getLocked(genius), requiredCollateral, "Collateral not locked");
         assertEq(collateral.getSignalLock(genius, SIGNAL_ID), requiredCollateral, "Signal lock amount mismatch");
 
-        // Verify signal status updated to Purchased
+        // Verify signal status stays Active (multi-purchase support)
         Signal memory sig = signalCommitment.getSignal(SIGNAL_ID);
-        assertEq(uint8(sig.status), uint8(SignalStatus.Purchased), "Signal should be Purchased");
+        assertEq(uint8(sig.status), uint8(SignalStatus.Active), "Signal should remain Active");
 
         // Verify fee pool
         uint256 cycle = account.getCurrentCycle(genius, idiot);
@@ -397,6 +398,7 @@ contract EscrowIntegrationTest is Test {
                     maxPriceBps: priceBps[i],
                     slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                     expiresAt: block.timestamp + 1 days,
                     decoyLines: _buildDecoyLines(),
                     availableSportsbooks: _buildSportsbooks()
@@ -452,6 +454,7 @@ contract EscrowIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -700,6 +703,7 @@ contract EscrowIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 0, // unlimited
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -753,7 +757,7 @@ contract EscrowIntegrationTest is Test {
 
         (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, 10_001e6);
         assertFalse(canBuy, "Notional exceeding max should fail");
-        assertEq(reason, "Notional exceeds signal max");
+        assertEq(reason, "Notional exceeds remaining capacity");
     }
 
     function test_canPurchase_below_minNotional() public {
@@ -776,6 +780,7 @@ contract EscrowIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 0, // unlimited signal-level
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -795,5 +800,269 @@ contract EscrowIntegrationTest is Test {
         (bool canBuy, string memory reason) = freshEscrow.canPurchase(1, NOTIONAL);
         assertFalse(canBuy, "Should fail with no SignalCommitment set");
         assertEq(reason, "SignalCommitment not set");
+    }
+
+    // ─── Multi-Purchase Tests
+    // ──────────────────────────────────────────────
+
+    function test_multiPurchase_twoBuyers() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        address idiot2 = address(0xDADA);
+
+        // First buyer: 4000 USDC
+        uint256 notional1 = 4000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        uint256 pid1 = escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Signal should still be Active
+        assertEq(uint8(signalCommitment.getSignal(SIGNAL_ID).status), uint8(SignalStatus.Active));
+        assertEq(escrow.signalNotionalFilled(SIGNAL_ID), notional1);
+
+        // Second buyer: 3000 USDC
+        uint256 notional2 = 3000e6;
+        uint256 collateral2 = (notional2 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral2);
+        uint256 fee2 = (notional2 * MAX_PRICE_BPS) / 10_000;
+        usdc.mint(idiot2, fee2);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), fee2);
+        escrow.deposit(fee2);
+        uint256 pid2 = escrow.purchase(SIGNAL_ID, notional2, ODDS);
+        vm.stopPrank();
+
+        // Verify both purchases recorded
+        assertEq(escrow.signalNotionalFilled(SIGNAL_ID), notional1 + notional2);
+        uint256[] memory purchaseIds = escrow.getPurchasesBySignal(SIGNAL_ID);
+        assertEq(purchaseIds.length, 2);
+
+        Purchase memory p1 = escrow.getPurchase(pid1);
+        Purchase memory p2 = escrow.getPurchase(pid2);
+        assertEq(p1.notional, notional1);
+        assertEq(p2.notional, notional2);
+        assertEq(p1.idiot, idiot);
+        assertEq(p2.idiot, idiot2);
+    }
+
+    function test_multiPurchase_exceedsRemaining() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        // First purchase: 8000 USDC
+        uint256 notional1 = 8000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Second purchase: 3000 USDC (only 2000 remaining)
+        uint256 notional2 = 3000e6;
+        uint256 collateral2 = (notional2 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral2);
+        uint256 fee2 = (notional2 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee2);
+
+        uint256 remaining = 10_000e6 - notional1; // 2000e6
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalExceedsSignalMax.selector, notional2, remaining));
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional2, ODDS);
+    }
+
+    function test_multiPurchase_fillsExactly() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        // First purchase: 6000 USDC
+        uint256 notional1 = 6000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Second purchase: exactly 4000 USDC remaining
+        uint256 notional2 = 4000e6;
+        uint256 collateral2 = (notional2 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral2);
+        uint256 fee2 = (notional2 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee2);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional2, ODDS);
+
+        assertEq(escrow.signalNotionalFilled(SIGNAL_ID), 10_000e6, "Signal should be fully filled");
+
+        // Third purchase should fail: 0 remaining
+        _depositGeniusCollateral((1e6 * SLA_MULTIPLIER_BPS) / 10_000);
+        uint256 fee3 = (1e6 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee3);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalExceedsSignalMax.selector, 1e6, 0));
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, 1e6, ODDS);
+    }
+
+    function test_multiPurchase_voidAfterPartialFill() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        // First purchase: 5000 USDC
+        uint256 notional1 = 5000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Genius voids the signal (stops new purchases)
+        vm.prank(genius);
+        signalCommitment.voidSignal(SIGNAL_ID);
+
+        assertEq(uint8(signalCommitment.getSignal(SIGNAL_ID).status), uint8(SignalStatus.Voided));
+
+        // Second purchase should fail: signal voided
+        _depositGeniusCollateral((1000e6 * SLA_MULTIPLIER_BPS) / 10_000);
+        _depositIdiotEscrow((1000e6 * MAX_PRICE_BPS) / 10_000);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.SignalNotActive.selector, SIGNAL_ID));
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, 1000e6, ODDS);
+    }
+
+    function test_multiPurchase_canPurchaseTracksRemaining() public {
+        _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+
+        // First purchase: 7000 USDC
+        uint256 notional1 = 7000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // canPurchase should reflect remaining capacity (3000e6)
+        (bool canBuy, ) = escrow.canPurchase(SIGNAL_ID, 3000e6);
+        assertTrue(canBuy, "Should be purchasable at remaining capacity");
+
+        (bool canBuy2, string memory reason) = escrow.canPurchase(SIGNAL_ID, 3001e6);
+        assertFalse(canBuy2, "Should fail above remaining capacity");
+        assertEq(reason, "Notional exceeds remaining capacity");
+    }
+
+    function test_multiPurchase_getSignalNotionalFilled() public {
+        _createSignal(SIGNAL_ID);
+
+        assertEq(escrow.getSignalNotionalFilled(SIGNAL_ID), 0, "Should start at zero");
+
+        uint256 notional1 = 2000e6;
+        uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        assertEq(escrow.getSignalNotionalFilled(SIGNAL_ID), notional1, "Should track first purchase");
+    }
+
+    // ─── minNotional Tests
+    // ──────────────────────────────────────────────
+
+    function test_minNotional_enforced() public {
+        uint256 sigId = 600;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("mintest"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 10_000e6,
+                minNotional: 100e6, // min 100 USDC
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 smallNotional = 50e6; // below min
+        uint256 collateral1 = (smallNotional * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (smallNotional * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalTooSmall.selector, smallNotional, 100e6));
+        vm.prank(idiot);
+        escrow.purchase(sigId, smallNotional, ODDS);
+    }
+
+    function test_minNotional_atExact() public {
+        uint256 sigId = 601;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("mintest2"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 10_000e6,
+                minNotional: 100e6,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 exactMin = 100e6;
+        uint256 collateral1 = (exactMin * SLA_MULTIPLIER_BPS) / 10_000;
+        _depositGeniusCollateral(collateral1);
+        uint256 fee1 = (exactMin * MAX_PRICE_BPS) / 10_000;
+        _depositIdiotEscrow(fee1);
+
+        vm.prank(idiot);
+        uint256 purchaseId = escrow.purchase(sigId, exactMin, ODDS);
+
+        Purchase memory p = escrow.getPurchase(purchaseId);
+        assertEq(p.notional, exactMin, "Exact minimum notional should succeed");
+    }
+
+    function test_canPurchase_belowMinNotional() public {
+        uint256 sigId = 602;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("mintest3"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 10_000e6,
+                minNotional: 500e6,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        (bool canBuy, string memory reason) = escrow.canPurchase(sigId, 100e6);
+        assertFalse(canBuy, "Below minNotional should fail");
+        assertEq(reason, "Below minimum notional");
     }
 }

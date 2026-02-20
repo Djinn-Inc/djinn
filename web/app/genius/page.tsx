@@ -221,7 +221,7 @@ export default function GeniusDashboard() {
                     const isActive = s.expiresAt > now;
                     const isExpired = !isActive;
                     return (
-                      <div key={s.signalId} className={`card flex items-center justify-between ${isExpired ? "opacity-70" : ""}`}>
+                      <Link key={s.signalId} href={`/genius/signal/${s.signalId}`} className={`card flex items-center justify-between hover:border-genius-300 active:bg-slate-50 transition-colors ${isExpired ? "opacity-70" : ""}`}>
                         <div>
                           <p className="text-sm font-medium text-slate-900">
                             {s.sport} &middot; Signal #{truncateAddress(s.signalId)}
@@ -236,16 +236,21 @@ export default function GeniusDashboard() {
                             )}
                           </p>
                         </div>
-                        {isActive ? (
-                          <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200 shrink-0 ml-2">
-                            Active
-                          </span>
-                        ) : (
-                          <span className="rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 shrink-0 ml-2">
-                            Expired
-                          </span>
-                        )}
-                      </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {isActive ? (
+                            <span className="rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-600 border border-green-200">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              Expired
+                            </span>
+                          )}
+                          <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </Link>
                     );
                   })}
                 </div>

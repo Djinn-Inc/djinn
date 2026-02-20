@@ -96,6 +96,7 @@ contract AuditFuzzTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: sla,
                 maxNotional: 0,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()

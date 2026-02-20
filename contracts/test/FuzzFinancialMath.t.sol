@@ -99,6 +99,7 @@ contract FuzzFinancialMathTest is Test {
                 maxPriceBps: maxPriceBps,
                 slaMultiplierBps: sla,
                 maxNotional: 0,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()

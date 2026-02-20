@@ -187,3 +187,16 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **What we did:** Added `totalFavorable`, `totalUnfavorable`, `totalVoid` fields to the Genius subgraph entity. Added a Win Rate column to the leaderboard showing W/L/V counts. The idiot signal browse also shows genius ROI. Subgraph mappings increment per-outcome counters on OutcomeUpdated events.
 **Remaining:** Purchase success rate and proof coverage % are not yet shown (would need additional subgraph queries).
 **Impact:** Buyers can now see win rate and outcome breakdown for each genius in the leaderboard.
+
+---
+
+## 14. Multi-Purchase Signals [DEVIATION:REVIEW]
+
+**Date:** 2026-02-20
+**Whitepaper Section:** Section 3 (Purchase Flow)
+**Whitepaper Says:** A signal transitions to `Purchased` status after the first purchase, blocking further purchases.
+**What we did:** Signals now support multiple buyers. The `Purchased` status is no longer set by Escrow — signals stay `Active` while purchases accumulate against a cumulative `signalNotionalFilled` mapping. Added `minNotional` field to Signal struct to prevent dust griefing. Genius can void a signal even after partial fills.
+**Why:** A genius publishing a $10,000 signal could only sell to one buyer, severely limiting market liquidity and fee revenue. Multi-purchase lets multiple idiots each buy a portion until capacity is filled.
+**Contracts changed:** IDjinn.sol (struct), SignalCommitment.sol (storage + state transitions), Escrow.sol (cumulative tracking, minNotional check)
+**No changes needed:** Collateral.sol (already uses `+=`), Audit.sol (works on individual purchases)
+**Impact:** Economic (more fee revenue per signal), user-facing (fill progress UI, minNotional setting).

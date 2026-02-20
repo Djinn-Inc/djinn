@@ -38,7 +38,7 @@ export default function IdiotDashboard() {
   const [viewMode, setViewMode] = useState<"plot" | "list">("list");
   const [notionalMin, setNotionalMin] = useState(0);
   const [notionalMax, setNotionalMax] = useState(10000);
-  const [feeMax, setFeeMax] = useState(500);
+  const [feeMax, setFeeMax] = useState(2000);
   const [slaMin, setSlaMin] = useState(0);
   const [expiryFilter, setExpiryFilter] = useState("");
   const [geniusSearch, setGeniusSearch] = useState("");
@@ -112,7 +112,7 @@ export default function IdiotDashboard() {
     return signals.filter((s) => {
       if (s.maxNotional > 0n && s.maxNotional < minBig) return false;
       if (notionalMax < 10000 && s.maxNotional > maxBig) return false;
-      if (Number(s.maxPriceBps) > feeMax) return false;
+      if (feeMax < 2000 && Number(s.maxPriceBps) > feeMax) return false;
       if (slaMin > 0 && Number(s.slaMultiplierBps) < slaMin) return false;
       if (expiryFilter) {
         const hoursLeft = (Number(s.expiresAt) * 1000 - now) / 3_600_000;
@@ -379,7 +379,9 @@ export default function IdiotDashboard() {
             Available Signals
             {!signalsLoading && (
               <span className="text-sm font-normal text-slate-400 ml-2">
-                {sortedSignals.length}{sortedSignals.length !== signals.length && ` of ${signals.length}`}
+                {sortedSignals.length === signals.length
+                  ? `${signals.length} total`
+                  : `${sortedSignals.length} matching filters (${signals.length} total)`}
               </span>
             )}
           </h2>
@@ -418,9 +420,9 @@ export default function IdiotDashboard() {
                   : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
               }`}
             >
-              Filters{(feeMax < 500 || slaMin > 0 || expiryFilter || geniusSearch || notionalMax < 10000) && (
+              Filters{(feeMax < 2000 || slaMin > 0 || expiryFilter || geniusSearch || notionalMax < 10000) && (
                 <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-idiot-500 text-white text-[10px]">
-                  {[feeMax < 500, slaMin > 0, expiryFilter, geniusSearch, notionalMax < 10000].filter(Boolean).length}
+                  {[feeMax < 2000, slaMin > 0, expiryFilter, geniusSearch, notionalMax < 10000].filter(Boolean).length}
                 </span>
               )}
             </button>
@@ -473,14 +475,14 @@ export default function IdiotDashboard() {
                     id="feeMaxFilter"
                     type="range"
                     min={0}
-                    max={500}
-                    step={10}
+                    max={2000}
+                    step={50}
                     value={feeMax}
                     onChange={(e) => setFeeMax(Number(e.target.value))}
                     className="flex-1 accent-idiot-500"
                   />
                   <span className="text-xs text-slate-700 tabular-nums w-10 text-right">
-                    {feeMax < 500 ? `${(feeMax / 100).toFixed(1)}%` : "Any"}
+                    {feeMax < 2000 ? `${(feeMax / 100).toFixed(0)}%` : "Any"}
                   </span>
                 </div>
               </div>
@@ -558,7 +560,7 @@ export default function IdiotDashboard() {
                 <button
                   type="button"
                   onClick={() => {
-                    setFeeMax(500);
+                    setFeeMax(2000);
                     setSlaMin(0);
                     setNotionalMax(10000);
                     setExpiryFilter("");

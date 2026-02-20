@@ -108,6 +108,7 @@ contract LifecycleIntegrationTest is Test {
                 maxPriceBps: MAX_PRICE_BPS,
                 slaMultiplierBps: SLA_MULTIPLIER_BPS,
                 maxNotional: 10_000e6,
+                minNotional: 0,
                 expiresAt: block.timestamp + 1 days,
                 decoyLines: _buildDecoyLines(),
                 availableSportsbooks: _buildSportsbooks()
@@ -200,9 +201,9 @@ contract LifecycleIntegrationTest is Test {
         assertEq(p.feePaid, fee);
         assertEq(uint8(p.outcome), uint8(Outcome.Pending));
 
-        // Verify signal status changed to Purchased
+        // Verify signal status stays Active (multi-purchase support)
         sig = signalCommitment.getSignal(signalId);
-        assertEq(uint8(sig.status), uint8(SignalStatus.Purchased));
+        assertEq(uint8(sig.status), uint8(SignalStatus.Active));
 
         // Verify collateral locked
         assertEq(collateral.getSignalLock(genius1, signalId), lockAmount);

@@ -23,6 +23,7 @@ contract SignalCommitment is Ownable, Pausable {
         uint256 maxPriceBps;
         uint256 slaMultiplierBps;
         uint256 maxNotional;
+        uint256 minNotional;
         uint256 expiresAt;
         string[] decoyLines;
         string[] availableSportsbooks;
@@ -88,8 +89,8 @@ contract SignalCommitment is Ownable, Pausable {
     /// @notice Only the Genius who committed the signal can call this
     error NotSignalGenius(address caller, address genius);
 
-    /// @notice Signal has already been purchased and cannot be voided
-    error SignalAlreadyPurchased(uint256 signalId);
+    /// @notice Signal cannot be voided from its current status
+    error SignalNotVoidable(uint256 signalId, SignalStatus currentStatus);
 
     /// @notice Address must not be zero
     error ZeroAddress();
@@ -186,6 +187,7 @@ contract SignalCommitment is Ownable, Pausable {
         s.maxPriceBps = p.maxPriceBps;
         s.slaMultiplierBps = p.slaMultiplierBps;
         s.maxNotional = p.maxNotional;
+        s.minNotional = p.minNotional;
         s.expiresAt = p.expiresAt;
         s.status = SignalStatus.Active;
         s.createdAt = block.timestamp;
@@ -218,7 +220,7 @@ contract SignalCommitment is Ownable, Pausable {
 
         Signal storage s = _signals[signalId];
         if (s.genius != msg.sender) revert NotSignalGenius(msg.sender, s.genius);
-        if (s.status != SignalStatus.Active) revert SignalAlreadyPurchased(signalId);
+        if (s.status != SignalStatus.Active) revert SignalNotVoidable(signalId, s.status);
 
         s.status = SignalStatus.Voided;
 
@@ -226,12 +228,12 @@ contract SignalCommitment is Ownable, Pausable {
     }
 
     /// @notice Update the status of a signal
-    /// @dev Only callable by contracts authorized by the owner (e.g. Escrow, Audit).
+    /// @dev Only callable by contracts authorized by the owner (e.g. Audit).
     ///      Enforces a state transition matrix:
-    ///        Active   → Purchased, Voided
-    ///        Purchased → Settled, Voided
+    ///        Active   → Settled, Voided
     ///        Settled  → (terminal, no transitions)
     ///        Voided   → (terminal, no transitions)
+    ///      Note: Purchased status is no longer used — signals stay Active while purchases accumulate.
     /// @param signalId The signal to update
     /// @param newStatus The new status to set
     function updateStatus(uint256 signalId, SignalStatus newStatus) external onlyAuthorized {
@@ -240,10 +242,6 @@ contract SignalCommitment is Ownable, Pausable {
         SignalStatus current = _signals[signalId].status;
 
         if (current == SignalStatus.Active) {
-            if (newStatus != SignalStatus.Purchased && newStatus != SignalStatus.Voided) {
-                revert InvalidStatusTransition(signalId, current, newStatus);
-            }
-        } else if (current == SignalStatus.Purchased) {
             if (newStatus != SignalStatus.Settled && newStatus != SignalStatus.Voided) {
                 revert InvalidStatusTransition(signalId, current, newStatus);
             }

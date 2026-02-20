@@ -51,9 +51,9 @@ if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
 // Minimal ABIs — only the functions used by the client
 
 export const SIGNAL_COMMITMENT_ABI = [
-  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p) external",
+  "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 minNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p) external",
   "function voidSignal(uint256 signalId) external",
-  "function getSignal(uint256 signalId) external view returns (tuple(address genius, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks, bytes walletRecoveryBlob, uint8 status, uint256 createdAt))",
+  "function getSignal(uint256 signalId) external view returns (tuple(address genius, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 minNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks, bytes walletRecoveryBlob, uint8 status, uint256 createdAt))",
   "function isActive(uint256 signalId) external view returns (bool)",
   "function signalExists(uint256 signalId) external view returns (bool)",
   "event SignalCommitted(uint256 indexed signalId, address indexed genius, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 expiresAt)",
@@ -67,6 +67,8 @@ export const ESCROW_ABI = [
   "function getBalance(address user) external view returns (uint256)",
   "function getPurchase(uint256 purchaseId) external view returns (tuple(address idiot, uint256 signalId, uint256 notional, uint256 feePaid, uint256 creditUsed, uint256 usdcPaid, uint256 odds, uint8 outcome, uint256 purchasedAt))",
   "function getPurchasesBySignal(uint256 signalId) external view returns (uint256[])",
+  "function getSignalNotionalFilled(uint256 signalId) external view returns (uint256)",
+  "function signalNotionalFilled(uint256 signalId) external view returns (uint256)",
   "event Deposited(address indexed user, uint256 amount)",
   "event Withdrawn(address indexed user, uint256 amount)",
   "event SignalPurchased(uint256 indexed signalId, address indexed buyer, uint256 purchaseId, uint256 notional, uint256 feePaid, uint256 creditUsed, uint256 usdcPaid)",
