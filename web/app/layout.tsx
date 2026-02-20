@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Cinzel } from "next/font/google";
 import Providers from "./providers";
 import Layout from "@/components/Layout";
@@ -11,6 +11,13 @@ const cinzel = Cinzel({
   subsets: ["latin"],
   variable: "--font-wordmark",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "Djinn | Sports Intelligence Marketplace",

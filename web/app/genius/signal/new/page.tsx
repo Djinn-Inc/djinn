@@ -1260,6 +1260,8 @@ export default function CreateSignal() {
           if (!hasEnough) {
             const needed = Number(requiredCollateral - collateralAvailable) / 1e6;
             const walletHasUsdc = walletUsdc > 0n;
+            // Auto-populate deposit amount with shortfall when field is empty
+            const displayAmount = inlineDepositAmount || needed.toString();
             return (
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 mb-4">
                 <p className="text-sm font-medium text-amber-800 mb-1">
@@ -1274,18 +1276,18 @@ export default function CreateSignal() {
                     type="number"
                     placeholder="Amount (USDC)"
                     className="input flex-1 text-sm"
-                    value={inlineDepositAmount}
+                    value={displayAmount}
                     onChange={(e) => setInlineDepositAmount(e.target.value)}
                   />
                   <button
                     type="button"
-                    disabled={depositCollateralLoading || !inlineDepositAmount}
+                    disabled={depositCollateralLoading || !displayAmount}
                     className="btn-primary text-sm whitespace-nowrap"
                     onClick={async () => {
                       setInlineDepositError(null);
                       try {
                         const { parseUsdc } = await import("@/lib/types");
-                        await depositCollateral(parseUsdc(inlineDepositAmount));
+                        await depositCollateral(parseUsdc(displayAmount));
                         setInlineDepositAmount("");
                         refreshCollateral();
                       } catch (err) {

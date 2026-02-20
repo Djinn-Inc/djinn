@@ -26,6 +26,7 @@ vi.mock("../../app/providers", () => ({
 
 // Mock contracts module
 const mockBalanceOf = vi.fn();
+const mockAllowance = vi.fn().mockResolvedValue(0n);
 vi.mock("../contracts", () => ({
   getSignalCommitmentContract: () => ({}),
   getEscrowContract: () => ({}),
@@ -33,6 +34,7 @@ vi.mock("../contracts", () => ({
   getCreditLedgerContract: () => ({}),
   getUsdcContract: () => ({
     balanceOf: mockBalanceOf,
+    allowance: mockAllowance,
   }),
   ADDRESSES: {
     signalCommitment: "0x1111111111111111111111111111111111111111",

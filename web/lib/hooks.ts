@@ -570,16 +570,22 @@ export function useDepositEscrow() {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
 
-        // Approve USDC spend — uses walletClient.writeContract (viem native)
-        console.log("[escrow-deposit] approving", amount.toString());
-        const approveHash = await walletClient.writeContract({
-          address: usdcAddr,
-          abi: ERC20_ABI,
-          functionName: "approve",
-          args: [escrowAddr, amount],
-        });
-        console.log("[escrow-deposit] approve tx:", approveHash);
-        await waitForTx(approveHash);
+        // Check existing allowance — skip approve if already sufficient
+        const allowance: bigint = await usdcRead.allowance(address, escrowAddr);
+        if (allowance < amount) {
+          const MAX_UINT256 = 2n ** 256n - 1n;
+          console.log("[escrow-deposit] approving (max allowance)");
+          const approveHash = await walletClient.writeContract({
+            address: usdcAddr,
+            abi: ERC20_ABI,
+            functionName: "approve",
+            args: [escrowAddr, MAX_UINT256],
+          });
+          console.log("[escrow-deposit] approve tx:", approveHash);
+          await waitForTx(approveHash);
+        } else {
+          console.log("[escrow-deposit] allowance sufficient, skipping approve");
+        }
 
         // Deposit into escrow
         console.log("[escrow-deposit] depositing", amount.toString());
@@ -630,16 +636,23 @@ export function useDepositCollateral() {
           throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
         }
 
-        // Approve USDC spend
-        console.log("[collateral-deposit] approving", amount.toString());
-        const approveHash = await walletClient.writeContract({
-          address: usdcAddr,
-          abi: ERC20_ABI,
-          functionName: "approve",
-          args: [collateralAddr, amount],
-        });
-        console.log("[collateral-deposit] approve tx:", approveHash);
-        await waitForTx(approveHash);
+        // Check existing allowance — skip approve if already sufficient
+        const allowance: bigint = await usdcRead.allowance(address, collateralAddr);
+        if (allowance < amount) {
+          // Use MaxUint256 so user only approves once (avoids Safari popup-block on 2nd tx)
+          const MAX_UINT256 = 2n ** 256n - 1n;
+          console.log("[collateral-deposit] approving (max allowance)");
+          const approveHash = await walletClient.writeContract({
+            address: usdcAddr,
+            abi: ERC20_ABI,
+            functionName: "approve",
+            args: [collateralAddr, MAX_UINT256],
+          });
+          console.log("[collateral-deposit] approve tx:", approveHash);
+          await waitForTx(approveHash);
+        } else {
+          console.log("[collateral-deposit] allowance sufficient, skipping approve");
+        }
 
         // Deposit into collateral
         console.log("[collateral-deposit] depositing", amount.toString());
