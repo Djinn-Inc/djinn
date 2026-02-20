@@ -80,12 +80,12 @@ async def _settle_outcomes(
         if consensus is None:
             continue
 
-        # Convert string signal_id to int for on-chain lookup
-        try:
-            signal_id_int = int(signal_id)
-        except (ValueError, TypeError):
-            log.warning("non_numeric_signal_id", signal_id=signal_id)
-            continue
+        # Convert string signal_id to uint256 for on-chain lookup
+        from web3 import Web3
+
+        signal_id_int = int.from_bytes(
+            Web3.solidity_keccak(["string"], [signal_id]), "big"
+        )
 
         # Get genius address from on-chain signal
         signal_data = await chain_client.get_signal(signal_id_int)
@@ -243,7 +243,8 @@ async def epoch_loop(
             # Determine if this is an active epoch (any signals being processed)
             is_active = share_store.count > 0
 
-            # Compute and set weights
+            # Compute and set weights — only reset metrics AFTER weights are set
+            # so that challenge data accumulates across the full interval
             if neuron.should_set_weights():
                 weights = scorer.compute_weights(is_active)
                 if weights:
@@ -251,10 +252,9 @@ async def epoch_loop(
                     if success:
                         neuron.record_weight_set()
                     log.info("weights_updated", n_miners=len(weights), active=is_active, success=success)
-
-            # Reset per-epoch metrics (also increments consecutive_epochs
-            # for miners that participated this epoch)
-            scorer.reset_epoch()
+                # Reset per-epoch metrics after weight setting (increments
+                # consecutive_epochs for miners that participated)
+                scorer.reset_epoch()
 
             consecutive_errors = 0
 
@@ -323,7 +323,7 @@ async def async_main() -> None:
     # Initialize components — SQLite persistence for key shares and burn ledger
     share_store = ShareStore(db_path="data/shares.db")
     burn_ledger = BurnLedger(db_path="data/burns.db")
-    purchase_orch = PurchaseOrchestrator(share_store)
+    purchase_orch = PurchaseOrchestrator(share_store, db_path="data/purchases.db")
     outcome_attestor = OutcomeAttestor(sports_api_key=config.sports_api_key)
     scorer = MinerScorer()
 
@@ -433,6 +433,10 @@ async def async_main() -> None:
             log.info("mpc_sessions_cleaned_on_shutdown", removed=removed)
     except Exception as e:
         log.warning("mpc_cleanup_error", error=str(e))
+    try:
+        purchase_orch.close()
+    except Exception as e:
+        log.warning("purchase_orch_close_error", error=str(e))
     try:
         share_store.close()
     except Exception as e:

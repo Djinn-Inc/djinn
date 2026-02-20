@@ -263,6 +263,59 @@ class TestPaymentVerification:
             assert resp.json()["status"] == "unavailable"
 
 
+class TestPaymentReplayPrevention:
+    """Tests for TOCTOU payment replay prevention."""
+
+    def test_duplicate_purchase_returns_idempotent(self, share_store: ShareStore) -> None:
+        """A second purchase attempt for the same signal+buyer returns the already-released share."""
+        from djinn_validator.utils.crypto import generate_signal_index_shares
+
+        shares = generate_signal_index_shares(5)
+        share_store.store("sig-replay", "0xGenius", shares[0], b"encrypted-key-data")
+
+        purchase_orch = PurchaseOrchestrator(share_store)
+        outcome_attestor = OutcomeAttestor()
+        app = create_app(share_store, purchase_orch, outcome_attestor)
+        client = TestClient(app)
+
+        buyer = "0x" + "b0" * 20
+
+        # First purchase
+        resp1 = client.post("/v1/signal/sig-replay/purchase", json={
+            "buyer_address": buyer,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+        assert resp1.status_code == 200
+        data1 = resp1.json()
+
+        if data1["status"] == "complete":
+            # Second purchase should be idempotent
+            resp2 = client.post("/v1/signal/sig-replay/purchase", json={
+                "buyer_address": buyer,
+                "sportsbook": "DraftKings",
+                "available_indices": [1, 3, 5, 7, 9],
+            })
+            assert resp2.status_code == 200
+            data2 = resp2.json()
+            assert data2["status"] in ("complete", "already_purchased")
+
+    def test_payment_consumed_check(self) -> None:
+        """Verify PurchaseOrchestrator.is_payment_consumed works."""
+        store = ShareStore()
+        orch = PurchaseOrchestrator(store)
+
+        assert orch.is_payment_consumed("sig-1", "0xBuyer") is False
+        orch.record_payment("sig-1", "0xBuyer", "0xtx123", "PAYMENT_CONFIRMED")
+        assert orch.is_payment_consumed("sig-1", "0xBuyer") is True
+
+        # Can't record same payment twice
+        assert orch.record_payment("sig-1", "0xBuyer", "0xtx123", "PAYMENT_CONFIRMED") is False
+
+        store.close()
+        orch.close()
+
+
 class TestOutcome:
     def test_attest_outcome(self, client: TestClient, share_store: ShareStore) -> None:
         # Store a share first

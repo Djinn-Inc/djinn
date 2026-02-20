@@ -11,9 +11,12 @@ Implements the purchase lifecycle from Appendix A:
 from __future__ import annotations
 
 import re
+import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from pathlib import Path
 
 import structlog
 
@@ -50,11 +53,80 @@ class PurchaseRequest:
 
 
 class PurchaseOrchestrator:
-    """Manages the purchase flow for this validator."""
+    """Manages the purchase flow for this validator.
 
-    def __init__(self, share_store: ShareStore) -> None:
+    Uses SQLite to persist verified payments and prevent TOCTOU replay attacks.
+    In-memory dict tracks active (in-flight) purchases for concurrency control.
+    """
+
+    def __init__(self, share_store: ShareStore, db_path: str | Path | None = None) -> None:
         self._store = share_store
         self._active: dict[str, PurchaseRequest] = {}  # keyed by signal_id:buyer
+        self._db_lock = threading.Lock()
+        if db_path is not None:
+            path = Path(db_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        else:
+            self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._create_tables()
+
+    def _create_tables(self) -> None:
+        self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS verified_payments (
+                signal_id      TEXT NOT NULL,
+                buyer_address  TEXT NOT NULL,
+                tx_hash        TEXT NOT NULL,
+                status         TEXT NOT NULL,
+                created_at     REAL NOT NULL,
+                completed_at   REAL,
+                PRIMARY KEY (signal_id, buyer_address)
+            );
+            CREATE INDEX IF NOT EXISTS idx_vp_tx_hash ON verified_payments(tx_hash);
+        """)
+        self._conn.commit()
+
+    def is_payment_consumed(self, signal_id: str, buyer_address: str) -> bool:
+        """Check if payment was already verified and share released for this signal+buyer."""
+        with self._db_lock:
+            row = self._conn.execute(
+                "SELECT status FROM verified_payments WHERE signal_id = ? AND buyer_address = ?",
+                (signal_id, buyer_address),
+            ).fetchone()
+            return row is not None and row[0] in ("SHARES_RELEASED", "PAYMENT_CONFIRMED")
+
+    def record_payment(self, signal_id: str, buyer_address: str, tx_hash: str, status: str) -> bool:
+        """Record a verified payment. Returns False if already recorded (replay)."""
+        with self._db_lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO verified_payments (signal_id, buyer_address, tx_hash, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (signal_id, buyer_address, tx_hash, status, time.time()),
+                )
+                self._conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def update_payment_status(self, signal_id: str, buyer_address: str, status: str) -> None:
+        """Update the status of a recorded payment."""
+        with self._db_lock:
+            self._conn.execute(
+                "UPDATE verified_payments SET status = ?, completed_at = ? "
+                "WHERE signal_id = ? AND buyer_address = ?",
+                (status, time.time(), signal_id, buyer_address),
+            )
+            self._conn.commit()
+
+    def close(self) -> None:
+        """Close the database connection."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
     _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 

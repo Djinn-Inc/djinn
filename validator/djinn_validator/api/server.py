@@ -426,6 +426,27 @@ def create_app(
                     message="Signal not available at this sportsbook",
                 )
 
+            # Check for payment replay (TOCTOU prevention)
+            if purchase_orch.is_payment_consumed(signal_id, req.buyer_address):
+                PURCHASES_PROCESSED.labels(result="already_purchased").inc()
+                # Return the previously released share if available
+                record = share_store.get(signal_id)
+                if record and req.buyer_address in record.released_to:
+                    return PurchaseResponse(
+                        signal_id=signal_id,
+                        status="complete",
+                        available=True,
+                        encrypted_key_share=record.encrypted_key_share.hex(),
+                        share_x=record.share.x,
+                        message="Share already released (idempotent)",
+                    )
+                return PurchaseResponse(
+                    signal_id=signal_id,
+                    status="already_purchased",
+                    available=True,
+                    message="Payment already processed for this signal",
+                )
+
             # Verify on-chain payment before releasing share
             if chain_client is not None:
                 try:
@@ -475,6 +496,9 @@ def create_app(
                 )
                 tx_hash = "dev-mode-no-verification"
 
+            # Record the payment to prevent replay attacks
+            purchase_orch.record_payment(signal_id, req.buyer_address, tx_hash, "PAYMENT_CONFIRMED")
+
             result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
             if result is None or result.status == PurchaseStatus.FAILED:
                 raise HTTPException(status_code=500, detail="Share release failed")
@@ -484,6 +508,9 @@ def create_app(
             if record is None or record.encrypted_key_share is None:
                 raise HTTPException(status_code=500, detail="Share release failed")
             share_data = record.encrypted_key_share
+
+            # Mark payment as fully consumed (share released)
+            purchase_orch.update_payment_status(signal_id, req.buyer_address, "SHARES_RELEASED")
 
             PURCHASES_PROCESSED.labels(result="available").inc()
             ACTIVE_SHARES.set(share_store.count)

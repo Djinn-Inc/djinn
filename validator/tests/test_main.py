@@ -113,9 +113,9 @@ class TestEpochLoop:
         # Miners should exist in scorer (created during health check)
         m1 = mock_scorer.get_or_create(1, "key-1")
         m2 = mock_scorer.get_or_create(2, "key-2")
-        # Per-epoch metrics are reset, but consecutive_epochs is preserved
-        assert m1.consecutive_epochs >= 1
-        assert m2.consecutive_epochs >= 1
+        # Health checks were recorded (metrics accumulate until weights are set)
+        assert m1.health_checks_responded >= 1
+        assert m2.health_checks_responded >= 1
 
     @pytest.mark.asyncio
     async def test_epoch_loop_sets_weights_when_due(
@@ -244,10 +244,14 @@ class TestEpochLoop:
         mock_share_store: ShareStore,
         mock_outcome_attestor: AsyncMock,
     ) -> None:
-        """Per-epoch metrics are reset after each cycle."""
+        """Per-epoch metrics are reset after weights are set."""
         # Pre-populate miner with some metrics
         m = mock_scorer.get_or_create(1, "key-1")
         m.record_query(correct=True, latency=0.5, proof_submitted=True)
+
+        # Metrics only reset when weights are actually set
+        mock_neuron.should_set_weights.return_value = True
+        mock_neuron.set_weights.return_value = True
 
         call_count = 0
 
