@@ -1127,7 +1127,7 @@ export default function CreateSignal() {
               <p className="text-xs text-slate-500 mt-1">
                 If your pick is wrong, you pay the buyer up to this % of their stake
                 from your locked collateral. 100% means the buyer gets their full
-                stake back. Higher = more buyer protection but more risk for you.
+                stake back. Higher = more collateral commitment per purchase.
               </p>
             );
           })()}

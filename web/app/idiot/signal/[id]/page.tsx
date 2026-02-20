@@ -563,8 +563,8 @@ export default function PurchaseSignal() {
                   {formatBps(signal.slaMultiplierBps)}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Genius risks {formatBps(signal.slaMultiplierBps)} of your notional if wrong.
-                  If the signal is correct, the Genius keeps your fee.
+                  Genius has {formatBps(signal.slaMultiplierBps)} of your notional locked as collateral.
+                  If the signal is correct, the Genius earns your fee.
                 </p>
               </div>
               <div>
@@ -749,7 +749,7 @@ export default function PurchaseSignal() {
                     disabled={signal.maxNotional > 0n && notionalFilled >= signal.maxNotional}
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Your protection amount. This sets the fee and how much the genius risks if the signal is wrong. What you do with the information is your business.
+                    Your notional amount. This determines the signal fee and the Genius&apos;s collateral commitment.
                     {signal.maxNotional > 0n && notionalFilled < signal.maxNotional && (
                       <span className="block mt-0.5 text-slate-400">
                         Remaining: ${formatUsdc(signal.maxNotional - notionalFilled)} of ${formatUsdc(signal.maxNotional)}
@@ -787,7 +787,7 @@ export default function PurchaseSignal() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">
-                        Genius risks (locked collateral)
+                        Genius collateral locked
                       </span>
                       <span className="text-slate-900 font-medium">
                         $
