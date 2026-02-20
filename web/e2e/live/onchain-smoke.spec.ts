@@ -12,14 +12,14 @@ import { ethers } from "ethers";
 const RPC_URL = "https://sepolia.base.org";
 
 const ADDRESSES = {
-  signalCommitment: "0x4675613f4aC6329D294605a56f2AAf04B0cc1f7d",
-  escrow: "0x83DcE21BA5875433Bc46e5eAC91e2B15cfA5B002",
-  collateral: "0x436b9246F5eE53835df6AA68CdEeaE02514C0De6",
-  creditLedger: "0x1a3174C715D832b865269fD44beBd742922BC017",
-  account: "0x8fF0e9aAAb1206eb2C6087deE264e5EFB3EaDB4B",
-  usdc: "0xEd57eC96889cDd3Ad1a8488E3fE87D3B711190CB",
-  trackRecord: "0xD1dA1E9258B042b8309A1278BaACe16B1D99C423",
-  keyRecovery: "0xbc88df681d3d40b3977e3693385f643166b7f54a",
+  signalCommitment: "0x83F38eA8B66634643E6FEC8F18848DAa0c86F6DE",
+  escrow: "0x06e6d123DD2474599579B648dd56973120CcEFcA",
+  collateral: "0x06AAfF8643e99042f86f1EC93ED8A8BD36d6D9E7",
+  creditLedger: "0x09de6d7B81ED73707364ee772eAdA7c191c8a4FC",
+  account: "0x7f5700896051f4af0F597135A39a6D9D24F8B2af",
+  usdc: "0x99b566222EED94530dF3E8bdbd8Da1BBe8cC7a69",
+  trackRecord: "0xd3FA108474eb4EfC79649a17472c5F7d729Ac08b",
+  audit: "0x4ca56d7e1D10Ec78C26C98a39b17f83Ca85b68c3",
 };
 
 const E2E_PRIVATE_KEY =
@@ -239,72 +239,67 @@ test("withdraw collateral", async () => {
 });
 
 // ─────────────────────────────────────────────
-// KeyRecovery store/retrieve
+// Multi-purchase verification
 // ─────────────────────────────────────────────
 
-test("store and retrieve recovery blob", async () => {
+test("getSignalNotionalFilled returns 0 for unknown signal", async () => {
   test.skip(!hasFunds, "No ETH — fund E2E wallet first");
 
-  const kr = new ethers.Contract(
-    ADDRESSES.keyRecovery,
-    [
-      "function storeRecoveryBlob(bytes blob) external",
-      "function getRecoveryBlob(address) view returns (bytes)",
-    ],
-    wallet,
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    ["function getSignalNotionalFilled(uint256) view returns (uint256)"],
+    provider,
   );
-
-  const testBlob = ethers.toUtf8Bytes(
-    JSON.stringify({
-      version: 1,
-      signals: [{ signalId: "e2e-test", preimage: "abc123" }],
-    }),
-  );
-
-  const tx = await kr.storeRecoveryBlob(testBlob);
-  await tx.wait();
-  await waitForSync();
-
-  const retrieved = await kr.getRecoveryBlob(wallet.address);
-  // Contract returns bytes as hex — decode to UTF-8
-  expect(retrieved).not.toBe("0x");
-  const decoded = ethers.toUtf8String(retrieved);
-  const parsed = JSON.parse(decoded);
-
-  expect(parsed.version).toBe(1);
-  expect(parsed.signals).toHaveLength(1);
-  expect(parsed.signals[0].signalId).toBe("e2e-test");
+  const filled = await escrow.getSignalNotionalFilled(999999);
+  expect(filled).toBe(0n);
 });
 
-test("overwriting recovery blob succeeds", async () => {
+test("canPurchase returns false for non-active signal", async () => {
   test.skip(!hasFunds, "No ETH — fund E2E wallet first");
 
-  const kr = new ethers.Contract(
-    ADDRESSES.keyRecovery,
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
     [
-      "function storeRecoveryBlob(bytes blob) external",
-      "function getRecoveryBlob(address) view returns (bytes)",
+      "function canPurchase(uint256 signalId, uint256 notional) view returns (bool, string)",
     ],
-    wallet,
+    provider,
+  );
+  const [canBuy, reason] = await escrow.canPurchase(
+    999999,
+    ethers.parseUnits("100", 6),
+  );
+  expect(canBuy).toBe(false);
+  expect(reason).toBe("Signal not active");
+});
+
+test("signal 43 has correct multi-purchase state", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function getSignalNotionalFilled(uint256) view returns (uint256)",
+      "function getPurchasesBySignal(uint256) view returns (uint256[])",
+    ],
+    provider,
   );
 
-  const newBlob = ethers.toUtf8Bytes(
-    JSON.stringify({
-      version: 1,
-      signals: [
-        { signalId: "e2e-test-1", preimage: "abc" },
-        { signalId: "e2e-test-2", preimage: "def" },
-      ],
-    }),
+  const sc = new ethers.Contract(
+    ADDRESSES.signalCommitment,
+    ["function isActive(uint256) view returns (bool)"],
+    provider,
   );
 
-  const tx = await kr.storeRecoveryBlob(newBlob);
-  await tx.wait();
-  await waitForSync();
+  // Signal 43 was created with multi-purchase enabled
+  const isActive = await sc.isActive(43);
+  const filled = await escrow.getSignalNotionalFilled(43);
+  const purchases = await escrow.getPurchasesBySignal(43);
 
-  const retrieved = await kr.getRecoveryBlob(wallet.address);
-  const parsed = JSON.parse(ethers.toUtf8String(retrieved));
-  expect(parsed.signals).toHaveLength(2);
+  // Signal should be active with purchases
+  if (isActive) {
+    expect(filled).toBeGreaterThan(0n);
+    expect(purchases.length).toBeGreaterThanOrEqual(1);
+  }
 });
 
 // ─────────────────────────────────────────────

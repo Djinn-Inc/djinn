@@ -13,14 +13,14 @@ const CHAIN_ID = 84532;
 
 // Contract addresses from deployment
 const ADDRESSES = {
-  signalCommitment: "0x4675613f4aC6329D294605a56f2AAf04B0cc1f7d",
-  escrow: "0x83DcE21BA5875433Bc46e5eAC91e2B15cfA5B002",
-  collateral: "0x436b9246F5eE53835df6AA68CdEeaE02514C0De6",
-  creditLedger: "0x1a3174C715D832b865269fD44beBd742922BC017",
-  account: "0x8fF0e9aAAb1206eb2C6087deE264e5EFB3EaDB4B",
-  usdc: "0xEd57eC96889cDd3Ad1a8488E3fE87D3B711190CB",
-  trackRecord: "0xD1dA1E9258B042b8309A1278BaACe16B1D99C423",
-  keyRecovery: "0xbc88df681d3d40b3977e3693385f643166b7f54a",
+  signalCommitment: "0x83F38eA8B66634643E6FEC8F18848DAa0c86F6DE",
+  escrow: "0x06e6d123DD2474599579B648dd56973120CcEFcA",
+  collateral: "0x06AAfF8643e99042f86f1EC93ED8A8BD36d6D9E7",
+  creditLedger: "0x09de6d7B81ED73707364ee772eAdA7c191c8a4FC",
+  account: "0x7f5700896051f4af0F597135A39a6D9D24F8B2af",
+  usdc: "0x99b566222EED94530dF3E8bdbd8Da1BBe8cC7a69",
+  trackRecord: "0xd3FA108474eb4EfC79649a17472c5F7d729Ac08b",
+  audit: "0x4ca56d7e1D10Ec78C26C98a39b17f83Ca85b68c3",
 };
 
 // Dummy addresses for testing view functions
@@ -292,22 +292,10 @@ test.describe("TrackRecord contract", () => {
   });
 });
 
-test.describe("KeyRecovery contract", () => {
-  test("getRecoveryBlob returns empty bytes for random address", async () => {
-    const kr = new ethers.Contract(
-      ADDRESSES.keyRecovery,
-      ["function getRecoveryBlob(address) view returns (bytes)"],
-      provider,
-    );
-    const blob = await kr.getRecoveryBlob(RANDOM_ADDRESS);
-    expect(blob).toBe("0x");
-  });
-});
-
 test.describe("Cross-contract wiring", () => {
   test("Audit.PROTOCOL_FEE_BPS is 50 (0.5%)", async () => {
     const audit = new ethers.Contract(
-      "0x18b30e757f1bfddd8728deec7ea4b7463939343d",
+      ADDRESSES.audit,
       ["function PROTOCOL_FEE_BPS() view returns (uint256)"],
       provider,
     );
@@ -323,5 +311,43 @@ test.describe("Cross-contract wiring", () => {
     );
     const spc = await account.SIGNALS_PER_CYCLE();
     expect(spc).toBe(10n);
+  });
+});
+
+test.describe("Multi-purchase verification", () => {
+  test("getSignalNotionalFilled returns uint for any signal", async () => {
+    const escrow = new ethers.Contract(
+      ADDRESSES.escrow,
+      ["function getSignalNotionalFilled(uint256) view returns (uint256)"],
+      provider,
+    );
+    const filled = await escrow.getSignalNotionalFilled(999999);
+    expect(filled).toBe(0n);
+  });
+
+  test("canPurchase view function works", async () => {
+    const escrow = new ethers.Contract(
+      ADDRESSES.escrow,
+      [
+        "function canPurchase(uint256 signalId, uint256 notional) view returns (bool, string)",
+      ],
+      provider,
+    );
+    const [canBuy, reason] = await escrow.canPurchase(
+      999999,
+      ethers.parseUnits("100", 6),
+    );
+    expect(canBuy).toBe(false);
+    expect(reason).toBe("Signal not active");
+  });
+
+  test("Escrow.MIN_NOTIONAL is 1 USDC", async () => {
+    const escrow = new ethers.Contract(
+      ADDRESSES.escrow,
+      ["function MIN_NOTIONAL() view returns (uint256)"],
+      provider,
+    );
+    const min = await escrow.MIN_NOTIONAL();
+    expect(min).toBe(ethers.parseUnits("1", 6));
   });
 });
