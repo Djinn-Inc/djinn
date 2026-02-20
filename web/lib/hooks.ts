@@ -443,7 +443,10 @@ const AUDIT_VIEM_ABI = parseAbi([
 
 /** Wait for a tx hash to be confirmed, throw if reverted. */
 async function waitForTx(hash: Hex): Promise<void> {
-  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
+  const receipt = await waitForTransactionReceipt(wagmiConfig, {
+    hash,
+    timeout: 120_000, // 2 minutes — prevents indefinite hang with Coinbase Smart Wallet
+  });
   if (receipt.status === "reverted") throw new Error("Transaction reverted on-chain");
 }
 
@@ -619,6 +622,13 @@ export function useDepositCollateral() {
       try {
         const usdcAddr = ADDRESSES.usdc as Hex;
         const collateralAddr = ADDRESSES.collateral as Hex;
+
+        // Pre-check balance via read provider
+        const usdcRead = getUsdcContract(getReadProvider());
+        const balance = await usdcRead.balanceOf(address);
+        if (balance < amount) {
+          throw new Error(`Insufficient USDC balance: have ${balance}, need ${amount}`);
+        }
 
         // Approve USDC spend
         console.log("[collateral-deposit] approving", amount.toString());
