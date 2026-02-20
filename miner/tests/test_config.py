@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from unittest.mock import patch
+
 import pytest
 
 from djinn_miner.config import Config
@@ -22,7 +25,9 @@ class TestConfigDefaults:
 
     def test_default_bt_network(self) -> None:
         config = Config()
-        assert config.bt_network == "finney"
+        # Default is "finney" but may be overridden by .env file
+        expected = os.getenv("BT_NETWORK", "finney")
+        assert config.bt_network == expected
 
     def test_default_cache_ttl(self) -> None:
         config = Config()

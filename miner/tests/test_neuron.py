@@ -51,14 +51,14 @@ class TestSetupSuccess:
     def _make_mock_bt(self, hotkey: str = "5FakeHotkey", n: int = 256) -> MagicMock:
         mock_bt = MagicMock()
 
-        # Wallet
+        # Wallet (code calls bt.Wallet — capital W)
         wallet = MagicMock()
         wallet.hotkey.ss58_address = hotkey
-        mock_bt.wallet.return_value = wallet
+        mock_bt.Wallet.return_value = wallet
 
-        # Subtensor
+        # Subtensor (code calls bt.Subtensor — capital S)
         subtensor = MagicMock()
-        mock_bt.subtensor.return_value = subtensor
+        mock_bt.Subtensor.return_value = subtensor
 
         # Metagraph
         metagraph = MagicMock()
@@ -67,9 +67,9 @@ class TestSetupSuccess:
         metagraph.hotkeys[42] = hotkey
         subtensor.metagraph.return_value = metagraph
 
-        # Axon
+        # Axon (code calls bt.Axon — capital A)
         axon = MagicMock()
-        mock_bt.axon.return_value = axon
+        mock_bt.Axon.return_value = axon
 
         return mock_bt
 
@@ -86,7 +86,7 @@ class TestSetupSuccess:
     def test_setup_not_registered(self) -> None:
         mock_bt = self._make_mock_bt(hotkey="unknown-key")
         # hotkey not in metagraph.hotkeys
-        mock_bt.subtensor.return_value.metagraph.return_value.hotkeys = ["other"]
+        mock_bt.Subtensor.return_value.metagraph.return_value.hotkeys = ["other"]
         m = DjinnMiner()
         with patch("djinn_miner.bt.neuron.bt", mock_bt):
             assert m.setup() is False
@@ -97,7 +97,7 @@ class TestSetupSuccess:
         m = DjinnMiner(axon_port=7777, external_ip="10.0.0.1")
         with patch("djinn_miner.bt.neuron.bt", mock_bt):
             m.setup()
-        mock_bt.axon.assert_called_once()
+        mock_bt.Axon.assert_called_once()
         m.subtensor.serve_axon.assert_called_once()
 
 

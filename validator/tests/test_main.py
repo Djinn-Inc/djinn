@@ -92,7 +92,23 @@ class TestEpochLoop:
 
         mock_neuron.sync_metagraph = counting_sync
 
-        await epoch_loop(mock_neuron, mock_scorer, mock_share_store, mock_outcome_attestor)
+        # Provide ip/port so health checks actually attempt HTTP requests
+        mock_neuron.get_axon_info.side_effect = lambda uid: {
+            "hotkey": f"key-{uid}",
+            "ip": "127.0.0.1",
+            "port": 9999,
+        }
+
+        # Mock httpx.AsyncClient so the health check returns 200
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("djinn_validator.main.httpx.AsyncClient", return_value=mock_client):
+            await epoch_loop(mock_neuron, mock_scorer, mock_share_store, mock_outcome_attestor)
 
         # Miners should exist in scorer (created during health check)
         m1 = mock_scorer.get_or_create(1, "key-1")

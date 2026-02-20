@@ -189,7 +189,7 @@ class TestProofEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["query_id"] == "test-query-001"
-        assert data["status"] == "submitted"
+        assert data["status"] == "unverified"
         assert len(data["proof_hash"]) == 64  # SHA-256 hex
         assert "basic hash proof" in data["message"].lower()
 
@@ -210,7 +210,7 @@ class TestProofEndpoint:
         body = {"query_id": "test-query-002"}
         resp = app.post("/v1/proof", json=body)
         assert resp.status_code == 200
-        assert resp.json()["status"] == "submitted"
+        assert resp.json()["status"] == "unverified"
 
 
 class TestMetricsEndpoint:

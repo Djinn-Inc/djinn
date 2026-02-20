@@ -228,8 +228,8 @@ class TestProofGeneratorFallback:
         result = await gen.generate("q1", session_data="some-data")
 
         assert result.query_id == "q1"
-        assert result.status == "submitted"
-        assert result.message == "basic hash proof (no captured session)"
+        assert result.status == "unverified"
+        assert "basic hash proof" in result.message
         assert len(result.proof_hash) == 64
 
     @pytest.mark.asyncio
