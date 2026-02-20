@@ -95,7 +95,7 @@ from djinn_validator.core.outcomes import (
     parse_pick,
 )
 from djinn_validator.core.purchase import PurchaseOrchestrator, PurchaseStatus
-from djinn_validator.core.shares import ShareStore
+from djinn_validator.core.shares import ShareStore, SignalShareRecord
 from djinn_validator.utils.crypto import BN254_PRIME, Share
 
 _SIGNAL_ID_PATH_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
@@ -354,9 +354,10 @@ def create_app(
                 _last_cleanup[0] = _now
 
             # Check we hold a share for this signal
-            record = share_store.get(signal_id)
-            if record is None:
+            all_records = share_store.get_all(signal_id)
+            if not all_records:
                 raise HTTPException(status_code=404, detail="Signal not found on this validator")
+            record = all_records[0]
 
             # Initiate purchase
             purchase = purchase_orch.initiate(signal_id, req.buyer_address, req.sportsbook)
@@ -364,13 +365,27 @@ def create_app(
                 raise HTTPException(status_code=500, detail="Purchase initiation failed")
 
             # Run MPC availability check (multi-validator or single-validator fallback)
+            # The MPC checks if realIndex ∈ available_indices. The Shamir shares
+            # of the real index are stored in encrypted_index_share (as big-endian
+            # bytes), NOT in share_y (which holds the AES key share).
             available_set = set(req.available_indices)
+
+            def _index_share(rec: SignalShareRecord) -> Share:
+                """Extract the real-index Shamir share from a record."""
+                if rec.encrypted_index_share and len(rec.encrypted_index_share) > 0:
+                    return Share(x=rec.share.x, y=int.from_bytes(rec.encrypted_index_share, "big"))
+                # Legacy: no index share stored; fall back to share_y (will give wrong results)
+                return rec.share
+
+            local_index_share = _index_share(record)
+            all_local_index_shares = [_index_share(r) for r in all_records]
             try:
                 mpc_result = await asyncio.wait_for(
                     _orchestrator.check_availability(
                         signal_id=signal_id,
-                        local_share=record.share,
+                        local_share=local_index_share,
                         available_indices=available_set,
+                        local_shares=all_local_index_shares,
                     ),
                     timeout=mpc_availability_timeout,
                 )
@@ -723,6 +738,12 @@ def create_app(
                     message="No share held for this signal",
                 )
 
+            # Use the real-index share for MPC (not the AES key share)
+            if record.encrypted_index_share and len(record.encrypted_index_share) > 0:
+                index_share_y = int.from_bytes(record.encrypted_index_share, "big")
+            else:
+                index_share_y = record.share.y  # Legacy fallback
+
             try:
                 if req.authenticated and req.auth_triple_shares and req.alpha_share and req.auth_r_share:
                     # SPDZ authenticated mode — validate all field elements
@@ -730,12 +751,12 @@ def create_app(
                     r_y = _parse_field_hex(req.auth_r_share["y"], "auth_r_share.y")
                     r_mac = _parse_field_hex(req.auth_r_share["mac"], "auth_r_share.mac")
 
-                    # Use auth_secret_share if provided, otherwise create from local share
+                    # Use auth_secret_share if provided, otherwise create from local index share
                     if req.auth_secret_share:
                         s_y = _parse_field_hex(req.auth_secret_share["y"], "auth_secret_share.y")
                         s_mac = _parse_field_hex(req.auth_secret_share["mac"], "auth_secret_share.mac")
                     else:
-                        s_y = record.share.y
+                        s_y = index_share_y
                         s_mac = 0  # Will fail MAC check if actually used
 
                     auth_ta = []
@@ -789,7 +810,7 @@ def create_app(
 
                     state = DistributedParticipantState(
                         validator_x=record.share.x,
-                        secret_share_y=record.share.y,
+                        secret_share_y=index_share_y,
                         r_share_y=r_share,
                         available_indices=req.available_indices,
                         triple_a=triple_a,

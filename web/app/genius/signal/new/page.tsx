@@ -14,6 +14,8 @@ import {
   splitSecret,
   keyToBigInt,
   toHex,
+  deriveMasterSeedTyped,
+  deriveSignalKey,
 } from "@/lib/crypto";
 import { discoverValidatorClients } from "@/lib/api";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
@@ -281,12 +283,21 @@ export default function CreateSignal() {
             .join(""),
       );
 
-      // Generate a random AES key for this signal.
-      // Stored in localStorage for track record proofs; backed up on-chain
-      // via walletRecoveryBlob for cross-device recovery.
-      // (Wallet-derived keys via signMessage break Coinbase Smart Wallet.)
+      // Derive AES key from wallet via EIP-712 signTypedData.
+      // Unlike personal_sign, EIP-712 works on ERC-4337 smart wallets
+      // (Coinbase Smart Wallet, etc.). Same wallet always produces the
+      // same key, enabling cross-device recovery.
       if (!walletClient) throw new Error("Wallet not connected");
-      const aesKey = await generateAesKey();
+      let aesKey: Uint8Array;
+      try {
+        const masterSeed = await deriveMasterSeedTyped(
+          (params) => walletClient.signTypedData(params),
+        );
+        aesKey = await deriveSignalKey(masterSeed, signalId);
+      } catch (keyErr) {
+        console.warn("EIP-712 key derivation failed, using random key (cross-device recovery unavailable):", keyErr);
+        aesKey = generateAesKey();
+      }
 
       const pickPayload = JSON.stringify({
         realIndex: realIndex + 1,

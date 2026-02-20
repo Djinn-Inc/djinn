@@ -241,6 +241,39 @@ class ShareStore:
             released_to=released,
         )
 
+    def get_all(self, signal_id: str) -> list[SignalShareRecord]:
+        """Retrieve all share records for a signal (may be multiple if shares
+        are co-located in the same database, e.g. testnet single-machine setup)."""
+        rows = self._conn.execute(
+            "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
+            "encrypted_index_share, stored_at "
+            "FROM shares WHERE signal_id = ? ORDER BY share_x",
+            (signal_id,),
+        ).fetchall()
+        if not rows:
+            return []
+
+        released = {
+            r[0]
+            for r in self._conn.execute(
+                "SELECT buyer_address FROM releases WHERE signal_id = ?",
+                (signal_id,),
+            ).fetchall()
+        }
+
+        return [
+            SignalShareRecord(
+                signal_id=row[0],
+                genius_address=row[1],
+                share=Share(x=row[2], y=int(row[3])),
+                encrypted_key_share=row[4],
+                encrypted_index_share=row[5] or b"",
+                stored_at=row[6],
+                released_to=released,
+            )
+            for row in rows
+        ]
+
     def has(self, signal_id: str) -> bool:
         """Check if we hold a share for this signal."""
         row = self._conn.execute(

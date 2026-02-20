@@ -14,7 +14,8 @@
  * same message always yields the same signature and thus the same AES key.
  */
 
-import { encrypt, decrypt, toHex, fromHex } from "./crypto";
+import { encrypt, decrypt, toHex, fromHex, deriveMasterSeedTyped } from "./crypto";
+import type { SignTypedDataParams } from "./crypto";
 import { getKeyRecoveryContract, ADDRESSES } from "./contracts";
 import { getReadProvider } from "./hooks";
 import type { SavedSignalData } from "./hooks/useSettledSignals";
@@ -150,7 +151,7 @@ export async function storeRecoveryBlobOnChain(
 // ---- High-Level Orchestration ----
 
 export async function storeRecovery(
-  signMessageFn: (message: string) => Promise<string>,
+  signTypedDataFn: (params: SignTypedDataParams) => Promise<string>,
   walletClient: { writeContract: (args: any) => Promise<`0x${string}`> },
   signals: SavedSignalData[],
   waitForTxFn: (hash: `0x${string}`) => Promise<void>,
@@ -163,20 +164,18 @@ export async function storeRecovery(
     throw new Error("KeyRecovery contract not configured");
   }
 
-  const signature = await signMessageFn(RECOVERY_SIGN_MESSAGE);
-  const recoveryKey = await deriveRecoveryKey(signature);
-  const blob = await encryptRecoveryBlob(signals, recoveryKey, purchases);
+  const masterSeed = await deriveMasterSeedTyped(signTypedDataFn);
+  const blob = await encryptRecoveryBlob(signals, masterSeed, purchases);
   return storeRecoveryBlobOnChain(walletClient, blob, waitForTxFn);
 }
 
 export async function loadRecovery(
   userAddress: string,
-  signMessageFn: (message: string) => Promise<string>,
+  signTypedDataFn: (params: SignTypedDataParams) => Promise<string>,
 ): Promise<RecoveryResult | null> {
   const blob = await readRecoveryBlobFromChain(userAddress);
   if (!blob) return null;
 
-  const signature = await signMessageFn(RECOVERY_SIGN_MESSAGE);
-  const recoveryKey = await deriveRecoveryKey(signature);
-  return decryptRecoveryBlob(blob, recoveryKey);
+  const masterSeed = await deriveMasterSeedTyped(signTypedDataFn);
+  return decryptRecoveryBlob(blob, masterSeed);
 }

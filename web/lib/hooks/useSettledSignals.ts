@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getReadProvider } from "../hooks";
 import { getEscrowContract, getSignalCommitmentContract } from "../contracts";
 import { fetchGeniusSignals, type SubgraphSignal } from "../subgraph";
-import { deriveMasterSeed, deriveSignalKey, decrypt, keyToBigInt } from "../crypto";
+import { deriveMasterSeedTyped, deriveSignalKey, decrypt, keyToBigInt } from "../crypto";
+import type { SignTypedDataParams } from "../crypto";
 
 /** Private signal data saved to localStorage during signal creation. */
 export interface SavedSignalData {
@@ -83,17 +84,20 @@ export function saveSavedSignals(address: string, signals: SavedSignalData[]): v
 
 /**
  * Recover signal private data from on-chain encrypted blobs using wallet-derived keys.
- * For each signal the Genius owns, derives the AES key from the wallet signature,
+ * For each signal the Genius owns, derives the AES key via EIP-712 signTypedData,
  * reads the encrypted blob from SignalCommitment, and decrypts to recover realIndex + pick.
+ *
+ * Uses EIP-712 (signTypedData) instead of personal_sign because ERC-4337
+ * smart wallets (Coinbase Smart Wallet, etc.) don't reliably support personal_sign.
  */
 export async function recoverSignalsFromChain(
   geniusAddress: string,
-  signMessageFn: (message: string) => Promise<string>,
+  signTypedDataFn: (params: SignTypedDataParams) => Promise<string>,
   signalIds: string[],
 ): Promise<SavedSignalData[]> {
   if (signalIds.length === 0) return [];
 
-  const masterSeed = await deriveMasterSeed(signMessageFn);
+  const masterSeed = await deriveMasterSeedTyped(signTypedDataFn);
   const provider = getReadProvider();
   const signalCommitment = getSignalCommitmentContract(provider);
   const recovered: SavedSignalData[] = [];

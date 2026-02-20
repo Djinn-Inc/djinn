@@ -244,15 +244,37 @@ class MPCOrchestrator:
         signal_id: str,
         local_share: Share,
         available_indices: set[int],
+        local_shares: list[Share] | None = None,
     ) -> MPCResult:
         """Run the MPC availability check.
 
-        Attempts multi-validator secure MPC first.
-        Falls back to single-validator prototype if insufficient peers.
+        If enough shares are available locally (e.g. shared DB on testnet),
+        uses secure_check_availability directly. Otherwise attempts multi-
+        validator MPC, falling back to single-validator prototype.
         """
         from djinn_validator.api.metrics import MPC_DURATION, MPC_ERRORS, MPC_SESSIONS
 
         start = time.monotonic()
+
+        # If we have enough shares locally, use them directly for a secure check.
+        # This handles testnet setups where all shares are co-located in one DB.
+        all_local = local_shares or [local_share]
+        if len(all_local) >= self._threshold:
+            log.info(
+                "mpc_local_shares_mode",
+                signal_id=signal_id,
+                local_shares=len(all_local),
+                threshold=self._threshold,
+            )
+            MPC_SESSIONS.labels(mode="local_shares").inc()
+            result = secure_check_availability(
+                shares=all_local,
+                available_indices=available_indices,
+                threshold=self._threshold,
+            )
+            MPC_DURATION.labels(mode="local_shares").observe(time.monotonic() - start)
+            return result
+
         peers = self._get_peer_validators()
 
         if not peers:
@@ -267,34 +289,7 @@ class MPCOrchestrator:
             MPC_DURATION.labels(mode="single_validator").observe(time.monotonic() - start)
             return result
 
-        # Collect shares from peers
-        all_shares = [local_share]
-
-        # In production, we'd collect shares from peers.
-        # For the current phase, peers share their share_x coordinates
-        # and we use the coordinator to run the protocol with collected data.
-        # The full distributed protocol (each validator computes locally and
-        # exchanges d,e values) requires the networking round-trips implemented
-        # in the /v1/mpc/* endpoints.
-
-        # For now, if we have enough shares locally (e.g., test setup where
-        # one validator holds all shares), use secure_check_availability.
-        if len(all_shares) >= self._threshold:
-            log.info(
-                "mpc_secure_mode",
-                signal_id=signal_id,
-                participants=len(all_shares),
-            )
-            MPC_SESSIONS.labels(mode="distributed").inc()
-            result = secure_check_availability(
-                shares=all_shares,
-                available_indices=available_indices,
-                threshold=self._threshold,
-            )
-            MPC_DURATION.labels(mode="distributed").observe(time.monotonic() - start)
-            return result
-
-        # Not enough peers — try distributed protocol via HTTP
+        # Not enough local shares — try distributed protocol via HTTP
         MPC_SESSIONS.labels(mode="distributed").inc()
         result = await self._distributed_mpc(
             signal_id,

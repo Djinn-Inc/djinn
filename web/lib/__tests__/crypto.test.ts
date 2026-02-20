@@ -11,8 +11,12 @@ import {
   toHex,
   fromHex,
   deriveMasterSeed,
+  deriveMasterSeedTyped,
   deriveSignalKey,
   clearMasterSeedCache,
+  KEY_DERIVATION_DOMAIN,
+  KEY_DERIVATION_TYPES,
+  KEY_DERIVATION_MESSAGE,
 } from "../crypto";
 import type { ShamirShare } from "../crypto";
 
@@ -333,6 +337,53 @@ describe("deriveMasterSeed", () => {
       return fakeSignature;
     });
     expect(capturedMsg).toBe("djinn:signal-keys:v1");
+  });
+});
+
+describe("deriveMasterSeedTyped (EIP-712)", () => {
+  beforeEach(() => clearMasterSeedCache());
+  const fakeSignature = "0x" + "cc".repeat(65);
+
+  it("returns a 32-byte Uint8Array", async () => {
+    const seed = await deriveMasterSeedTyped(async () => fakeSignature);
+    expect(seed).toBeInstanceOf(Uint8Array);
+    expect(seed.length).toBe(32);
+  });
+
+  it("is deterministic — same signature produces same seed", async () => {
+    const seed1 = await deriveMasterSeedTyped(async () => fakeSignature);
+    const seed2 = await deriveMasterSeedTyped(async () => fakeSignature);
+    expect(seed1).toEqual(seed2);
+  });
+
+  it("different signatures produce different seeds", async () => {
+    const sigA = "0x" + "dd".repeat(65);
+    const sigB = "0x" + "ee".repeat(65);
+    const seedA = await deriveMasterSeedTyped(async () => sigA);
+    clearMasterSeedCache();
+    const seedB = await deriveMasterSeedTyped(async () => sigB);
+    expect(seedA).not.toEqual(seedB);
+  });
+
+  it("passes correct EIP-712 params to sign function", async () => {
+    let capturedParams: any = null;
+    await deriveMasterSeedTyped(async (params) => {
+      capturedParams = params;
+      return fakeSignature;
+    });
+    expect(capturedParams.domain).toEqual(KEY_DERIVATION_DOMAIN);
+    expect(capturedParams.types).toEqual(KEY_DERIVATION_TYPES);
+    expect(capturedParams.primaryType).toBe("KeyDerivation");
+    expect(capturedParams.message).toEqual(KEY_DERIVATION_MESSAGE);
+  });
+
+  it("produces same seed as deriveMasterSeed when given same raw signature", async () => {
+    const sig = "0x" + "ff".repeat(65);
+    const seedTyped = await deriveMasterSeedTyped(async () => sig);
+    clearMasterSeedCache();
+    const seedLegacy = await deriveMasterSeed(async () => sig);
+    // Both hash the same signature bytes, so seeds should match
+    expect(seedTyped).toEqual(seedLegacy);
   });
 });
 

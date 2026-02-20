@@ -95,7 +95,7 @@ export default function TrackRecordPage() {
         const ids = subSignals.map((s) => s.id);
         const recovered = await recoverSignalsFromChain(
           address,
-          (msg) => walletClient.signMessage({ message: msg }),
+          (params) => walletClient.signTypedData(params),
           ids,
         );
         if (recovered.length > 0) {

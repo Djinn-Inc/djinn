@@ -403,12 +403,12 @@ export default function PurchaseSignal() {
                   import("@/lib/hooks/useSettledSignals"),
                 ]).then(([{ waitForTransactionReceipt }, { wagmiConfig }, { storeRecovery }, { getPurchasedSignals }, { getSavedSignals }]) => {
                   storeRecovery(
-                    (msg) => walletClient.signMessage({ message: msg }),
+                    (params: any) => walletClient.signTypedData(params),
                     walletClient,
                     getSavedSignals(buyerAddress),
                     async (h) => { await waitForTransactionReceipt(wagmiConfig, { hash: h }); },
                     getPurchasedSignals(buyerAddress),
-                  ).catch((err) => {
+                  ).catch((err: any) => {
                     console.warn("[recovery] Failed to store idiot recovery blob:", err);
                   });
                 });
@@ -563,8 +563,8 @@ export default function PurchaseSignal() {
                   {formatBps(signal.slaMultiplierBps)}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Genius has {formatBps(signal.slaMultiplierBps)} of your notional locked as collateral.
-                  If the signal is correct, the Genius earns your fee.
+                  Genius has {formatBps(signal.slaMultiplierBps)} of your notional locked as collateral,
+                  settled based on audited performance across a cycle of signals.
                 </p>
               </div>
               <div>
@@ -799,7 +799,7 @@ export default function PurchaseSignal() {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-200">
-                      If the pick is wrong, you receive a share of the genius&apos;s locked collateral. If correct, the genius keeps their collateral and earns your fee.
+                      Collateral is settled based on the Genius&apos;s audited quality score across a cycle of signals, not on any single pick.
                       {" "}Any Djinn Credits in your account are applied automatically to reduce the USDC portion of the fee.
                     </p>
                   </div>

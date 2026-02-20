@@ -260,7 +260,7 @@ export function bigIntToKey(val: bigint): Uint8Array {
 
 const SIGNAL_KEY_SIGN_MESSAGE = "djinn:signal-keys:v1";
 
-// Session-level cache so wallet signMessage popup only fires once
+// Session-level cache so wallet signMessage/signTypedData popup only fires once
 let _cachedMasterSeed: Uint8Array | null = null;
 
 /** Clear the cached master seed (for tests or wallet disconnect). */
@@ -278,6 +278,58 @@ export async function deriveMasterSeed(
 ): Promise<Uint8Array> {
   if (_cachedMasterSeed) return _cachedMasterSeed;
   const signature = await signMessageFn(SIGNAL_KEY_SIGN_MESSAGE);
+  const sigBytes = fromHex(signature.replace(/^0x/, ""));
+  const hashBuffer = await crypto.subtle.digest("SHA-256", toArrayBuffer(sigBytes));
+  _cachedMasterSeed = new Uint8Array(hashBuffer);
+  return _cachedMasterSeed;
+}
+
+// ---------------------------------------------------------------------------
+// EIP-712 (signTypedData) key derivation — works with ERC-4337 smart wallets
+// ---------------------------------------------------------------------------
+
+/** EIP-712 domain for key derivation (no chainId — works across chains). */
+export const KEY_DERIVATION_DOMAIN = {
+  name: "Djinn",
+  version: "1",
+} as const;
+
+/** EIP-712 types for key derivation. */
+export const KEY_DERIVATION_TYPES = {
+  KeyDerivation: [{ name: "purpose", type: "string" }],
+} as const;
+
+/** Fixed EIP-712 message — same message = same signature = same key. */
+export const KEY_DERIVATION_MESSAGE = {
+  purpose: "signal-keys-v1",
+} as const;
+
+export interface SignTypedDataParams {
+  domain: typeof KEY_DERIVATION_DOMAIN;
+  types: typeof KEY_DERIVATION_TYPES;
+  primaryType: "KeyDerivation";
+  message: typeof KEY_DERIVATION_MESSAGE;
+}
+
+/**
+ * Derive a master seed from an EIP-712 signTypedData signature.
+ *
+ * Unlike personal_sign (signMessage), EIP-712 signTypedData is part of the
+ * ERC-4337 standard and works reliably on smart wallets (Coinbase Smart Wallet, etc.).
+ *
+ * Same wallet + same typed data = same signature (RFC 6979) = same master seed.
+ * Session-cached to avoid repeated wallet popups.
+ */
+export async function deriveMasterSeedTyped(
+  signTypedDataFn: (params: SignTypedDataParams) => Promise<string>,
+): Promise<Uint8Array> {
+  if (_cachedMasterSeed) return _cachedMasterSeed;
+  const signature = await signTypedDataFn({
+    domain: KEY_DERIVATION_DOMAIN,
+    types: KEY_DERIVATION_TYPES,
+    primaryType: "KeyDerivation",
+    message: KEY_DERIVATION_MESSAGE,
+  });
   const sigBytes = fromHex(signature.replace(/^0x/, ""));
   const hashBuffer = await crypto.subtle.digest("SHA-256", toArrayBuffer(sigBytes));
   _cachedMasterSeed = new Uint8Array(hashBuffer);
