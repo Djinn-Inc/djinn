@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import { useAccount, useWalletClient } from "wagmi";
 import { useCommitSignal, useCollateral, useDepositCollateral, useWalletUsdcBalance } from "@/lib/hooks";
 import { getSavedSignals, saveSavedSignals } from "@/lib/hooks/useSettledSignals";
-import { storeRecovery } from "@/lib/recovery";
 import { ADDRESSES } from "@/lib/contracts";
-import { getPurchasedSignals } from "@/lib/preferences";
 import SecretModal from "@/components/SecretModal";
 import PrivateWorkspace from "@/components/PrivateWorkspace";
 import {
-  generateAesKey,
+  deriveMasterSeed,
+  deriveSignalKey,
   encrypt,
   splitSecret,
   keyToBigInt,
@@ -274,7 +273,22 @@ export default function CreateSignal() {
 
       setStep("committing");
 
-      const aesKey = generateAesKey();
+      // Generate signalId first so we can derive the AES key from it
+      const signalId = BigInt(
+        "0x" +
+          Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(""),
+      );
+
+      // Derive AES key deterministically from wallet signature + signalId.
+      // Same wallet always produces the same key — recoverable on any device.
+      if (!walletClient) throw new Error("Wallet not connected");
+      const masterSeed = await deriveMasterSeed(
+        (msg) => walletClient.signMessage({ message: msg }),
+      );
+      const aesKey = await deriveSignalKey(masterSeed, signalId);
+
       const pickPayload = JSON.stringify({
         realIndex: realIndex + 1,
         pick: formatLine(realPick),
@@ -294,13 +308,6 @@ export default function CreateSignal() {
         Array.from(new Uint8Array(hashBuffer))
           .map((b) => b.toString(16).padStart(2, "0"))
           .join("");
-
-      const signalId = BigInt(
-        "0x" +
-          Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(""),
-      );
 
       const expiresInNum = parseFloat(expiresIn);
       const maxPriceNum = parseFloat(maxPriceBps);
@@ -407,21 +414,6 @@ export default function CreateSignal() {
       const existing = getSavedSignals(geniusAddress);
       const updated = [...existing, newEntry];
       saveSavedSignals(geniusAddress, updated);
-
-      // Store recovery blob on-chain (non-blocking — localStorage is primary)
-      if (walletClient && ADDRESSES.keyRecovery !== "0x0000000000000000000000000000000000000000") {
-        const { waitForTransactionReceipt } = await import("@wagmi/core");
-        const { wagmiConfig } = await import("@/app/providers");
-        storeRecovery(
-          (msg) => walletClient.signMessage({ message: msg }),
-          walletClient,
-          updated,
-          async (h) => { await waitForTransactionReceipt(wagmiConfig, { hash: h }); },
-          getPurchasedSignals(geniusAddress),
-        ).catch((err) => {
-          console.warn("[recovery] Failed to store recovery blob on-chain:", err);
-        });
-      }
 
       setStep("success");
     } catch (err) {

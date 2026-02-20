@@ -254,5 +254,56 @@ export function bigIntToKey(val: bigint): Uint8Array {
   return key;
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic wallet-derived signal keys
+// ---------------------------------------------------------------------------
+
+const SIGNAL_KEY_SIGN_MESSAGE = "djinn:signal-keys:v1";
+
+/**
+ * Derive a master seed from the Genius's wallet signature.
+ * Signs a fixed message — same wallet always produces the same seed (RFC 6979).
+ * Call once per session; derive per-signal keys from the result.
+ */
+export async function deriveMasterSeed(
+  signMessageFn: (message: string) => Promise<string>,
+): Promise<Uint8Array> {
+  const signature = await signMessageFn(SIGNAL_KEY_SIGN_MESSAGE);
+  const sigBytes = fromHex(signature.replace(/^0x/, ""));
+  const hashBuffer = await crypto.subtle.digest("SHA-256", toArrayBuffer(sigBytes));
+  return new Uint8Array(hashBuffer);
+}
+
+/**
+ * Derive a per-signal AES key from the master seed.
+ * Pure function — no wallet interaction needed.
+ * Returns a 32-byte key in the BN254 field (safe for Shamir + ZK circuits).
+ */
+export async function deriveSignalKey(
+  masterSeed: Uint8Array,
+  signalId: bigint,
+): Promise<Uint8Array> {
+  // Concatenate masterSeed (32 bytes) + signalId (32 bytes big-endian)
+  const idBytes = new Uint8Array(32);
+  let v = signalId;
+  for (let i = 31; i >= 0; i--) {
+    idBytes[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  const combined = new Uint8Array(64);
+  combined.set(masterSeed, 0);
+  combined.set(idBytes, 32);
+
+  const hashBuffer = await crypto.subtle.digest("SHA-256", toArrayBuffer(combined));
+  let val = 0n;
+  for (const b of new Uint8Array(hashBuffer)) {
+    val = (val << 8n) | BigInt(b);
+  }
+  // Reduce into BN254 field (mod is fine here — SHA-256 output is uniformly
+  // distributed and field is ~254 bits, so bias is negligible at < 2^{-2})
+  val = val % BN254_PRIME;
+  return bigIntToKey(val);
+}
+
 // Hex helpers exported for use in API calls
 export { toHex, fromHex };

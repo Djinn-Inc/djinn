@@ -10,6 +10,8 @@ import {
   bigIntToKey,
   toHex,
   fromHex,
+  deriveMasterSeed,
+  deriveSignalKey,
 } from "../crypto";
 import type { ShamirShare } from "../crypto";
 
@@ -291,5 +293,141 @@ describe("Full Shamir + AES flow", () => {
     // Decrypt
     const decrypted = await decrypt(ciphertext, iv, recoveredKey);
     expect(JSON.parse(decrypted)).toEqual({ realIndex: 5, pick: "Celtics +4.5" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deterministic wallet-derived signal keys
+// ---------------------------------------------------------------------------
+
+describe("deriveMasterSeed", () => {
+  const fakeSignature = "0x" + "ab".repeat(65); // 65-byte eth signature
+
+  it("returns a 32-byte Uint8Array", async () => {
+    const seed = await deriveMasterSeed(async () => fakeSignature);
+    expect(seed).toBeInstanceOf(Uint8Array);
+    expect(seed.length).toBe(32);
+  });
+
+  it("is deterministic — same signature produces same seed", async () => {
+    const seed1 = await deriveMasterSeed(async () => fakeSignature);
+    const seed2 = await deriveMasterSeed(async () => fakeSignature);
+    expect(seed1).toEqual(seed2);
+  });
+
+  it("different signatures produce different seeds", async () => {
+    const sigA = "0x" + "aa".repeat(65);
+    const sigB = "0x" + "bb".repeat(65);
+    const seedA = await deriveMasterSeed(async () => sigA);
+    const seedB = await deriveMasterSeed(async () => sigB);
+    expect(seedA).not.toEqual(seedB);
+  });
+
+  it("calls signMessage with the correct fixed message", async () => {
+    let capturedMsg = "";
+    await deriveMasterSeed(async (msg) => {
+      capturedMsg = msg;
+      return fakeSignature;
+    });
+    expect(capturedMsg).toBe("djinn:signal-keys:v1");
+  });
+});
+
+describe("deriveSignalKey", () => {
+  // Use a fixed seed for deterministic tests
+  const fixedSeed = new Uint8Array(32);
+  fixedSeed[0] = 42;
+  fixedSeed[31] = 99;
+
+  it("returns a 32-byte key", async () => {
+    const key = await deriveSignalKey(fixedSeed, 1n);
+    expect(key).toBeInstanceOf(Uint8Array);
+    expect(key.length).toBe(32);
+  });
+
+  it("is deterministic — same seed + signalId produces same key", async () => {
+    const key1 = await deriveSignalKey(fixedSeed, 123n);
+    const key2 = await deriveSignalKey(fixedSeed, 123n);
+    expect(key1).toEqual(key2);
+  });
+
+  it("different signalIds produce different keys", async () => {
+    const keyA = await deriveSignalKey(fixedSeed, 1n);
+    const keyB = await deriveSignalKey(fixedSeed, 2n);
+    expect(keyA).not.toEqual(keyB);
+  });
+
+  it("different seeds produce different keys for same signalId", async () => {
+    const seedB = new Uint8Array(32);
+    seedB[0] = 99;
+    const keyA = await deriveSignalKey(fixedSeed, 1n);
+    const keyB = await deriveSignalKey(seedB, 1n);
+    expect(keyA).not.toEqual(keyB);
+  });
+
+  it("derived key is always within BN254 field", async () => {
+    for (let i = 0; i < 20; i++) {
+      const key = await deriveSignalKey(fixedSeed, BigInt(i));
+      const val = keyToBigInt(key);
+      expect(val).toBeGreaterThanOrEqual(0n);
+      expect(val).toBeLessThan(BN254_PRIME);
+    }
+  });
+
+  it("works with large signalIds", async () => {
+    const largeId = 2n ** 200n + 12345n;
+    const key = await deriveSignalKey(fixedSeed, largeId);
+    expect(key.length).toBe(32);
+    const val = keyToBigInt(key);
+    expect(val).toBeLessThan(BN254_PRIME);
+  });
+});
+
+describe("Derived key encrypt/decrypt roundtrip", () => {
+  it("encrypts with derived key, decrypts with same derived key", async () => {
+    const fakeSignature = "0x" + "cd".repeat(65);
+    const seed = await deriveMasterSeed(async () => fakeSignature);
+    const signalId = 42n;
+    const key = await deriveSignalKey(seed, signalId);
+
+    const payload = JSON.stringify({ realIndex: 3, pick: "Lakers -3.5 (-110)" });
+    const { ciphertext, iv } = await encrypt(payload, key);
+
+    // Re-derive the same key and decrypt
+    const seed2 = await deriveMasterSeed(async () => fakeSignature);
+    const key2 = await deriveSignalKey(seed2, signalId);
+    const decrypted = await decrypt(ciphertext, iv, key2);
+    expect(JSON.parse(decrypted)).toEqual({ realIndex: 3, pick: "Lakers -3.5 (-110)" });
+  });
+
+  it("different signalId cannot decrypt", async () => {
+    const fakeSignature = "0x" + "cd".repeat(65);
+    const seed = await deriveMasterSeed(async () => fakeSignature);
+    const key1 = await deriveSignalKey(seed, 1n);
+    const key2 = await deriveSignalKey(seed, 2n);
+
+    const { ciphertext, iv } = await encrypt("secret data", key1);
+    await expect(decrypt(ciphertext, iv, key2)).rejects.toThrow("Decryption failed");
+  });
+
+  it("derived key works with Shamir split/reconstruct", async () => {
+    const fakeSignature = "0x" + "ef".repeat(65);
+    const seed = await deriveMasterSeed(async () => fakeSignature);
+    const key = await deriveSignalKey(seed, 100n);
+
+    // Encrypt
+    const { ciphertext, iv } = await encrypt("test payload", key);
+
+    // Split key via Shamir
+    const keyInt = keyToBigInt(key);
+    const shares = splitSecret(keyInt, 10, 7);
+
+    // Reconstruct from 7 shares
+    const recovered = reconstructSecret(shares.slice(1, 8));
+    const recoveredKey = bigIntToKey(recovered);
+
+    // Decrypt with reconstructed key
+    const decrypted = await decrypt(ciphertext, iv, recoveredKey);
+    expect(decrypted).toBe("test payload");
   });
 });

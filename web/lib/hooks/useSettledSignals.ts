@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getReadProvider } from "../hooks";
-import { getEscrowContract } from "../contracts";
+import { getEscrowContract, getSignalCommitmentContract } from "../contracts";
 import { fetchGeniusSignals, type SubgraphSignal } from "../subgraph";
+import { deriveMasterSeed, deriveSignalKey, decrypt, keyToBigInt } from "../crypto";
 
 /** Private signal data saved to localStorage during signal creation. */
 export interface SavedSignalData {
@@ -78,6 +79,65 @@ export function saveSavedSignals(address: string, signals: SavedSignalData[]): v
   } catch {
     console.warn("Failed to save signal data to localStorage");
   }
+}
+
+/**
+ * Recover signal private data from on-chain encrypted blobs using wallet-derived keys.
+ * For each signal the Genius owns, derives the AES key from the wallet signature,
+ * reads the encrypted blob from SignalCommitment, and decrypts to recover realIndex + pick.
+ */
+export async function recoverSignalsFromChain(
+  geniusAddress: string,
+  signMessageFn: (message: string) => Promise<string>,
+  signalIds: string[],
+): Promise<SavedSignalData[]> {
+  if (signalIds.length === 0) return [];
+
+  const masterSeed = await deriveMasterSeed(signMessageFn);
+  const provider = getReadProvider();
+  const signalCommitment = getSignalCommitmentContract(provider);
+  const recovered: SavedSignalData[] = [];
+
+  for (const id of signalIds) {
+    try {
+      const signal = await signalCommitment.getSignal(BigInt(id));
+      const blobBytes: string = signal.encryptedBlob;
+      if (!blobBytes || blobBytes === "0x" || blobBytes.length <= 2) continue;
+
+      // Decode the blob from bytes to string
+      const blobStr = new TextDecoder().decode(
+        Uint8Array.from(
+          blobBytes.replace(/^0x/, "").match(/.{2}/g)!.map((b: string) => parseInt(b, 16)),
+        ),
+      );
+
+      const colonIdx = blobStr.indexOf(":");
+      if (colonIdx < 0) continue;
+      const iv = blobStr.slice(0, colonIdx);
+      const ciphertext = blobStr.slice(colonIdx + 1);
+
+      const aesKey = await deriveSignalKey(masterSeed, BigInt(id));
+      const json = await decrypt(ciphertext, iv, aesKey);
+      const payload = JSON.parse(json);
+
+      recovered.push({
+        signalId: id,
+        preimage: keyToBigInt(aesKey).toString(),
+        realIndex: payload.realIndex ?? 1,
+        sport: signal.sport ?? "",
+        pick: payload.pick ?? "",
+        minOdds: payload.minOdds ?? null,
+        minOddsAmerican: payload.minOddsAmerican ?? null,
+        slaMultiplierBps: Number(signal.slaMultiplierBps ?? 0),
+        createdAt: Number(signal.createdAt ?? 0),
+      });
+    } catch {
+      // Decryption failed — signal was created with a random key (legacy) or different wallet
+      continue;
+    }
+  }
+
+  return recovered;
 }
 
 /**
