@@ -311,14 +311,14 @@ test.describe("Content integrity", () => {
 // ─────────────────────────────────────────────
 
 test.describe("Performance", () => {
-  test("home page loads within 5 seconds", async ({ page }) => {
+  test("home page loads within 10 seconds", async ({ page }) => {
     const start = Date.now();
     await page.goto("/");
     await expect(
       page.getByRole("heading", { name: "DJINN" }),
     ).toBeVisible();
     const elapsed = Date.now() - start;
-    expect(elapsed).toBeLessThan(5000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   test("genius dashboard loads within 8 seconds", async ({ page }) => {

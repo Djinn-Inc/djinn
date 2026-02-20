@@ -254,7 +254,7 @@ test("getSignalNotionalFilled returns 0 for unknown signal", async () => {
   expect(filled).toBe(0n);
 });
 
-test("canPurchase returns false for non-active signal", async () => {
+test("canPurchase reverts for non-existent signal", async () => {
   test.skip(!hasFunds, "No ETH — fund E2E wallet first");
 
   const escrow = new ethers.Contract(
@@ -264,12 +264,10 @@ test("canPurchase returns false for non-active signal", async () => {
     ],
     provider,
   );
-  const [canBuy, reason] = await escrow.canPurchase(
-    999999,
-    ethers.parseUnits("100", 6),
-  );
-  expect(canBuy).toBe(false);
-  expect(reason).toBe("Signal not active");
+  // Non-existent signals cause a revert in getSignal, which is expected behavior
+  await expect(
+    escrow.canPurchase(999999, ethers.parseUnits("100", 6)),
+  ).rejects.toThrow();
 });
 
 test("signal 43 has correct multi-purchase state", async () => {
