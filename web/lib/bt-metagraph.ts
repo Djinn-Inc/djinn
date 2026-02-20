@@ -239,13 +239,32 @@ export async function discoverValidatorUrls(): Promise<string[]> {
 
 /**
  * Discover a miner URL from the metagraph.
- * Picks the first miner with a public IP.
+ * First tries non-validator nodes; if none found, probes all nodes' /health
+ * for `odds_api_connected` to identify miners (on testnet, all nodes may
+ * have validatorPermit=true).
  */
 export async function discoverMinerUrl(): Promise<string | null> {
   const { nodes } = await discoverMetagraph();
-  const miners = nodes
-    .filter((n) => !n.isValidator && n.port > 0 && isPublicIp(n.ip));
+  const publicNodes = nodes.filter((n) => n.port > 0 && isPublicIp(n.ip));
 
-  if (miners.length === 0) return null;
-  return `http://${miners[0].ip}:${miners[0].port}`;
+  // Prefer nodes without validator permit (classic miners)
+  const miners = publicNodes.filter((n) => !n.isValidator);
+  if (miners.length > 0) return `http://${miners[0].ip}:${miners[0].port}`;
+
+  // Fallback: probe all public nodes for miner health signature
+  for (const n of publicNodes) {
+    try {
+      const url = `http://${n.ip}:${n.port}`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const resp = await fetch(`${url}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const data = await resp.json();
+      if (data.odds_api_connected !== undefined) return url;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
