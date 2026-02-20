@@ -227,6 +227,9 @@ def _determine_spread(
     if not is_home and not is_away:
         log.warning("team_not_found", pick_team=pick.team, home=home_team, away=away_team)
         return Outcome.VOID
+    if is_home and is_away:
+        log.warning("ambiguous_team_match", pick_team=pick.team, home=home_team, away=away_team)
+        return Outcome.VOID
 
     if is_home:
         adjusted = home + pick.line
@@ -272,6 +275,9 @@ def _determine_h2h(
 
     if not is_home and not is_away:
         log.warning("team_not_found", pick_team=pick.team, home=home_team, away=away_team)
+        return Outcome.VOID
+    if is_home and is_away:
+        log.warning("ambiguous_team_match", pick_team=pick.team, home=home_team, away=away_team)
         return Outcome.VOID
 
     if is_home:

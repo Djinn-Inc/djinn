@@ -13,6 +13,7 @@ Without it, only uptime (health checks) is scored.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import time
 
@@ -20,6 +21,9 @@ import httpx
 import structlog
 
 from djinn_validator.core.scoring import MinerScorer
+
+# Max concurrent miner challenges to avoid overwhelming the network
+_MAX_CONCURRENT_CHALLENGES = 16
 
 log = structlog.get_logger()
 
@@ -183,84 +187,58 @@ async def challenge_miners(
             ]
         }
 
-        challenged = 0
-        for axon in miner_axons:
+        sem = asyncio.Semaphore(_MAX_CONCURRENT_CHALLENGES)
+
+        async def _challenge_one(axon: dict) -> bool:
             uid = axon["uid"]
             hotkey = axon["hotkey"]
             ip = axon.get("ip", "")
             port = axon.get("port", 0)
 
             if not ip or not port:
-                continue
+                return False
 
             metrics = scorer.get_or_create(uid, hotkey)
             url = f"http://{ip}:{port}/v1/check"
 
-            start = time.perf_counter()
-            try:
-                resp = await client.post(url, json=check_payload, timeout=10.0)
-                latency = time.perf_counter() - start
+            async with sem:
+                start = time.perf_counter()
+                try:
+                    resp = await client.post(url, json=check_payload, timeout=10.0)
+                    latency = time.perf_counter() - start
 
-                if resp.status_code != 200:
-                    metrics.record_query(
-                        correct=False,
-                        latency=latency,
-                        proof_submitted=False,
+                    if resp.status_code != 200:
+                        metrics.record_query(correct=False, latency=latency, proof_submitted=False)
+                        log.debug("challenge_miner_error", uid=uid, status=resp.status_code, latency_s=round(latency, 3))
+                        return True
+
+                    data = resp.json()
+                    miner_available = set(data.get("available_indices", []))
+
+                    correct_count = sum(
+                        1 for idx, expected in ground_truth.items()
+                        if (idx in miner_available) == expected
                     )
-                    log.debug(
-                        "challenge_miner_error",
-                        uid=uid,
-                        status=resp.status_code,
-                        latency_s=round(latency, 3),
+                    total_count = len(ground_truth)
+                    accuracy = correct_count / total_count if total_count > 0 else 0.0
+                    is_correct = accuracy >= 0.7
+
+                    metrics.record_query(correct=is_correct, latency=latency, proof_submitted=False)
+                    log.info(
+                        "challenge_miner_scored", uid=uid,
+                        accuracy=round(accuracy, 2), correct=correct_count,
+                        total=total_count, latency_s=round(latency, 3),
                     )
-                    challenged += 1
-                    continue
+                    return True
 
-                data = resp.json()
-                miner_available = set(data.get("available_indices", []))
+                except httpx.HTTPError as e:
+                    latency = time.perf_counter() - start
+                    metrics.record_query(correct=False, latency=latency, proof_submitted=False)
+                    log.debug("challenge_miner_unreachable", uid=uid, err=str(e), latency_s=round(latency, 3))
+                    return True
 
-                # Score: count correct answers
-                correct_count = 0
-                total_count = len(ground_truth)
-                for idx, expected in ground_truth.items():
-                    miner_says_available = idx in miner_available
-                    if miner_says_available == expected:
-                        correct_count += 1
-
-                accuracy = correct_count / total_count if total_count > 0 else 0.0
-                # Consider "correct" if accuracy >= 70%
-                is_correct = accuracy >= 0.7
-
-                metrics.record_query(
-                    correct=is_correct,
-                    latency=latency,
-                    proof_submitted=False,  # Phase 2 proof not yet implemented
-                )
-
-                log.info(
-                    "challenge_miner_scored",
-                    uid=uid,
-                    accuracy=round(accuracy, 2),
-                    correct=correct_count,
-                    total=total_count,
-                    latency_s=round(latency, 3),
-                )
-                challenged += 1
-
-            except httpx.HTTPError as e:
-                latency = time.perf_counter() - start
-                metrics.record_query(
-                    correct=False,
-                    latency=latency,
-                    proof_submitted=False,
-                )
-                log.debug(
-                    "challenge_miner_unreachable",
-                    uid=uid,
-                    err=str(e),
-                    latency_s=round(latency, 3),
-                )
-                challenged += 1
+        results = await asyncio.gather(*[_challenge_one(axon) for axon in miner_axons])
+        challenged = sum(1 for r in results if r)
 
     if challenged:
         log.info("challenge_round_complete", sport=sport, miners_challenged=challenged)
@@ -289,80 +267,77 @@ async def challenge_miners_attestation(
     Returns the number of miners challenged.
     """
     url = random.choice(_ATTESTATION_CHALLENGE_URLS)
-    challenged = 0
+
+    # Attestation challenges run concurrently but with lower concurrency
+    # since each takes 30-90s and involves CPU-intensive TLSNotary work
+    sem = asyncio.Semaphore(4)
 
     async with httpx.AsyncClient() as client:
-        for axon in miner_axons:
+
+        async def _challenge_one(axon: dict) -> bool:
             uid = axon["uid"]
             hotkey = axon["hotkey"]
             ip = axon.get("ip", "")
             port = axon.get("port", 0)
 
             if not ip or not port:
-                continue
+                return False
 
             metrics = scorer.get_or_create(uid, hotkey)
             miner_url = f"http://{ip}:{port}/v1/attest"
             request_id = f"challenge-{uid}-{int(time.time())}"
 
-            start = time.perf_counter()
-            try:
-                resp = await client.post(
-                    miner_url,
-                    json={"url": url, "request_id": request_id},
-                    timeout=120.0,
-                )
-                latency = time.perf_counter() - start
-
-                if resp.status_code != 200:
-                    metrics.record_attestation(latency=latency, proof_valid=False)
-                    log.debug(
-                        "attest_challenge_error",
-                        uid=uid,
-                        status=resp.status_code,
+            async with sem:
+                start = time.perf_counter()
+                try:
+                    resp = await client.post(
+                        miner_url,
+                        json={"url": url, "request_id": request_id},
+                        timeout=120.0,
                     )
-                    challenged += 1
-                    continue
+                    latency = time.perf_counter() - start
 
-                data = resp.json()
-                proof_valid = data.get("success", False) and bool(data.get("proof_hex"))
+                    if resp.status_code != 200:
+                        metrics.record_attestation(latency=latency, proof_valid=False)
+                        log.debug("attest_challenge_error", uid=uid, status=resp.status_code)
+                        return True
 
-                # If the miner produced a proof, try to verify it
-                if proof_valid:
                     try:
-                        from djinn_validator.core import tlsn as tlsn_verifier
-                        from urllib.parse import urlparse
-                        import asyncio
+                        data = resp.json()
+                    except Exception:
+                        metrics.record_attestation(latency=latency, proof_valid=False)
+                        return True
 
-                        proof_bytes = bytes.fromhex(data["proof_hex"])
-                        expected_server = urlparse(url).hostname
-                        verify_result = await asyncio.wait_for(
-                            tlsn_verifier.verify_proof(proof_bytes, expected_server=expected_server),
-                            timeout=30.0,
-                        )
-                        proof_valid = verify_result.verified
-                    except Exception as e:
-                        log.debug("attest_challenge_verify_error", uid=uid, err=str(e))
-                        proof_valid = False
+                    proof_valid = data.get("success", False) and bool(data.get("proof_hex"))
 
-                metrics.record_attestation(latency=latency, proof_valid=proof_valid)
-                log.info(
-                    "attest_challenge_scored",
-                    uid=uid,
-                    proof_valid=proof_valid,
-                    latency_s=round(latency, 3),
-                )
-                challenged += 1
+                    if proof_valid:
+                        try:
+                            from djinn_validator.core import tlsn as tlsn_verifier
+                            from urllib.parse import urlparse
 
-            except httpx.HTTPError as e:
-                latency = time.perf_counter() - start
-                metrics.record_attestation(latency=latency, proof_valid=False)
-                log.debug(
-                    "attest_challenge_unreachable",
-                    uid=uid,
-                    err=str(e),
-                )
-                challenged += 1
+                            proof_bytes = bytes.fromhex(data["proof_hex"])
+                            expected_server = urlparse(url).hostname
+                            verify_result = await asyncio.wait_for(
+                                tlsn_verifier.verify_proof(proof_bytes, expected_server=expected_server),
+                                timeout=30.0,
+                            )
+                            proof_valid = verify_result.verified
+                        except Exception as e:
+                            log.debug("attest_challenge_verify_error", uid=uid, err=str(e))
+                            proof_valid = False
+
+                    metrics.record_attestation(latency=latency, proof_valid=proof_valid)
+                    log.info("attest_challenge_scored", uid=uid, proof_valid=proof_valid, latency_s=round(latency, 3))
+                    return True
+
+                except httpx.HTTPError as e:
+                    latency = time.perf_counter() - start
+                    metrics.record_attestation(latency=latency, proof_valid=False)
+                    log.debug("attest_challenge_unreachable", uid=uid, err=str(e))
+                    return True
+
+        results = await asyncio.gather(*[_challenge_one(axon) for axon in miner_axons])
+        challenged = sum(1 for r in results if r)
 
     if challenged:
         log.info("attest_challenge_round_complete", url=url, miners_challenged=challenged)
