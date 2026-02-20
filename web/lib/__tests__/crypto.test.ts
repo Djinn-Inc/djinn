@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   BN254_PRIME,
   splitSecret,
@@ -12,6 +12,7 @@ import {
   fromHex,
   deriveMasterSeed,
   deriveSignalKey,
+  clearMasterSeedCache,
 } from "../crypto";
 import type { ShamirShare } from "../crypto";
 
@@ -301,6 +302,7 @@ describe("Full Shamir + AES flow", () => {
 // ---------------------------------------------------------------------------
 
 describe("deriveMasterSeed", () => {
+  beforeEach(() => clearMasterSeedCache());
   const fakeSignature = "0x" + "ab".repeat(65); // 65-byte eth signature
 
   it("returns a 32-byte Uint8Array", async () => {
@@ -319,6 +321,7 @@ describe("deriveMasterSeed", () => {
     const sigA = "0x" + "aa".repeat(65);
     const sigB = "0x" + "bb".repeat(65);
     const seedA = await deriveMasterSeed(async () => sigA);
+    clearMasterSeedCache(); // clear so second call uses sigB
     const seedB = await deriveMasterSeed(async () => sigB);
     expect(seedA).not.toEqual(seedB);
   });
@@ -384,6 +387,7 @@ describe("deriveSignalKey", () => {
 });
 
 describe("Derived key encrypt/decrypt roundtrip", () => {
+  beforeEach(() => clearMasterSeedCache());
   it("encrypts with derived key, decrypts with same derived key", async () => {
     const fakeSignature = "0x" + "cd".repeat(65);
     const seed = await deriveMasterSeed(async () => fakeSignature);

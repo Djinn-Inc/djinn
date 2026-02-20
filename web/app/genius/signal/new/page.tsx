@@ -163,6 +163,15 @@ export default function CreateSignal() {
     }).catch(() => {});
   }, []);
 
+  // Pre-warm the master seed when user reaches configure step.
+  // This triggers the wallet signMessage popup BEFORE the commit modal,
+  // so the on-chain commit is the only popup (avoids Safari popup blocking).
+  useEffect(() => {
+    if (step === "configure" && walletClient) {
+      deriveMasterSeed((msg) => walletClient.signMessage({ message: msg })).catch(() => {});
+    }
+  }, [step, walletClient]);
+
   const handleSelectBet = (bet: AvailableBet) => {
     setSelectedBet(bet);
     const pick = betToLine(bet);

@@ -260,18 +260,28 @@ export function bigIntToKey(val: bigint): Uint8Array {
 
 const SIGNAL_KEY_SIGN_MESSAGE = "djinn:signal-keys:v1";
 
+// Session-level cache so wallet signMessage popup only fires once
+let _cachedMasterSeed: Uint8Array | null = null;
+
+/** Clear the cached master seed (for tests or wallet disconnect). */
+export function clearMasterSeedCache(): void {
+  _cachedMasterSeed = null;
+}
+
 /**
  * Derive a master seed from the Genius's wallet signature.
  * Signs a fixed message — same wallet always produces the same seed (RFC 6979).
- * Call once per session; derive per-signal keys from the result.
+ * Cached for the browser session — wallet popup only appears on first call.
  */
 export async function deriveMasterSeed(
   signMessageFn: (message: string) => Promise<string>,
 ): Promise<Uint8Array> {
+  if (_cachedMasterSeed) return _cachedMasterSeed;
   const signature = await signMessageFn(SIGNAL_KEY_SIGN_MESSAGE);
   const sigBytes = fromHex(signature.replace(/^0x/, ""));
   const hashBuffer = await crypto.subtle.digest("SHA-256", toArrayBuffer(sigBytes));
-  return new Uint8Array(hashBuffer);
+  _cachedMasterSeed = new Uint8Array(hashBuffer);
+  return _cachedMasterSeed;
 }
 
 /**
