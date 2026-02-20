@@ -126,9 +126,18 @@ class MinerScorer:
         self._miners: dict[int, MinerMetrics] = {}
 
     def get_or_create(self, uid: int, hotkey: str) -> MinerMetrics:
-        """Get or create metrics for a miner."""
-        if uid not in self._miners:
-            self._miners[uid] = MinerMetrics(uid=uid, hotkey=hotkey)
+        """Get or create metrics for a miner.
+
+        If the hotkey changed (miner deregistered and a new one took the UID),
+        reset all metrics so the new miner starts fresh.
+        """
+        existing = self._miners.get(uid)
+        if existing is not None:
+            if existing.hotkey != hotkey:
+                log.info("miner_hotkey_changed", uid=uid, old=existing.hotkey, new=hotkey)
+                self._miners[uid] = MinerMetrics(uid=uid, hotkey=hotkey)
+            return self._miners[uid]
+        self._miners[uid] = MinerMetrics(uid=uid, hotkey=hotkey)
         return self._miners[uid]
 
     def remove(self, uid: int) -> None:

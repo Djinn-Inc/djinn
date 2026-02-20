@@ -497,7 +497,17 @@ def create_app(
                 tx_hash = "dev-mode-no-verification"
 
             # Record the payment to prevent replay attacks
-            purchase_orch.record_payment(signal_id, req.buyer_address, tx_hash, "PAYMENT_CONFIRMED")
+            if not purchase_orch.record_payment(signal_id, req.buyer_address, tx_hash, "PAYMENT_CONFIRMED"):
+                log.warning("concurrent_payment_race", signal_id=signal_id, buyer=req.buyer_address)
+                # Another concurrent request already recorded — return existing share
+                record = share_store.get(signal_id)
+                if record and record.encrypted_key_share:
+                    return PurchaseResponse(
+                        signal_id=signal_id,
+                        status="shares_released",
+                        encrypted_key_share=record.encrypted_key_share.hex(),
+                    )
+                raise HTTPException(status_code=409, detail="Payment already processed")
 
             result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
             if result is None or result.status == PurchaseStatus.FAILED:
@@ -1112,6 +1122,8 @@ def create_app(
                 # Evict oldest if at capacity
                 if len(_participant_states) >= _MAX_PARTICIPANT_STATES:
                     _cleanup_stale_participants_locked()
+                if len(_participant_states) >= _MAX_PARTICIPANT_STATES:
+                    raise HTTPException(status_code=503, detail="Too many active MPC sessions")
                 _participant_states[req.session_id] = state
                 _participant_created[req.session_id] = _time.monotonic()
 
@@ -1368,6 +1380,8 @@ def create_app(
             # Evict stale OT states before creating new ones
             if len(_ot_states) >= _MAX_OT_STATES:
                 _cleanup_stale_ot_states_locked()
+            if len(_ot_states) >= _MAX_OT_STATES:
+                raise HTTPException(status_code=503, detail="Too many active OT sessions")
 
             fp, dh_group = _resolve_ot_params(req.field_prime, req.dh_prime)
             state = OTTripleGenState(

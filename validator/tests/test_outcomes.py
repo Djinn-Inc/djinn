@@ -346,7 +346,8 @@ class TestOutcomeAttestor:
         assert result is None  # Game pending
         assert not meta.resolved
 
-    def test_cleanup_resolved_removes_old_signals(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cleanup_resolved_removes_old_signals(self) -> None:
         attestor = OutcomeAttestor()
         meta = SignalMetadata(
             signal_id="sig1",
@@ -364,12 +365,13 @@ class TestOutcomeAttestor:
         result = EventResult(event_id="evt1", home_score=110, away_score=105, status="final")
         attestor.attest("sig1", "v1", Outcome.FAVORABLE, result)
 
-        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        removed = await attestor.cleanup_resolved(max_age_seconds=1)
         assert removed == 1
         assert attestor.get_pending_signals() == []
         assert attestor.check_consensus("sig1", 3) is None  # Attestations gone too
 
-    def test_cleanup_resolved_keeps_recent(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cleanup_resolved_keeps_recent(self) -> None:
         attestor = OutcomeAttestor()
         meta = SignalMetadata(
             signal_id="sig1",
@@ -383,10 +385,11 @@ class TestOutcomeAttestor:
         meta.resolved = True
         attestor.register_signal(meta)
 
-        removed = attestor.cleanup_resolved(max_age_seconds=86400)
+        removed = await attestor.cleanup_resolved(max_age_seconds=86400)
         assert removed == 0  # Still recent, not cleaned
 
-    def test_cleanup_resolved_ignores_unresolved(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cleanup_resolved_ignores_unresolved(self) -> None:
         attestor = OutcomeAttestor()
         meta = SignalMetadata(
             signal_id="sig1",
@@ -400,7 +403,7 @@ class TestOutcomeAttestor:
         # Not resolved — should not be cleaned even if old
         attestor.register_signal(meta)
 
-        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        removed = await attestor.cleanup_resolved(max_age_seconds=1)
         assert removed == 0
 
     def test_consensus_threshold_rounding(self) -> None:
@@ -514,7 +517,8 @@ class TestOutcomeAttestor:
         assert len(pending) == 1
         assert pending[0].sport == "football_nfl"
 
-    def test_cleanup_multiple_resolved(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cleanup_multiple_resolved(self) -> None:
         """Cleanup removes all old resolved signals."""
         attestor = OutcomeAttestor()
         for i in range(5):
@@ -527,7 +531,7 @@ class TestOutcomeAttestor:
             meta.resolved = True
             attestor.register_signal(meta)
 
-        removed = attestor.cleanup_resolved(max_age_seconds=1)
+        removed = await attestor.cleanup_resolved(max_age_seconds=1)
         assert removed == 5
         assert attestor.get_pending_signals() == []
 

@@ -153,8 +153,10 @@ export default function AttestPage() {
 
   const handleDownload = useCallback(
     (proofHex: string, timestamp: number) => {
+      const matches = proofHex.match(/.{1,2}/g);
+      if (!matches) return;
       const bytes = new Uint8Array(
-        proofHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)),
+        matches.map((b) => parseInt(b, 16)),
       );
       const blob = new Blob([bytes], { type: "application/octet-stream" });
       const a = document.createElement("a");
@@ -490,12 +492,8 @@ function ResultCard({
   onDownload: (proofHex: string, timestamp: number) => void;
 }) {
   const proofFingerprint =
-    result.proof_hex
-      ? result.proof_hex
-          .slice(0, 32)
-          .match(/.{2}/g)!
-          .map((b) => parseInt(b, 16).toString(16).padStart(2, "0"))
-          .join("")
+    result.proof_hex && result.proof_hex.length >= 2
+      ? result.proof_hex.slice(0, 32)
       : null;
 
   return (

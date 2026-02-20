@@ -28,6 +28,18 @@ def _float_env(key: str, default: str) -> float:
 
 @dataclass(frozen=True)
 class Config:
+    _REDACTED_FIELDS = frozenset({"base_validator_private_key", "sports_api_key"})
+
+    def __repr__(self) -> str:
+        fields = []
+        for f in self.__dataclass_fields__:
+            val = getattr(self, f)
+            if f in self._REDACTED_FIELDS and val:
+                fields.append(f"{f}='***REDACTED***'")
+            else:
+                fields.append(f"{f}={val!r}")
+        return f"Config({', '.join(fields)})"
+
     # Bittensor
     bt_netuid: int = _int_env("BT_NETUID", "103")
     bt_network: str = os.getenv("BT_NETWORK", "finney")
@@ -150,6 +162,12 @@ class Config:
             raise ValueError(f"MPC_PEER_TIMEOUT must be 1.0-60.0, got {self.mpc_peer_timeout}")
         if self.mpc_availability_timeout < 5.0 or self.mpc_availability_timeout > 120.0:
             raise ValueError(f"MPC_AVAILABILITY_TIMEOUT must be 5.0-120.0, got {self.mpc_availability_timeout}")
+        if self.shares_threshold > self.shares_total:
+            raise ValueError(
+                f"SHAMIR_THRESHOLD ({self.shares_threshold}) must be <= shares_total ({self.shares_total})"
+            )
+        if self.shares_threshold < 1:
+            raise ValueError(f"SHAMIR_THRESHOLD must be >= 1, got {self.shares_threshold}")
         if self.rate_limit_capacity < self.rate_limit_rate:
             warnings.append(
                 f"RATE_LIMIT_CAPACITY ({self.rate_limit_capacity}) < RATE_LIMIT_RATE ({self.rate_limit_rate}) "

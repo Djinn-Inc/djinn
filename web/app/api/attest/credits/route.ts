@@ -20,16 +20,30 @@ async function getValidatorUrl(): Promise<string> {
  * Response: { burn_tx_hash: string, remaining: number }
  */
 export async function POST(request: NextRequest) {
-  const { burn_tx_hash } = await request.json();
-  if (!burn_tx_hash) {
+  let body: { burn_tx_hash?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { burn_tx_hash } = body;
+  if (!burn_tx_hash || typeof burn_tx_hash !== "string") {
     return NextResponse.json({ error: "burn_tx_hash required" }, { status: 400 });
   }
+  // Validate hex format
+  if (!/^(0x)?[0-9a-fA-F]{1,128}$/.test(burn_tx_hash)) {
+    return NextResponse.json({ error: "burn_tx_hash must be a hex string" }, { status: 400 });
+  }
+
   const target = `${await getValidatorUrl()}/v1/attest/credits/${encodeURIComponent(burn_tx_hash)}`;
 
   try {
-    const res = await fetch(target);
-    const body = await res.text();
-    return new NextResponse(body, {
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(10_000), // 10s timeout for credit check
+    });
+    const text = await res.text();
+    return new NextResponse(text, {
       status: res.status,
       headers: { "Content-Type": "application/json" },
     });

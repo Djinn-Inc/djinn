@@ -437,7 +437,7 @@ class ChainClient:
 
         async with self._nonce_lock:
             nonce = await self._with_failover(
-                lambda: self._w3.eth.get_transaction_count(self._validator_address)  # type: ignore[arg-type]
+                lambda: self._w3.eth.get_transaction_count(self._validator_address, "pending")  # type: ignore[arg-type]
             )
 
             # Estimate gas with fallback
@@ -448,6 +448,11 @@ class ChainClient:
                 gas = gas_limit
 
             gas_price = await self._with_failover(lambda: self._w3.eth.gas_price)
+            # Cap gas price at 100 gwei to prevent runaway spend during spikes
+            max_gas_price = 100 * 10**9  # 100 gwei
+            if gas_price > max_gas_price:
+                log.warning("gas_price_capped", actual_gwei=gas_price / 10**9, cap_gwei=100)
+                gas_price = max_gas_price
 
             tx = await fn.build_transaction({
                 "from": self._validator_address,
