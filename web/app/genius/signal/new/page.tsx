@@ -9,8 +9,7 @@ import { ADDRESSES } from "@/lib/contracts";
 import SecretModal from "@/components/SecretModal";
 import PrivateWorkspace from "@/components/PrivateWorkspace";
 import {
-  deriveMasterSeed,
-  deriveSignalKey,
+  generateAesKey,
   encrypt,
   splitSecret,
   keyToBigInt,
@@ -163,14 +162,6 @@ export default function CreateSignal() {
     }).catch(() => {});
   }, []);
 
-  // Pre-warm the master seed when user reaches configure step.
-  // This triggers the wallet signMessage popup BEFORE the commit modal,
-  // so the on-chain commit is the only popup (avoids Safari popup blocking).
-  useEffect(() => {
-    if (step === "configure" && walletClient) {
-      deriveMasterSeed((msg) => walletClient.signMessage({ message: msg })).catch(() => {});
-    }
-  }, [step, walletClient]);
 
   const handleSelectBet = (bet: AvailableBet) => {
     setSelectedBet(bet);
@@ -290,13 +281,12 @@ export default function CreateSignal() {
             .join(""),
       );
 
-      // Derive AES key deterministically from wallet signature + signalId.
-      // Same wallet always produces the same key — recoverable on any device.
+      // Generate a random AES key for this signal.
+      // Stored in localStorage for track record proofs; backed up on-chain
+      // via walletRecoveryBlob for cross-device recovery.
+      // (Wallet-derived keys via signMessage break Coinbase Smart Wallet.)
       if (!walletClient) throw new Error("Wallet not connected");
-      const masterSeed = await deriveMasterSeed(
-        (msg) => walletClient.signMessage({ message: msg }),
-      );
-      const aesKey = await deriveSignalKey(masterSeed, signalId);
+      const aesKey = await generateAesKey();
 
       const pickPayload = JSON.stringify({
         realIndex: realIndex + 1,
