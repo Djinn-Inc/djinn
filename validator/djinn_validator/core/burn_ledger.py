@@ -1,7 +1,8 @@
 """SQLite ledger for consumed alpha burn transactions.
 
 Prevents double-spend by tracking which extrinsic hashes have already been
-used to pay for attestation requests.
+used to pay for attestation requests.  Supports multi-credit burns: a single
+burn transaction of N * min_amount grants N attestation credits.
 """
 
 from __future__ import annotations
@@ -18,6 +19,9 @@ log = structlog.get_logger()
 
 class BurnLedger:
     """SQLite-backed ledger of consumed alpha burn transactions.
+
+    Supports multi-credit burns: if a user burns 0.0013 TAO (13x the minimum
+    0.0001 TAO), they get 13 attestation credits from a single tx hash.
 
     Follows the same pattern as ShareStore for SQLite lifecycle management.
     """
@@ -37,38 +41,89 @@ class BurnLedger:
     def _create_tables(self) -> None:
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS consumed_burns (
-                tx_hash    TEXT PRIMARY KEY,
-                coldkey    TEXT NOT NULL,
-                amount     REAL NOT NULL,
-                consumed_at INTEGER NOT NULL
+                tx_hash        TEXT PRIMARY KEY,
+                coldkey        TEXT NOT NULL,
+                amount         REAL NOT NULL,
+                total_credits  INTEGER NOT NULL DEFAULT 1,
+                used_credits   INTEGER NOT NULL DEFAULT 0,
+                created_at     INTEGER NOT NULL
             )
         """)
         self._conn.commit()
 
     def is_consumed(self, tx_hash: str) -> bool:
-        """Check whether a burn transaction hash has already been used."""
+        """Check whether a burn transaction has exhausted all credits."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT 1 FROM consumed_burns WHERE tx_hash = ?", (tx_hash,)
+                "SELECT total_credits, used_credits FROM consumed_burns WHERE tx_hash = ?",
+                (tx_hash,),
             ).fetchone()
-            return row is not None
+            if row is None:
+                return False
+            return row[1] >= row[0]
 
-    def record_burn(self, tx_hash: str, coldkey: str, amount: float) -> bool:
-        """Record a consumed burn transaction.
+    def remaining_credits(self, tx_hash: str) -> int:
+        """Return the number of unused attestation credits for a burn tx."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT total_credits, used_credits FROM consumed_burns WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+            if row is None:
+                return 0
+            return max(0, row[0] - row[1])
 
-        Returns True if the burn was recorded successfully.
-        Returns False if the tx_hash was already consumed (double-spend attempt).
+    def record_burn(
+        self, tx_hash: str, coldkey: str, amount: float, min_amount: float = 0.0001
+    ) -> bool:
+        """Record a burn transaction and consume one credit.
+
+        On first call: inserts the burn with total_credits = floor(amount / min_amount)
+        and used_credits = 1.  On subsequent calls: increments used_credits if credits
+        remain.
+
+        Returns True if a credit was consumed successfully.
+        Returns False if all credits are exhausted (double-spend).
         """
         with self._lock:
-            try:
+            row = self._conn.execute(
+                "SELECT total_credits, used_credits FROM consumed_burns WHERE tx_hash = ?",
+                (tx_hash,),
+            ).fetchone()
+
+            if row is None:
+                # First use — register the burn
+                total = max(1, round(amount / min_amount))
                 self._conn.execute(
-                    "INSERT INTO consumed_burns (tx_hash, coldkey, amount, consumed_at) VALUES (?, ?, ?, ?)",
-                    (tx_hash, coldkey, amount, int(time.time())),
+                    "INSERT INTO consumed_burns (tx_hash, coldkey, amount, total_credits, used_credits, created_at) "
+                    "VALUES (?, ?, ?, ?, 1, ?)",
+                    (tx_hash, coldkey, amount, total, int(time.time())),
                 )
                 self._conn.commit()
+                log.info(
+                    "burn_recorded",
+                    tx_hash=tx_hash[:16] + "...",
+                    total_credits=total,
+                    remaining=total - 1,
+                )
                 return True
-            except sqlite3.IntegrityError:
+
+            total_credits, used_credits = row
+            if used_credits >= total_credits:
                 return False
+
+            self._conn.execute(
+                "UPDATE consumed_burns SET used_credits = used_credits + 1 WHERE tx_hash = ?",
+                (tx_hash,),
+            )
+            self._conn.commit()
+            log.info(
+                "burn_credit_consumed",
+                tx_hash=tx_hash[:16] + "...",
+                used=used_credits + 1,
+                total=total_credits,
+            )
+            return True
 
     def close(self) -> None:
         """Close the database connection."""

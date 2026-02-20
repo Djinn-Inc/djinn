@@ -243,16 +243,16 @@ class DjinnValidator:
 
     def verify_burn(
         self, tx_hash: str, min_amount: float, burn_address: str
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, float]:
         """Verify a substrate transfer to the burn address via RPC.
 
         Scans recent blocks (last ~50) for the extrinsic hash, then validates
         the transfer destination and amount.
 
-        Returns (valid, error_message).
+        Returns (valid, error_message, amount_tao).
         """
         if not self.subtensor:
-            return True, ""  # Dev mode: skip verification
+            return True, "", min_amount  # Dev mode: skip verification
 
         try:
             substrate = self.subtensor.substrate
@@ -298,7 +298,7 @@ class DjinnValidator:
                         return False, (
                             f"Extrinsic is not a balance transfer "
                             f"(got {call_module}.{call_function})"
-                        )
+                        ), 0.0
 
                     call_args = {
                         a["name"]: a["value"]
@@ -316,21 +316,21 @@ class DjinnValidator:
                         return False, (
                             f"Transfer destination {dest} does not match "
                             f"burn address {burn_address}"
-                        )
+                        ), 0.0
 
                     if amount_tao < min_amount:
                         return False, (
                             f"Transfer amount {amount_tao} TAO is less than "
                             f"required {min_amount} TAO"
-                        )
+                        ), amount_tao
 
-                    return True, ""
+                    return True, "", amount_tao
 
             return False, (
                 f"Extrinsic {tx_hash} not found in the last {search_depth} blocks. "
                 f"Ensure the burn transaction is confirmed and recent."
-            )
+            ), 0.0
 
         except Exception as e:
             log.warning("verify_burn_error", tx_hash=tx_hash, error=str(e))
-            return False, f"Failed to verify burn transaction: {e}"
+            return False, f"Failed to verify burn transaction: {e}", 0.0

@@ -15,16 +15,55 @@ interface AttestResult {
 
 type Status = "idle" | "submitting" | "proving" | "done" | "error";
 
+interface BatchItem {
+  url: string;
+  status: Status;
+  result: AttestResult | null;
+  error: string | null;
+}
+
 const BURN_ADDRESS = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM";
+const COST_PER_ATTEST = 0.0001;
 
 export default function AttestPage() {
+  const [mode, setMode] = useState<"single" | "batch">("single");
   const [url, setUrl] = useState("");
+  const [batchUrls, setBatchUrls] = useState("");
   const [burnTxHash, setBurnTxHash] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<AttestResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [showApi, setShowApi] = useState(false);
 
-  const handleSubmit = useCallback(
+  const attestSingle = useCallback(
+    async (targetUrl: string, txHash: string): Promise<AttestResult | null> => {
+      const requestId = `attest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const resp = await fetch("/api/attest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: targetUrl,
+          request_id: requestId,
+          burn_tx_hash: txHash.trim(),
+        }),
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({ detail: "Request failed" }));
+        const msg = data.detail || data.error || `Request failed (${resp.status})`;
+        throw new Error(
+          resp.status === 403 ? `Burn verification failed: ${msg}` : msg,
+        );
+      }
+
+      return await resp.json();
+    },
+    [],
+  );
+
+  const handleSingleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (!url.startsWith("https://")) {
@@ -36,41 +75,15 @@ export default function AttestPage() {
         return;
       }
 
-      setStatus("submitting");
+      setStatus("proving");
       setResult(null);
       setErrorMsg(null);
 
-      const requestId = `attest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
       try {
-        setStatus("proving");
-        const resp = await fetch("/api/attest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url,
-            request_id: requestId,
-            burn_tx_hash: burnTxHash.trim(),
-          }),
-        });
-
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({ detail: "Request failed" }));
-          const msg = data.detail || data.error || `Request failed (${resp.status})`;
-          setErrorMsg(
-            resp.status === 403
-              ? `Burn verification failed: ${msg}`
-              : msg,
-          );
-          setStatus("error");
-          return;
-        }
-
-        const data: AttestResult = await resp.json();
+        const data = await attestSingle(url, burnTxHash);
         setResult(data);
         setStatus("done");
-
-        if (!data.success) {
+        if (data && !data.success) {
           setErrorMsg(data.error || "Attestation failed");
         }
       } catch (err) {
@@ -78,140 +91,249 @@ export default function AttestPage() {
         setStatus("error");
       }
     },
-    [url, burnTxHash],
+    [url, burnTxHash, attestSingle],
   );
 
-  const handleDownload = useCallback(() => {
-    if (!result?.proof_hex) return;
-    const bytes = new Uint8Array(
-      result.proof_hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)),
-    );
-    const blob = new Blob([bytes], { type: "application/octet-stream" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `attestation-${result.timestamp}.bin`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [result]);
+  const handleBatchSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!burnTxHash.trim()) {
+        setErrorMsg("Burn transaction hash is required");
+        return;
+      }
 
-  const proofHash =
-    result?.proof_hex
-      ? Array.from(
-          new Uint8Array(
-            // SHA-256 not available synchronously — use first 16 bytes as fingerprint
-            result.proof_hex
-              .slice(0, 32)
-              .match(/.{2}/g)!
-              .map((b) => parseInt(b, 16)),
-          ),
-        )
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("")
-      : null;
+      const urls = batchUrls
+        .split("\n")
+        .map((u) => u.trim())
+        .filter((u) => u.length > 0);
+
+      if (urls.length === 0) {
+        setErrorMsg("Enter at least one URL");
+        return;
+      }
+
+      const invalid = urls.filter((u) => !u.startsWith("https://"));
+      if (invalid.length > 0) {
+        setErrorMsg(`All URLs must start with https://. Invalid: ${invalid[0]}`);
+        return;
+      }
+
+      setErrorMsg(null);
+      setBatchRunning(true);
+
+      const items: BatchItem[] = urls.map((u) => ({
+        url: u,
+        status: "idle",
+        result: null,
+        error: null,
+      }));
+      setBatchItems([...items]);
+
+      for (let i = 0; i < items.length; i++) {
+        items[i].status = "proving";
+        setBatchItems([...items]);
+
+        try {
+          const data = await attestSingle(items[i].url, burnTxHash);
+          items[i].result = data;
+          items[i].status = data?.success ? "done" : "error";
+          items[i].error = data?.success ? null : (data?.error || "Failed");
+        } catch (err) {
+          items[i].status = "error";
+          items[i].error = err instanceof Error ? err.message : "Network error";
+        }
+
+        setBatchItems([...items]);
+      }
+
+      setBatchRunning(false);
+    },
+    [batchUrls, burnTxHash, attestSingle],
+  );
+
+  const handleDownload = useCallback(
+    (proofHex: string, timestamp: number) => {
+      const bytes = new Uint8Array(
+        proofHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)),
+      );
+      const blob = new Blob([bytes], { type: "application/octet-stream" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `attestation-${timestamp}.bin`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
+    [],
+  );
+
+  const parsedBatchCount = batchUrls
+    .split("\n")
+    .filter((u) => u.trim().length > 0).length;
+  const batchCost = (parsedBatchCount * COST_PER_ATTEST).toFixed(4);
 
   return (
-    <div>
+    <div className="max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-900">Web Attestation</h1>
         <p className="text-slate-500 mt-1">
-          Generate a cryptographic TLSNotary proof that a website served specific content at a
+          Generate cryptographic TLSNotary proofs that websites served specific content at a
           specific time. Powered by Bittensor Subnet 103.
         </p>
       </div>
 
-      {/* Burn info box */}
-      <div className="max-w-2xl mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <p className="font-semibold mb-1">Alpha burn required</p>
-        <p>
-          Each attestation costs <strong>0.0001 TAO</strong> of SN103 alpha. Transfer to the burn
-          address below from your Bittensor wallet, then paste the extrinsic hash.
-        </p>
-        <p className="font-mono text-xs mt-2 break-all bg-blue-100 rounded px-2 py-1">
-          {BURN_ADDRESS}
-        </p>
-        <p className="mt-2 text-xs text-blue-600">
+      {/* Step-by-step instructions */}
+      <div className="mb-8 rounded-lg border border-slate-200 bg-white p-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">How it works</h2>
+        <ol className="space-y-3 text-sm text-slate-700">
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
+            <span>
+              <strong>Burn alpha tokens.</strong> Transfer <strong>{COST_PER_ATTEST} TAO</strong> per page to the burn address below from your Bittensor wallet.
+              For multiple pages, send a single larger transfer (e.g., 0.0013 TAO for 13 pages).
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">2</span>
+            <span>
+              <strong>Copy the extrinsic hash.</strong> After your burn transfer confirms, copy the substrate extrinsic hash from your wallet or a block explorer.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">3</span>
+            <span>
+              <strong>Submit your URL(s).</strong> Paste the burn tx hash and the URL(s) you want to attest. A miner will generate a TLSNotary proof (30-90 seconds per page).
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">4</span>
+            <span>
+              <strong>Download your proof.</strong> The validator verifies the proof and returns it. Download the cryptographic proof file.
+            </span>
+          </li>
+        </ol>
+
+        <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 p-3">
+          <p className="text-xs font-medium text-slate-500 mb-1">Burn address (SN103 alpha)</p>
+          <p className="font-mono text-xs break-all text-slate-800 select-all">{BURN_ADDRESS}</p>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
           Don&apos;t have alpha?{" "}
           <a
             href="https://docs.bittensor.com/subnets/register-validate-mine"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-blue-800"
+            className="underline hover:text-slate-600"
           >
             Stake TAO on Subnet 103
           </a>{" "}
-          to acquire alpha tokens.
+          to acquire alpha tokens. The burn is approximately $0.02 per attestation.
         </p>
       </div>
 
-      {/* URL input form */}
-      <div className="card max-w-2xl">
-        <form onSubmit={handleSubmit}>
-          <label className="label" htmlFor="attest-url">
-            URL to attest
-          </label>
-          <input
-            id="attest-url"
-            className="input w-full"
-            type="url"
-            placeholder="https://example.com/page"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-            disabled={status === "submitting" || status === "proving"}
-          />
-          <p className="text-xs text-slate-400 mt-1">
-            Must be an HTTPS URL. The miner will fetch this page and produce a TLSNotary proof of
-            the server&apos;s response.
-          </p>
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setMode("single")}
+          className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+            mode === "single"
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+          }`}
+        >
+          Single URL
+        </button>
+        <button
+          onClick={() => setMode("batch")}
+          className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+            mode === "batch"
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+          }`}
+        >
+          Batch (multiple URLs)
+        </button>
+      </div>
 
-          <label className="label mt-4" htmlFor="burn-tx-hash">
+      {/* Form */}
+      <div className="rounded-lg border border-slate-200 bg-white p-6">
+        <form onSubmit={mode === "single" ? handleSingleSubmit : handleBatchSubmit}>
+          {/* Burn tx hash — shared between modes */}
+          <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="burn-tx-hash">
             Burn transaction hash
           </label>
           <input
             id="burn-tx-hash"
-            className="input w-full font-mono text-sm"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             type="text"
             placeholder="0x..."
             value={burnTxHash}
             onChange={(e) => setBurnTxHash(e.target.value)}
             required
-            disabled={status === "submitting" || status === "proving"}
+            disabled={status === "proving" || batchRunning}
           />
-          <p className="text-xs text-slate-400 mt-1">
-            The substrate extrinsic hash from your alpha burn transfer.
+          <p className="text-xs text-slate-400 mt-1 mb-4">
+            The substrate extrinsic hash from your alpha burn transfer. One burn can cover multiple attestations.
           </p>
+
+          {mode === "single" ? (
+            <>
+              <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="attest-url">
+                URL to attest
+              </label>
+              <input
+                id="attest-url"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                type="url"
+                placeholder="https://example.com/page"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                disabled={status === "proving"}
+              />
+              <p className="text-xs text-slate-400 mt-1">Must be an HTTPS URL.</p>
+            </>
+          ) : (
+            <>
+              <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="batch-urls">
+                URLs to attest (one per line)
+              </label>
+              <textarea
+                id="batch-urls"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={6}
+                placeholder={"https://example.com/page1\nhttps://example.com/page2\nhttps://example.com/page3"}
+                value={batchUrls}
+                onChange={(e) => setBatchUrls(e.target.value)}
+                disabled={batchRunning}
+              />
+              {parsedBatchCount > 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {parsedBatchCount} URL{parsedBatchCount !== 1 ? "s" : ""} — burn cost: <strong>{batchCost} TAO</strong>
+                </p>
+              )}
+            </>
+          )}
 
           <button
             type="submit"
-            className="btn-primary mt-4 w-full sm:w-auto"
-            disabled={status === "submitting" || status === "proving" || !url || !burnTxHash}
+            className="mt-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={
+              status === "proving" ||
+              batchRunning ||
+              !burnTxHash ||
+              (mode === "single" ? !url : parsedBatchCount === 0)
+            }
           >
-            {status === "submitting" || status === "proving" ? (
-              <span className="flex items-center gap-2">
-                <svg
-                  className="animate-spin h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
+            {(status === "proving" || batchRunning) ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {status === "submitting" ? "Submitting..." : "Generating proof..."}
-              </span>
+                Generating proof{mode === "batch" ? "s" : ""}...
+              </>
             ) : (
-              "Attest"
+              <>Attest {mode === "batch" && parsedBatchCount > 0 ? `${parsedBatchCount} URL${parsedBatchCount !== 1 ? "s" : ""}` : ""}</>
             )}
           </button>
         </form>
@@ -219,70 +341,131 @@ export default function AttestPage() {
 
       {/* Error message */}
       {errorMsg && (
-        <div className="max-w-2xl mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {errorMsg}
         </div>
       )}
 
-      {/* Result card */}
-      {result && result.success && (
-        <div className="card max-w-2xl mt-6">
-          <div className="flex items-center gap-2 mb-4">
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                result.verified
-                  ? "bg-green-100 text-green-700 border border-green-200"
-                  : "bg-amber-100 text-amber-700 border border-amber-200"
+      {/* Single result */}
+      {mode === "single" && result && result.success && (
+        <ResultCard result={result} onDownload={handleDownload} />
+      )}
+
+      {/* Batch results */}
+      {mode === "batch" && batchItems.length > 0 && (
+        <div className="mt-6 space-y-3">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Results ({batchItems.filter((i) => i.status === "done").length}/{batchItems.length})
+          </h2>
+          {batchItems.map((item, idx) => (
+            <div
+              key={idx}
+              className={`rounded-lg border p-4 text-sm ${
+                item.status === "done"
+                  ? "border-green-200 bg-green-50"
+                  : item.status === "error"
+                    ? "border-red-200 bg-red-50"
+                    : item.status === "proving"
+                      ? "border-blue-200 bg-blue-50"
+                      : "border-slate-200 bg-white"
               }`}
             >
-              {result.verified ? "Verified" : "Unverified"}
-            </span>
-            <h2 className="text-lg font-semibold text-slate-900">Attestation Result</h2>
-          </div>
-
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-slate-500">URL</dt>
-              <dd className="font-mono text-slate-900 break-all">{result.url}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Server</dt>
-              <dd className="font-mono text-slate-900">{result.server_name || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Timestamp</dt>
-              <dd className="text-slate-900">
-                {result.timestamp
-                  ? new Date(result.timestamp * 1000).toLocaleString()
-                  : "—"}
-              </dd>
-            </div>
-            {proofHash && (
-              <div>
-                <dt className="text-slate-500">Proof fingerprint</dt>
-                <dd className="font-mono text-xs text-slate-600">{proofHash}...</dd>
+              <div className="flex items-center gap-2">
+                {item.status === "proving" && (
+                  <svg className="animate-spin h-4 w-4 text-blue-600" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                {item.status === "done" && (
+                  <span className="text-green-600 font-bold">&#10003;</span>
+                )}
+                {item.status === "error" && (
+                  <span className="text-red-600 font-bold">&#10007;</span>
+                )}
+                {item.status === "idle" && (
+                  <span className="text-slate-400">&#9711;</span>
+                )}
+                <span className="font-mono text-xs break-all flex-1">{item.url}</span>
+                {item.result?.proof_hex && (
+                  <button
+                    onClick={() => handleDownload(item.result!.proof_hex!, item.result!.timestamp)}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline flex-shrink-0"
+                  >
+                    Download
+                  </button>
+                )}
               </div>
-            )}
-            <div>
-              <dt className="text-slate-500">Proof size</dt>
-              <dd className="text-slate-900">
-                {result.proof_hex
-                  ? `${(result.proof_hex.length / 2).toLocaleString()} bytes`
-                  : "—"}
-              </dd>
+              {item.error && (
+                <p className="mt-1 text-xs text-red-600 ml-6">{item.error}</p>
+              )}
+              {item.result?.verified && (
+                <p className="mt-1 text-xs text-green-600 ml-6">
+                  Verified &middot; {item.result.server_name} &middot;{" "}
+                  {new Date(item.result.timestamp * 1000).toLocaleString()}
+                </p>
+              )}
             </div>
-          </dl>
-
-          {result.proof_hex && (
-            <button onClick={handleDownload} className="btn-secondary mt-4">
-              Download proof
-            </button>
-          )}
+          ))}
         </div>
       )}
 
-      {/* Explanation */}
-      <div className="max-w-2xl mt-8 text-sm text-slate-500 space-y-2">
+      {/* API Documentation (collapsible) */}
+      <div className="mt-8 rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <button
+          onClick={() => setShowApi(!showApi)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-50 transition-colors"
+        >
+          <span className="font-semibold text-slate-900">API Documentation</span>
+          <span className="text-slate-400 text-lg">{showApi ? "\u2212" : "+"}</span>
+        </button>
+        {showApi && (
+          <div className="px-4 pb-4 text-sm text-slate-700 space-y-4 border-t border-slate-100 pt-4">
+            <p>
+              You can integrate attestation directly into your application. All endpoints accept JSON.
+            </p>
+            <div>
+              <h4 className="font-semibold text-slate-800 mb-1">POST /api/attest</h4>
+              <p className="text-slate-500 mb-2">Generate a TLSNotary proof for a URL.</p>
+              <pre className="bg-slate-800 text-slate-100 rounded-lg p-3 text-xs overflow-x-auto">{`curl -X POST https://djinn.gg/api/attest \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "url": "https://example.com/page",
+    "request_id": "my-unique-id",
+    "burn_tx_hash": "0x..."
+  }'`}</pre>
+              <p className="text-xs text-slate-400 mt-1">
+                Response includes <code className="bg-slate-100 px-1 rounded">proof_hex</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">verified</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">server_name</code>, and{" "}
+                <code className="bg-slate-100 px-1 rounded">timestamp</code>.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-slate-800 mb-1">POST /api/attest/credits</h4>
+              <p className="text-slate-500 mb-2">Check remaining credits for a burn transaction.</p>
+              <pre className="bg-slate-800 text-slate-100 rounded-lg p-3 text-xs overflow-x-auto">{`curl -X POST https://djinn.gg/api/attest/credits \\
+  -H "Content-Type: application/json" \\
+  -d '{ "burn_tx_hash": "0x..." }'`}</pre>
+              <p className="text-xs text-slate-400 mt-1">
+                Returns <code className="bg-slate-100 px-1 rounded">{`{ "remaining": 12 }`}</code>
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-slate-800 mb-1">Bulk attestation</h4>
+              <p className="text-slate-500">
+                To attest multiple pages, burn <strong>N &times; {COST_PER_ATTEST} TAO</strong> in a single
+                transfer, then call <code className="bg-slate-100 px-1 rounded">POST /api/attest</code> once
+                per URL using the same <code className="bg-slate-100 px-1 rounded">burn_tx_hash</code>. Each
+                call consumes one credit.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* What is TLSNotary */}
+      <div className="mt-8 text-sm text-slate-500 space-y-2 pb-12">
         <h3 className="font-semibold text-slate-700">What is a TLSNotary proof?</h3>
         <p>
           TLSNotary uses multi-party computation during the TLS handshake to produce a
@@ -295,6 +478,82 @@ export default function AttestPage() {
           and academic citations with permanent, cryptographic provenance.
         </p>
       </div>
+    </div>
+  );
+}
+
+function ResultCard({
+  result,
+  onDownload,
+}: {
+  result: AttestResult;
+  onDownload: (proofHex: string, timestamp: number) => void;
+}) {
+  const proofFingerprint =
+    result.proof_hex
+      ? result.proof_hex
+          .slice(0, 32)
+          .match(/.{2}/g)!
+          .map((b) => parseInt(b, 16).toString(16).padStart(2, "0"))
+          .join("")
+      : null;
+
+  return (
+    <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            result.verified
+              ? "bg-green-100 text-green-700 border border-green-200"
+              : "bg-amber-100 text-amber-700 border border-amber-200"
+          }`}
+        >
+          {result.verified ? "Verified" : "Unverified"}
+        </span>
+        <h2 className="text-lg font-semibold text-slate-900">Attestation Result</h2>
+      </div>
+
+      <dl className="space-y-3 text-sm">
+        <div>
+          <dt className="text-slate-500">URL</dt>
+          <dd className="font-mono text-slate-900 break-all">{result.url}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Server</dt>
+          <dd className="font-mono text-slate-900">{result.server_name || "\u2014"}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Timestamp</dt>
+          <dd className="text-slate-900">
+            {result.timestamp
+              ? new Date(result.timestamp * 1000).toLocaleString()
+              : "\u2014"}
+          </dd>
+        </div>
+        {proofFingerprint && (
+          <div>
+            <dt className="text-slate-500">Proof fingerprint</dt>
+            <dd className="font-mono text-xs text-slate-600">{proofFingerprint}...</dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-slate-500">Proof size</dt>
+          <dd className="text-slate-900">
+            {result.proof_hex
+              ? `${(result.proof_hex.length / 2).toLocaleString()} bytes`
+              : "\u2014"}
+          </dd>
+        </div>
+      </dl>
+
+      {result.proof_hex && (
+        <button
+          onClick={() => onDownload(result.proof_hex!, result.timestamp)}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        >
+          Download proof
+        </button>
+      )}
     </div>
   );
 }

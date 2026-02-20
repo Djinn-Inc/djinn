@@ -603,17 +603,22 @@ def create_app(
 
         # --- Burn gate: verify alpha burn before dispatching ---
         if burn_ledger is not None:
-            # Check double-spend first (cheaper than RPC)
-            if burn_ledger.is_consumed(req.burn_tx_hash):
+            # Check if this tx hash has been seen before
+            credits_left = burn_ledger.remaining_credits(req.burn_tx_hash)
+            is_known = burn_ledger.is_consumed(req.burn_tx_hash) or credits_left > 0
+
+            if is_known and credits_left == 0:
+                # All credits exhausted
                 ATTESTATION_GATED.labels(reason="already_consumed").inc()
                 raise HTTPException(
                     status_code=403,
-                    detail="Burn transaction already used for a previous attestation",
+                    detail="All attestation credits for this burn transaction have been used",
                 )
 
-            # Verify the burn on-chain
-            if neuron:
-                valid, err_msg = neuron.verify_burn(
+            # Verify the burn on-chain (only needed on first use of this tx hash)
+            actual_amount = attest_burn_amount
+            if not is_known and neuron:
+                valid, err_msg, actual_amount = neuron.verify_burn(
                     req.burn_tx_hash, attest_burn_amount, attest_burn_address,
                 )
                 if not valid:
@@ -621,12 +626,14 @@ def create_app(
                     ATTESTATION_GATED.labels(reason=reason).inc()
                     raise HTTPException(status_code=403, detail=err_msg)
 
-            # Record the burn to prevent re-use
-            if not burn_ledger.record_burn(req.burn_tx_hash, "unknown", attest_burn_amount):
+            # Consume one credit (record_burn handles first-use and subsequent uses)
+            if not burn_ledger.record_burn(
+                req.burn_tx_hash, "unknown", actual_amount, min_amount=attest_burn_amount,
+            ):
                 ATTESTATION_GATED.labels(reason="already_consumed").inc()
                 raise HTTPException(
                     status_code=403,
-                    detail="Burn transaction already used for a previous attestation",
+                    detail="All attestation credits for this burn transaction have been used",
                 )
 
         # Get list of reachable miners
@@ -765,6 +772,14 @@ def create_app(
             timestamp=miner_data.get("timestamp", 0),
             error=verify_result.error if not verify_result.verified else None,
         )
+
+    @app.get("/v1/attest/credits/{burn_tx_hash}")
+    async def attest_credits(burn_tx_hash: str) -> dict:
+        """Check remaining attestation credits for a burn transaction."""
+        if burn_ledger is None:
+            return {"burn_tx_hash": burn_tx_hash, "remaining": 999, "total": 999}
+        remaining = burn_ledger.remaining_credits(burn_tx_hash)
+        return {"burn_tx_hash": burn_tx_hash, "remaining": remaining}
 
     @app.post("/v1/analytics/attempt")
     async def analytics(req: AnalyticsRequest) -> dict:
