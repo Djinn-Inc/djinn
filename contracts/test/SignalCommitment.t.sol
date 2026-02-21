@@ -216,6 +216,44 @@ contract SignalCommitmentTest is Test {
         assertTrue(sc.signalExists(303));
     }
 
+    // ─── Tests: Notional range validation
+    // ─────────────────────────────────
+
+    function test_commit_revertOnInvalidNotionalRange() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(350);
+        p.minNotional = 100e6; // 100 USDC min
+        p.maxNotional = 50e6;  // 50 USDC max — invalid: min > max
+
+        vm.expectRevert(
+            abi.encodeWithSelector(SignalCommitment.InvalidNotionalRange.selector, 100e6, 50e6)
+        );
+        vm.prank(genius);
+        sc.commit(p);
+    }
+
+    function test_commit_allowsZeroMaxNotional() public {
+        // maxNotional=0 means "no limit", should be allowed regardless of minNotional
+        SignalCommitment.CommitParams memory p = _defaultParams(351);
+        p.minNotional = 100e6;
+        p.maxNotional = 0;
+
+        vm.prank(genius);
+        sc.commit(p);
+
+        assertTrue(sc.signalExists(351));
+    }
+
+    function test_commit_allowsEqualMinMax() public {
+        SignalCommitment.CommitParams memory p = _defaultParams(352);
+        p.minNotional = 50e6;
+        p.maxNotional = 50e6;
+
+        vm.prank(genius);
+        sc.commit(p);
+
+        assertTrue(sc.signalExists(352));
+    }
+
     // ─── Tests: Revert on expired signal
     // ─────────────────────────────────
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverValidatorUrl } from "@/lib/bt-metagraph";
+import { getIp, isRateLimited, rateLimitResponse } from "@/lib/rate-limit";
 
 async function getValidatorUrl(): Promise<string> {
   const envUrl = process.env.VALIDATOR_URL || process.env.NEXT_PUBLIC_VALIDATOR_URL;
@@ -20,6 +21,11 @@ async function getValidatorUrl(): Promise<string> {
  * Response: AttestResponse from the validator
  */
 export async function POST(request: NextRequest) {
+  // Attest is expensive (calls validator + external URL) — tighter rate limit
+  if (isRateLimited("attest", getIp(request), 10)) {
+    return rateLimitResponse();
+  }
+
   const target = `${await getValidatorUrl()}/v1/attest`;
 
   let body: { url?: string; request_id?: string; burn_tx_hash?: string };

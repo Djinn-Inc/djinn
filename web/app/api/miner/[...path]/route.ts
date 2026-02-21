@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverMinerUrl } from "@/lib/bt-metagraph";
+import { getIp, isRateLimited, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_PATHS = new Set(["health", "v1/check"]);
 
@@ -24,6 +25,10 @@ async function proxy(
   request: NextRequest,
   { params }: { params: { path: string[] } },
 ) {
+  if (isRateLimited("miner-proxy", getIp(request))) {
+    return rateLimitResponse();
+  }
+
   const path = params.path.join("/");
   if (!ALLOWED_PATHS.has(path)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

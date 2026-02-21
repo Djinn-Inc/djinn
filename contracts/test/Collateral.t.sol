@@ -572,6 +572,30 @@ contract CollateralTest is Test {
         assertEq(col.getSignalLock(genius, 1), 0);
     }
 
+    function test_slash_returnsActualAmount() public {
+        _depositAs(genius, 5000e6);
+
+        vm.prank(authorizedCaller);
+        uint256 slashed = col.slash(genius, 3000e6, recipient);
+        assertEq(slashed, 3000e6, "Should return exact slash amount");
+    }
+
+    function test_slash_returnsCappedAmount() public {
+        _depositAs(genius, 2000e6);
+
+        vm.prank(authorizedCaller);
+        uint256 slashed = col.slash(genius, 5000e6, recipient);
+        assertEq(slashed, 2000e6, "Should return capped amount");
+    }
+
+    function test_slash_revertZeroRecipient() public {
+        _depositAs(genius, 5000e6);
+
+        vm.expectRevert(Collateral.ZeroAddress.selector);
+        vm.prank(authorizedCaller);
+        col.slash(genius, 1000e6, address(0));
+    }
+
     function test_deposit_locked_available_invariant() public {
         _depositAs(genius, 10_000e6);
 

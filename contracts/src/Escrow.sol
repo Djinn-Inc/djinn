@@ -312,23 +312,10 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         uint256 buyerBal = balances[msg.sender];
         if (buyerBal < usdcPaid) revert InsufficientBalance(buyerBal, usdcPaid);
 
-        // --- Track cumulative notional filled ---
+        // --- Effects: all state changes first (CEI pattern) ---
         signalNotionalFilled[signalId] += notional;
-
-        // --- Deduct buyer's escrowed USDC ---
         balances[msg.sender] = buyerBal - usdcPaid;
 
-        // --- Burn credits used ---
-        if (creditUsed > 0) {
-            creditLedger.burn(msg.sender, creditUsed);
-        }
-
-        // --- Lock Genius collateral ---
-        // lockAmount = notional * slaMultiplierBps / 10_000
-        uint256 lockAmount = (notional * sig.slaMultiplierBps) / 10_000;
-        collateral.lock(signalId, sig.genius, lockAmount);
-
-        // --- Record purchase ---
         purchaseId = nextPurchaseId;
         nextPurchaseId += 1;
         _purchases[purchaseId] = Purchase({
@@ -345,11 +332,17 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
 
         _purchasesBySignal[signalId].push(purchaseId);
 
-        // --- Track fee pool for audit refunds ---
         uint256 cycle = account.getCurrentCycle(sig.genius, msg.sender);
         feePool[sig.genius][msg.sender][cycle] += usdcPaid;
 
-        // --- Notify Account contract ---
+        // --- Interactions: external calls after state is finalized ---
+        if (creditUsed > 0) {
+            creditLedger.burn(msg.sender, creditUsed);
+        }
+
+        uint256 lockAmount = (notional * sig.slaMultiplierBps) / 10_000;
+        collateral.lock(signalId, sig.genius, lockAmount);
+
         account.recordPurchase(sig.genius, msg.sender, purchaseId);
 
         emit SignalPurchased(signalId, msg.sender, purchaseId, notional, fee, creditUsed, usdcPaid);

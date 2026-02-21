@@ -171,5 +171,6 @@ async function createGitHubIssue(report: typeof Object.prototype & Record<string
       Accept: "application/vnd.github+json",
     },
     body: JSON.stringify({ title, body, labels }),
+    signal: AbortSignal.timeout(10_000),
   });
 }

@@ -116,6 +116,9 @@ contract SignalCommitment is Ownable, Pausable {
     /// @notice A string field exceeds its maximum allowed length
     error StringTooLong(string field, uint256 length, uint256 max);
 
+    /// @notice minNotional must be <= maxNotional when maxNotional is set
+    error InvalidNotionalRange(uint256 minNotional, uint256 maxNotional);
+
     /// @notice Maximum encrypted blob size (64 KB)
     uint256 public constant MAX_BLOB_SIZE = 65536;
 
@@ -176,6 +179,9 @@ contract SignalCommitment is Ownable, Pausable {
         if (p.slaMultiplierBps > 100_000) revert SlaMultiplierTooHigh(p.slaMultiplierBps);
         if (p.maxPriceBps == 0 || p.maxPriceBps > 5000) revert InvalidMaxPriceBps(p.maxPriceBps);
         if (p.expiresAt <= block.timestamp) revert ExpirationInPast(p.expiresAt, block.timestamp);
+        if (p.maxNotional > 0 && p.minNotional > p.maxNotional) {
+            revert InvalidNotionalRange(p.minNotional, p.maxNotional);
+        }
 
         _exists[p.signalId] = true;
 

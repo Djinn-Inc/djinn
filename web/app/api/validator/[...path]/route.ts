@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverValidatorUrl } from "@/lib/bt-metagraph";
+import { getIp, isRateLimited, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_PATHS = new Set(["health", "v1/signal"]);
 const PURCHASE_RE = /^v1\/signal\/[a-zA-Z0-9_-]+\/purchase$/;
@@ -29,6 +30,10 @@ async function proxy(
   request: NextRequest,
   { params }: { params: { path: string[] } },
 ) {
+  if (isRateLimited("validator-proxy", getIp(request))) {
+    return rateLimitResponse();
+  }
+
   const path = params.path.join("/");
   if (!isAllowed(path)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

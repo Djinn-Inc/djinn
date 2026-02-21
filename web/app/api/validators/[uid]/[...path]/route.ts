@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverMetagraph } from "@/lib/bt-metagraph";
+import { getIp, isRateLimited, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_PATHS = new Set(["health", "v1/signal"]);
 const PURCHASE_RE = /^v1\/signal\/[a-zA-Z0-9_-]+\/purchase$/;
@@ -20,6 +21,10 @@ async function proxy(
   request: NextRequest,
   { params }: { params: { uid: string; path: string[] } },
 ) {
+  if (isRateLimited("validator-uid-proxy", getIp(request))) {
+    return rateLimitResponse();
+  }
+
   const uid = parseInt(params.uid, 10);
   if (isNaN(uid) || uid < 0 || uid > 65535) {
     return NextResponse.json({ error: "Invalid UID" }, { status: 400 });

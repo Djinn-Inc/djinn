@@ -10,11 +10,11 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  // Accept password from Authorization header (preferred) or query param (legacy)
+  // Accept password from Authorization header only
   const authHeader = request.headers.get("authorization");
   const password = authHeader?.startsWith("Bearer ")
     ? authHeader.slice(7)
-    : searchParams.get("auth");
+    : null;
 
   const expected = process.env.ADMIN_PASSWORD || process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
   if (!password || password !== expected) {

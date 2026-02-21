@@ -143,10 +143,12 @@ contract Collateral is Ownable, Pausable, ReentrancyGuard {
     /// @param genius The Genius being slashed
     /// @param amount Amount of USDC to slash (6 decimals)
     /// @param recipient Address to receive the slashed USDC (the Idiot, via Escrow/Audit)
-    function slash(address genius, uint256 amount, address recipient) external onlyAuthorized nonReentrant {
+    /// @return slashAmount The actual amount slashed (may be less than requested if deposits insufficient)
+    function slash(address genius, uint256 amount, address recipient) external onlyAuthorized nonReentrant returns (uint256 slashAmount) {
         if (amount == 0) revert ZeroAmount();
+        if (recipient == address(0)) revert ZeroAddress();
         uint256 available = deposits[genius];
-        uint256 slashAmount = amount > available ? available : amount;
+        slashAmount = amount > available ? available : amount;
         deposits[genius] -= slashAmount;
         if (locked[genius] > deposits[genius]) {
             locked[genius] = deposits[genius];
