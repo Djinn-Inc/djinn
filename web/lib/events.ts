@@ -285,7 +285,15 @@ export async function getSignalsByGenius(
 
   if (includeAll) return all;
   const now = BigInt(Math.floor(Date.now() / 1000));
-  return all.filter((s) => s.expiresAt > now);
+  const notExpired = all.filter((s) => s.expiresAt > now);
+
+  // Check on-chain status to filter out cancelled/voided signals
+  const activeChecks = await Promise.all(
+    notExpired.map((s) =>
+      contract.isActive(BigInt(s.signalId)).catch(() => false),
+    ),
+  );
+  return notExpired.filter((_, i) => activeChecks[i]);
 }
 
 // ---------------------------------------------------------------------------

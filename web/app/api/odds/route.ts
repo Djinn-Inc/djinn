@@ -135,6 +135,8 @@ export async function GET(request: NextRequest) {
     url.searchParams.set("regions", "us");
     url.searchParams.set("markets", markets);
     url.searchParams.set("oddsFormat", "decimal");
+    // Only fetch upcoming games — live/started games can't be used for signals
+    url.searchParams.set("commenceTimeFrom", new Date().toISOString());
 
     const resp = await fetch(url.toString(), {
       signal: AbortSignal.timeout(10_000),

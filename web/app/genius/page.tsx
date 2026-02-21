@@ -200,14 +200,30 @@ export default function GeniusDashboard() {
                 )}
               </div>
               {signalsLoading ? (
-                <div className="card">
-                  <p className="text-center text-slate-500 py-8">Loading signals...</p>
+                <div className="animate-pulse space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="card flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="h-4 bg-slate-200 rounded w-48 mb-2" />
+                        <div className="h-3 bg-slate-100 rounded w-72" />
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-4">
+                        <div className="h-6 bg-slate-100 rounded-full w-16" />
+                        <div className="h-4 bg-slate-100 rounded w-4" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : mySignals.length === 0 ? (
-                <div className="card">
-                  <p className="text-center text-slate-500 py-8">
-                    No signals yet. Create your first signal to start building your
-                    track record.
+                <div className="card text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-genius-50 flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-6 h-6 text-genius-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+                    </svg>
+                  </div>
+                  <p className="text-slate-500 mb-1">No signals yet</p>
+                  <p className="text-xs text-slate-400">
+                    Create your first signal to start building your track record.
                   </p>
                 </div>
               ) : displayedSignals.length === 0 ? (
@@ -293,11 +309,19 @@ export default function GeniusDashboard() {
             </thead>
             <tbody>
               {auditsLoading ? (
-                <tr>
-                  <td colSpan={7} className="text-center text-slate-500 py-8">
-                    Loading...
-                  </td>
-                </tr>
+                <>
+                  {[1, 2, 3].map((i) => (
+                    <tr key={i} className="border-b border-slate-100 animate-pulse">
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-8" /></td>
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-20" /></td>
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-12" /></td>
+                      <td className="py-3"><div className="h-5 bg-slate-100 rounded-full w-16" /></td>
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-14" /></td>
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-10" /></td>
+                      <td className="py-3"><div className="h-4 bg-slate-100 rounded w-20" /></td>
+                    </tr>
+                  ))}
+                </>
               ) : audits.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-500 py-8">
@@ -358,8 +382,18 @@ export default function GeniusDashboard() {
           </Link>
         </div>
         {proofsLoading ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">Loading proofs...</p>
+          <div className="animate-pulse space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="card">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="h-4 bg-slate-200 rounded w-44 mb-2" />
+                    <div className="h-3 bg-slate-100 rounded w-64" />
+                  </div>
+                  <div className="h-6 bg-slate-100 rounded-full w-16" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : proofsError ? (
           <div className="card">
@@ -430,6 +464,7 @@ export default function GeniusDashboard() {
                 <input
                   id="depositCollateral"
                   type="number"
+                  inputMode="decimal"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
                   value={depositAmount}
@@ -450,6 +485,7 @@ export default function GeniusDashboard() {
                 <input
                   id="withdrawCollateral"
                   type="number"
+                  inputMode="decimal"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
                   value={withdrawAmount}

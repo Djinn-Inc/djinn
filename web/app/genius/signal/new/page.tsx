@@ -115,11 +115,14 @@ export default function CreateSignal() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
 
-  // Sort events by commence time and filter by search
+  // Sort events by commence time, exclude live/started games, and filter by search
   const filteredEvents = useMemo(() => {
-    const sorted = [...events].sort(
-      (a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime(),
-    );
+    const now = Date.now();
+    const sorted = [...events]
+      .filter((ev) => new Date(ev.commence_time).getTime() > now) // Only upcoming games
+      .sort(
+        (a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime(),
+      );
     if (!searchQuery.trim()) return sorted;
     const q = searchQuery.toLowerCase();
     return sorted.filter(
@@ -541,7 +544,7 @@ export default function CreateSignal() {
           )}
         </div>
         <p className="text-slate-500 mb-6">
-          Browse live games and select your signal. The system will auto-generate
+          Browse upcoming games and select your signal. The system will auto-generate
           plausible decoy lines from real odds data.
         </p>
 
@@ -640,8 +643,16 @@ export default function CreateSignal() {
         {/* No events */}
         {!eventsLoading && !eventsError && events.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-slate-500">
-              No upcoming {selectedSport.label} games found. Try another sport.
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-slate-500 mb-1">
+              No upcoming {selectedSport.label} games found
+            </p>
+            <p className="text-xs text-slate-400">
+              All current games have already started. Try another sport or check back later.
             </p>
           </div>
         )}

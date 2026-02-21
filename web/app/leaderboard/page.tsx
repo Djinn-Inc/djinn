@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import QualityScore from "@/components/QualityScore";
 import { useLeaderboard } from "@/lib/hooks/useLeaderboard";
 import { truncateAddress } from "@/lib/types";
@@ -17,6 +17,13 @@ export default function Leaderboard() {
   const { data, loading, error, configured } = useLeaderboard();
   const [sortBy, setSortBy] = useState<SortField>("qualityScore");
   const [sortDesc, setSortDesc] = useState(true);
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+
+  const copyAddress = useCallback((addr: string) => {
+    navigator.clipboard.writeText(addr);
+    setCopiedAddr(addr);
+    setTimeout(() => setCopiedAddr(null), 1500);
+  }, []);
 
   const sorted = [...data].sort((a, b) => {
     const multiplier = sortDesc ? -1 : 1;
@@ -143,11 +150,20 @@ export default function Leaderboard() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={8} className="text-center text-slate-500 py-12">
-                  Loading leaderboard...
-                </td>
-              </tr>
+              <>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <tr key={i} className="border-b border-slate-200 animate-pulse">
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-6" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-200 rounded w-24" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-16" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-10" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-10" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-14" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-8" /></td>
+                    <td className="py-4"><div className="h-4 bg-slate-100 rounded w-20" /></td>
+                  </tr>
+                ))}
+              </>
             ) : sorted.length === 0 ? (
               <tr>
                 <td colSpan={8} className="text-center text-slate-500 py-12">
@@ -164,11 +180,18 @@ export default function Leaderboard() {
                   <td className="py-4 text-slate-500 font-mono">{i + 1}</td>
                   <td className="py-4">
                     <button
-                      className="font-mono text-slate-900 hover:text-genius-600 transition-colors cursor-pointer"
+                      className="font-mono text-slate-900 hover:text-genius-600 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                       title="Copy full address"
-                      onClick={() => navigator.clipboard.writeText(entry.address)}
+                      onClick={() => copyAddress(entry.address)}
                     >
                       {truncateAddress(entry.address)}
+                      {copiedAddr === entry.address ? (
+                        <span className="text-[10px] font-sans text-green-600 font-medium">Copied!</span>
+                      ) : (
+                        <svg className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                        </svg>
+                      )}
                     </button>
                   </td>
                   <td className="py-4">

@@ -328,6 +328,7 @@ export default function IdiotDashboard() {
                 <input
                   id="depositEscrow"
                   type="number"
+                  inputMode="decimal"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
                   value={depositAmount}
@@ -351,6 +352,7 @@ export default function IdiotDashboard() {
                 <input
                   id="withdrawEscrow"
                   type="number"
+                  inputMode="decimal"
                   placeholder="Amount (USDC)"
                   className="input flex-1"
                   value={withdrawAmount}
@@ -576,8 +578,25 @@ export default function IdiotDashboard() {
         )}
 
         {signalsLoading ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">Loading signals...</p>
+          <div className="animate-pulse space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="card">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-4 bg-slate-200 rounded w-16" />
+                      <div className="h-3 bg-slate-100 rounded w-24" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-3 bg-slate-100 rounded w-20" />
+                      <div className="h-3 bg-slate-100 rounded w-16" />
+                      <div className="h-3 bg-slate-100 rounded w-14" />
+                    </div>
+                  </div>
+                  <div className="h-4 bg-slate-100 rounded w-12 shrink-0 ml-3" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : sortedSignals.length === 0 ? (
           <div className="card">
@@ -667,14 +686,30 @@ export default function IdiotDashboard() {
           Purchase History
         </h2>
         {purchasesLoading ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">Loading...</p>
+          <div className="animate-pulse space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="card">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="h-4 bg-slate-200 rounded w-32" />
+                  <div className="h-5 bg-slate-100 rounded-full w-20" />
+                </div>
+                <div className="flex gap-4">
+                  <div className="h-3 bg-slate-100 rounded w-16" />
+                  <div className="h-3 bg-slate-100 rounded w-16" />
+                  <div className="h-3 bg-slate-100 rounded w-20" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : purchases.length === 0 ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">
-              No purchases yet. Browse available signals above to get started.
-            </p>
+          <div className="card text-center py-8">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+              </svg>
+            </div>
+            <p className="text-slate-500 mb-1">No purchases yet</p>
+            <p className="text-xs text-slate-400">Browse available signals above to get started.</p>
           </div>
         ) : (
           <>
@@ -763,15 +798,29 @@ export default function IdiotDashboard() {
           Settlement History
         </h2>
         {auditsLoading ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">Loading...</p>
+          <div className="animate-pulse space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="card">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="h-4 bg-slate-200 rounded w-40" />
+                  <div className="h-5 bg-slate-100 rounded-full w-20" />
+                </div>
+                <div className="flex gap-4">
+                  <div className="h-3 bg-slate-100 rounded w-16" />
+                  <div className="h-3 bg-slate-100 rounded w-16" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : audits.length === 0 ? (
-          <div className="card">
-            <p className="text-center text-slate-500 py-8">
-              No settlements yet. Settlements happen after every 10 signals
-              in a Genius-Idiot pair are resolved.
-            </p>
+          <div className="card text-center py-8">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </div>
+            <p className="text-slate-500 mb-1">No settlements yet</p>
+            <p className="text-xs text-slate-400">Settlements happen after every 10 signals in a Genius-Idiot pair are resolved.</p>
           </div>
         ) : (
           <>
