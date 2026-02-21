@@ -29,7 +29,7 @@ interface MinerHealth {
   error?: string;
 }
 
-const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || "http://5.34.215.175:3001";
+const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || "";
 
 export default function AdminDashboard() {
   const [validators, setValidators] = useState<ValidatorHealth[]>([]);
@@ -37,6 +37,53 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<SubgraphProtocolStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [authed, setAuthed] = useState(false);
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState(false);
+
+  // Simple client-side password gate
+  useEffect(() => {
+    const stored = sessionStorage.getItem("djinn_admin_auth");
+    if (stored === "1") setAuthed(true);
+  }, []);
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Check against env var or fallback
+    const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
+    if (password === expected) {
+      setAuthed(true);
+      sessionStorage.setItem("djinn_admin_auth", "1");
+      setAuthError(false);
+    } else {
+      setAuthError(true);
+    }
+  };
+
+  if (!authed) {
+    return (
+      <div className="max-w-md mx-auto py-20">
+        <h1 className="text-2xl font-bold text-slate-900 mb-2 text-center">Admin Dashboard</h1>
+        <p className="text-slate-500 text-sm text-center mb-8">Enter the admin password to continue.</p>
+        <form onSubmit={handleAuth} className="card">
+          <label htmlFor="admin-pass" className="label">Password</label>
+          <input
+            id="admin-pass"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="input mb-4"
+            autoFocus
+            required
+          />
+          {authError && (
+            <p className="text-sm text-red-500 mb-3">Incorrect password.</p>
+          )}
+          <button type="submit" className="btn-primary w-full">Enter</button>
+        </form>
+      </div>
+    );
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -87,14 +134,16 @@ export default function AdminDashboard() {
           >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
-          <a
-            href={GRAFANA_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 text-sm font-medium bg-orange-600 text-white rounded-lg hover:bg-orange-500"
-          >
-            Open Grafana
-          </a>
+          {GRAFANA_URL && (
+            <a
+              href={GRAFANA_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-sm font-medium bg-genius-600 text-white rounded-lg hover:bg-genius-500"
+            >
+              Open Grafana
+            </a>
+          )}
         </div>
       </div>
 
@@ -264,27 +313,29 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Quick Links */}
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900 mb-4">Monitoring</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <ExternalLink
-            href={`${GRAFANA_URL}/d/djinn-overview`}
-            title="Protocol Overview"
-            description="Request rates, purchases, MPC performance"
-          />
-          <ExternalLink
-            href={`${GRAFANA_URL}/d/djinn-validators`}
-            title="Validator Metrics"
-            description="Per-validator shares, latency, errors"
-          />
-          <ExternalLink
-            href={`${GRAFANA_URL}/d/djinn-miner`}
-            title="Miner Metrics"
-            description="Line checks, cache hit rate, Odds API"
-          />
+      {/* Quick Links — only show when Grafana is configured */}
+      {GRAFANA_URL && (
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">Monitoring</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <ExternalLink
+              href={`${GRAFANA_URL}/d/djinn-overview`}
+              title="Protocol Overview"
+              description="Request rates, purchases, MPC performance"
+            />
+            <ExternalLink
+              href={`${GRAFANA_URL}/d/djinn-validators`}
+              title="Validator Metrics"
+              description="Per-validator shares, latency, errors"
+            />
+            <ExternalLink
+              href={`${GRAFANA_URL}/d/djinn-miner`}
+              title="Miner Metrics"
+              description="Line checks, cache hit rate, Odds API"
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

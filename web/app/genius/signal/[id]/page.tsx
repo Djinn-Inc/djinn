@@ -7,6 +7,7 @@ import { useAccount } from "wagmi";
 import { useSignal, useVoidSignal, useSignalPurchases, useSignalNotionalFilled, humanizeError } from "@/lib/hooks";
 import { getSavedSignals } from "@/lib/hooks/useSettledSignals";
 import { SignalStatus, formatUsdc, formatBps, truncateAddress } from "@/lib/types";
+import { parseLine, formatLine, type StructuredLine } from "@/lib/odds";
 
 export default function GeniusSignalDetail() {
   const params = useParams();
@@ -259,28 +260,31 @@ export default function GeniusSignalDetail() {
           <p className="text-slate-500 text-sm">No line data available.</p>
         ) : (
           <div className="space-y-2">
-            {signal.decoyLines.map((line, i) => {
+            {signal.decoyLines.map((raw, i) => {
               const isReal = savedData?.realIndex === i;
+              const structured = parseLine(raw);
               return (
                 <div
                   key={i}
-                  className={`px-3 py-2 rounded-lg text-sm ${
+                  className={`px-3 py-2.5 rounded-lg text-sm ${
                     isReal
-                      ? "bg-genius-50 border-2 border-genius-300 font-medium text-genius-800"
+                      ? "bg-genius-50 border-2 border-genius-300 text-genius-800"
                       : "bg-slate-50 border border-slate-200 text-slate-600"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    {isReal && (
-                      <span className="text-xs font-bold text-genius-500 uppercase">
-                        Real
-                      </span>
-                    )}
-                    <span className={isReal ? "" : "text-slate-500"}>
-                      Line {i + 1}:
-                    </span>
-                    <span>{line}</span>
-                  </div>
+                  {structured ? (
+                    <LineDisplay line={structured} index={i + 1} isReal={isReal} />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {isReal && (
+                        <span className="text-xs font-bold text-genius-500 uppercase">
+                          Real
+                        </span>
+                      )}
+                      <span className="text-slate-500">Line {i + 1}:</span>
+                      <span className="font-mono text-xs break-all">{raw}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -365,6 +369,56 @@ export default function GeniusSignalDetail() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Formatted line display
+// ---------------------------------------------------------------------------
+
+function LineDisplay({
+  line,
+  index,
+  isReal,
+}: {
+  line: StructuredLine;
+  index: number;
+  isReal: boolean;
+}) {
+  const display = formatLine(line);
+  const sportLabel = line.sport
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const marketLabel =
+    line.market === "h2h" ? "Moneyline" :
+    line.market === "spreads" ? "Spread" :
+    line.market === "totals" ? "Total" : line.market;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        {isReal && (
+          <span className="inline-flex items-center rounded-full bg-genius-100 text-genius-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+            Real Pick
+          </span>
+        )}
+        <span className={`text-xs ${isReal ? "text-genius-500" : "text-slate-400"}`}>
+          #{index}
+        </span>
+        <span className={`font-medium ${isReal ? "text-genius-800" : "text-slate-700"}`}>
+          {display}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+        <span>{sportLabel}</span>
+        <span>&middot;</span>
+        <span>{marketLabel}</span>
+        <span>&middot;</span>
+        <span className="truncate max-w-[180px]">
+          {line.home_team} vs {line.away_team}
+        </span>
+      </div>
     </div>
   );
 }
