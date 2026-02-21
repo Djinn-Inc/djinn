@@ -67,6 +67,20 @@ export default function PurchaseSignal() {
   const [availableIndices, setAvailableIndices] = useState<number[]>([]);
   const [marketOdds, setMarketOdds] = useState<number | null>(null);
   const purchaseInFlight = useRef(false);
+  const purchaseBtnRef = useRef<HTMLButtonElement>(null);
+  const [purchaseBtnVisible, setPurchaseBtnVisible] = useState(false);
+
+  // Hide sticky mobile bar when the form submit button scrolls into view
+  useEffect(() => {
+    const el = purchaseBtnRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setPurchaseBtnVisible(entry.isIntersecting),
+      { threshold: 0.5 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [step]);
 
   // Sportsbook preferences
   const [savedPrefs, setSavedPrefs] = useState<string[]>([]);
@@ -822,6 +836,7 @@ export default function PurchaseSignal() {
                 )}
 
                 <button
+                  ref={purchaseBtnRef}
                   type="submit"
                   disabled={
                     isProcessing || purchaseLoading || !selectedSportsbook
@@ -865,8 +880,8 @@ export default function PurchaseSignal() {
         </div>
       </div>
 
-      {/* Sticky mobile purchase bar — visible only on mobile when the form is above */}
-      {isActive && !isProcessing && (
+      {/* Sticky mobile purchase bar — hidden when form submit button is in view */}
+      {isActive && !isProcessing && !purchaseBtnVisible && (
         <div className="fixed bottom-0 left-0 right-0 md:hidden bg-white/95 backdrop-blur-sm border-t border-slate-200 px-4 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm">

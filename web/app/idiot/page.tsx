@@ -611,6 +611,7 @@ export default function IdiotDashboard() {
             <SignalPlot
               signals={sortedSignals}
               onSelect={(id) => router.push(`/idiot/signal/${id}`)}
+              geniusScoreMap={geniusScoreMap}
             />
           </div>
         ) : (
