@@ -5,5 +5,7 @@ export async function GET() {
     status: "ok",
     version: "0.1.0",
     timestamp: new Date().toISOString(),
+  }, {
+    headers: { "Cache-Control": "no-cache" },
   });
 }

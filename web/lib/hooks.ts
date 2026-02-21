@@ -17,6 +17,15 @@ import {
 import type { Signal, CommitParams } from "./types";
 
 // ---------------------------------------------------------------------------
+// Debug logging — only emits in development
+// ---------------------------------------------------------------------------
+
+const isDev = process.env.NODE_ENV === "development";
+const debug = isDev
+  ? (...args: unknown[]) => debug(...args)
+  : (..._args: unknown[]) => {};
+
+// ---------------------------------------------------------------------------
 // Error humanization — turn raw contract errors into readable messages
 // ---------------------------------------------------------------------------
 
@@ -470,7 +479,7 @@ export function useCommitSignal() {
       try {
         const signalCommitmentAddr = ADDRESSES.signalCommitment as Hex;
 
-        console.log("[commit-signal] committing signal", params.signalId.toString());
+        debug("[commit-signal] committing signal", params.signalId.toString());
         const hash = await walletClient.writeContract({
           address: signalCommitmentAddr,
           abi: SIGNAL_COMMITMENT_VIEM_ABI,
@@ -489,7 +498,7 @@ export function useCommitSignal() {
             availableSportsbooks: params.availableSportsbooks,
           }],
         });
-        console.log("[commit-signal] tx:", hash);
+        debug("[commit-signal] tx:", hash);
         setTxHash(hash);
         await waitForTx(hash);
         return hash;
@@ -523,14 +532,14 @@ export function usePurchaseSignal() {
       try {
         const escrowAddr = ADDRESSES.escrow as Hex;
 
-        console.log("[purchase-signal] purchasing signal", signalId.toString());
+        debug("[purchase-signal] purchasing signal", signalId.toString());
         const hash = await walletClient.writeContract({
           address: escrowAddr,
           abi: ESCROW_ABI,
           functionName: "purchase",
           args: [signalId, notional, odds],
         });
-        console.log("[purchase-signal] tx:", hash);
+        debug("[purchase-signal] tx:", hash);
         setTxHash(hash);
         await waitForTx(hash);
         return hash;
@@ -574,28 +583,28 @@ export function useDepositEscrow() {
         const allowance: bigint = await usdcRead.allowance(address, escrowAddr);
         if (allowance < amount) {
           const MAX_UINT256 = 2n ** 256n - 1n;
-          console.log("[escrow-deposit] approving (max allowance)");
+          debug("[escrow-deposit] approving (max allowance)");
           const approveHash = await walletClient.writeContract({
             address: usdcAddr,
             abi: ERC20_ABI,
             functionName: "approve",
             args: [escrowAddr, MAX_UINT256],
           });
-          console.log("[escrow-deposit] approve tx:", approveHash);
+          debug("[escrow-deposit] approve tx:", approveHash);
           await waitForTx(approveHash);
         } else {
-          console.log("[escrow-deposit] allowance sufficient, skipping approve");
+          debug("[escrow-deposit] allowance sufficient, skipping approve");
         }
 
         // Deposit into escrow
-        console.log("[escrow-deposit] depositing", amount.toString());
+        debug("[escrow-deposit] depositing", amount.toString());
         const depositHash = await walletClient.writeContract({
           address: escrowAddr,
           abi: ESCROW_ABI,
           functionName: "deposit",
           args: [amount],
         });
-        console.log("[escrow-deposit] deposit tx:", depositHash);
+        debug("[escrow-deposit] deposit tx:", depositHash);
         await waitForTx(depositHash);
 
         return depositHash;
@@ -641,28 +650,28 @@ export function useDepositCollateral() {
         if (allowance < amount) {
           // Use MaxUint256 so user only approves once (avoids Safari popup-block on 2nd tx)
           const MAX_UINT256 = 2n ** 256n - 1n;
-          console.log("[collateral-deposit] approving (max allowance)");
+          debug("[collateral-deposit] approving (max allowance)");
           const approveHash = await walletClient.writeContract({
             address: usdcAddr,
             abi: ERC20_ABI,
             functionName: "approve",
             args: [collateralAddr, MAX_UINT256],
           });
-          console.log("[collateral-deposit] approve tx:", approveHash);
+          debug("[collateral-deposit] approve tx:", approveHash);
           await waitForTx(approveHash);
         } else {
-          console.log("[collateral-deposit] allowance sufficient, skipping approve");
+          debug("[collateral-deposit] allowance sufficient, skipping approve");
         }
 
         // Deposit into collateral
-        console.log("[collateral-deposit] depositing", amount.toString());
+        debug("[collateral-deposit] depositing", amount.toString());
         const depositHash = await walletClient.writeContract({
           address: collateralAddr,
           abi: COLLATERAL_ABI,
           functionName: "deposit",
           args: [amount],
         });
-        console.log("[collateral-deposit] deposit tx:", depositHash);
+        debug("[collateral-deposit] deposit tx:", depositHash);
         await waitForTx(depositHash);
 
         return depositHash;
@@ -698,14 +707,14 @@ export function useWithdrawEscrow() {
       setError(null);
       try {
         const escrowAddr = ADDRESSES.escrow as Hex;
-        console.log("[escrow-withdraw] withdrawing", amount.toString());
+        debug("[escrow-withdraw] withdrawing", amount.toString());
         const hash = await walletClient.writeContract({
           address: escrowAddr,
           abi: ESCROW_ABI,
           functionName: "withdraw",
           args: [amount],
         });
-        console.log("[escrow-withdraw] tx:", hash);
+        debug("[escrow-withdraw] tx:", hash);
         await waitForTx(hash);
         return hash;
       } catch (err) {
@@ -735,14 +744,14 @@ export function useWithdrawCollateral() {
       setError(null);
       try {
         const collateralAddr = ADDRESSES.collateral as Hex;
-        console.log("[collateral-withdraw] withdrawing", amount.toString());
+        debug("[collateral-withdraw] withdrawing", amount.toString());
         const hash = await walletClient.writeContract({
           address: collateralAddr,
           abi: COLLATERAL_ABI,
           functionName: "withdraw",
           args: [amount],
         });
-        console.log("[collateral-withdraw] tx:", hash);
+        debug("[collateral-withdraw] tx:", hash);
         await waitForTx(hash);
         return hash;
       } catch (err) {
@@ -776,14 +785,14 @@ export function useApproveUsdc() {
       setError(null);
       try {
         const usdcAddr = ADDRESSES.usdc as Hex;
-        console.log("[approve-usdc] approving", spender, amount.toString());
+        debug("[approve-usdc] approving", spender, amount.toString());
         const hash = await walletClient.writeContract({
           address: usdcAddr,
           abi: ERC20_ABI,
           functionName: "approve",
           args: [spender as Hex, amount],
         });
-        console.log("[approve-usdc] tx:", hash);
+        debug("[approve-usdc] tx:", hash);
         await waitForTx(hash);
         return hash;
       } catch (err) {
@@ -832,14 +841,14 @@ export function useSubmitTrackRecord() {
         const types = allValues.map(() => "uint256" as const);
         const proofHash = keccak256(encodePacked(types, allValues));
 
-        console.log("[track-record] committing proof hash");
+        debug("[track-record] committing proof hash");
         const commitHash = await walletClient.writeContract({
           address: trackRecordAddr,
           abi: TRACK_RECORD_VIEM_ABI,
           functionName: "commitProof",
           args: [proofHash as Hex],
         });
-        console.log("[track-record] commit tx:", commitHash);
+        debug("[track-record] commit tx:", commitHash);
         await waitForTx(commitHash);
 
         // Step 2: Wait for next block (commit-reveal requires submission in a later block)
@@ -858,14 +867,14 @@ export function useSubmitTrackRecord() {
 
         // Step 3: Submit the proof
         setStep("submitting");
-        console.log("[track-record] submitting proof");
+        debug("[track-record] submitting proof");
         const hash = await walletClient.writeContract({
           address: trackRecordAddr,
           abi: TRACK_RECORD_VIEM_ABI,
           functionName: "submit",
           args: [pA, pB, pC, pubSignals as readonly bigint[] & { length: 106 }],
         });
-        console.log("[track-record] submit tx:", hash);
+        debug("[track-record] submit tx:", hash);
         setTxHash(hash);
         await waitForTx(hash);
         return hash;
@@ -903,14 +912,14 @@ export function useEarlyExit() {
       setTxHash(null);
       try {
         const auditAddr = ADDRESSES.audit as Hex;
-        console.log("[early-exit] triggering", genius, idiot);
+        debug("[early-exit] triggering", genius, idiot);
         const hash = await walletClient.writeContract({
           address: auditAddr,
           abi: AUDIT_VIEM_ABI,
           functionName: "earlyExit",
           args: [genius as Hex, idiot as Hex],
         });
-        console.log("[early-exit] tx:", hash);
+        debug("[early-exit] tx:", hash);
         setTxHash(hash);
         await waitForTx(hash);
         return hash;
