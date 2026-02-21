@@ -125,7 +125,7 @@ class MPCCoordinator:
         """
         import os
 
-        session_id = f"mpc-{signal_id}-{secrets.token_hex(8)}"
+        session_id = f"mpc-{signal_id}-{secrets.token_hex(16)}"
 
         n_mults = max(len(available_indices), 1)
         sorted_xs = sorted(participant_xs)

@@ -93,7 +93,12 @@ class BurnLedger:
 
             if row is None:
                 # First use — register the burn
-                total = max(1, round(amount / min_amount))
+                # Use integer division (floor) to prevent dust-spam — partial credits
+                # are not awarded.  amount and min_amount are in TAO (floats) so we
+                # scale to rao (int) first.
+                amount_rao = int(amount * 1_000_000_000)
+                min_rao = int(min_amount * 1_000_000_000)
+                total = max(1, amount_rao // min_rao) if min_rao > 0 else 1
                 self._conn.execute(
                     "INSERT INTO consumed_burns (tx_hash, coldkey, amount, total_credits, used_credits, created_at) "
                     "VALUES (?, ?, ?, ?, 1, ?)",

@@ -126,6 +126,8 @@ def _validate_signal_id_path(signal_id: str) -> None:
 
 def _parse_field_hex(value: str, name: str) -> int:
     """Parse a hex string to int, validating it's a valid BN254 field element."""
+    if not isinstance(value, str) or len(value) > 66:
+        raise HTTPException(status_code=400, detail=f"{name} must be a hex string of at most 66 chars")
     try:
         v = int(value, 16)
     except (ValueError, TypeError):

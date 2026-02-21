@@ -214,22 +214,23 @@ class ShareStore:
 
     def get(self, signal_id: str) -> SignalShareRecord | None:
         """Retrieve a share record by signal ID."""
-        row = self._conn.execute(
-            "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
-            "encrypted_index_share, stored_at "
-            "FROM shares WHERE signal_id = ?",
-            (signal_id,),
-        ).fetchone()
-        if row is None:
-            return None
-
-        released = {
-            r[0]
-            for r in self._conn.execute(
-                "SELECT buyer_address FROM releases WHERE signal_id = ?",
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
+                "encrypted_index_share, stored_at "
+                "FROM shares WHERE signal_id = ?",
                 (signal_id,),
-            ).fetchall()
-        }
+            ).fetchone()
+            if row is None:
+                return None
+
+            released = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT buyer_address FROM releases WHERE signal_id = ?",
+                    (signal_id,),
+                ).fetchall()
+            }
 
         return SignalShareRecord(
             signal_id=row[0],
@@ -244,22 +245,23 @@ class ShareStore:
     def get_all(self, signal_id: str) -> list[SignalShareRecord]:
         """Retrieve all share records for a signal (may be multiple if shares
         are co-located in the same database, e.g. testnet single-machine setup)."""
-        rows = self._conn.execute(
-            "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
-            "encrypted_index_share, stored_at "
-            "FROM shares WHERE signal_id = ? ORDER BY share_x",
-            (signal_id,),
-        ).fetchall()
-        if not rows:
-            return []
-
-        released = {
-            r[0]
-            for r in self._conn.execute(
-                "SELECT buyer_address FROM releases WHERE signal_id = ?",
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT signal_id, genius_address, share_x, share_y, encrypted_key_share, "
+                "encrypted_index_share, stored_at "
+                "FROM shares WHERE signal_id = ? ORDER BY share_x",
                 (signal_id,),
             ).fetchall()
-        }
+            if not rows:
+                return []
+
+            released = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT buyer_address FROM releases WHERE signal_id = ?",
+                    (signal_id,),
+                ).fetchall()
+            }
 
         return [
             SignalShareRecord(

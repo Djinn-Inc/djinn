@@ -4,14 +4,20 @@ import { NextRequest, NextResponse } from "next/server";
  * GET /api/admin/errors?limit=50
  *
  * Returns recent error reports from the local JSONL log.
- * Protected by admin password check via query param.
+ * Protected by admin password via Authorization header.
  */
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const password = searchParams.get("auth");
-  const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
-  if (password !== expected) {
+
+  // Accept password from Authorization header (preferred) or query param (legacy)
+  const authHeader = request.headers.get("authorization");
+  const password = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : searchParams.get("auth");
+
+  const expected = process.env.ADMIN_PASSWORD || process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
+  if (!password || password !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

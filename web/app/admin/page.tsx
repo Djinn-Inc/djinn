@@ -495,8 +495,9 @@ async function fetchValidatorHealth(): Promise<ValidatorHealth[]> {
 
 async function fetchErrorReports(auth: string): Promise<{ errors: ErrorReport[]; total: number } | null> {
   try {
-    const res = await fetch(`/api/admin/errors?auth=${encodeURIComponent(auth)}&limit=50`, {
+    const res = await fetch("/api/admin/errors?limit=50", {
       signal: AbortSignal.timeout(5000),
+      headers: { Authorization: `Bearer ${auth}` },
     });
     if (!res.ok) return null;
     return await res.json();

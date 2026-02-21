@@ -45,7 +45,7 @@ async function proxy(
   }
 
   try {
-    const res = await fetch(target, init);
+    const res = await fetch(target, { ...init, signal: AbortSignal.timeout(30_000) });
     const body = await res.text();
     return new NextResponse(body, {
       status: res.status,

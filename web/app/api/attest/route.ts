@@ -30,14 +30,36 @@ export async function POST(request: NextRequest) {
   }
 
   // Server-side validation — don't trust the client
-  if (!body.url || typeof body.url !== "string" || !body.url.startsWith("https://")) {
-    return NextResponse.json({ error: "URL must start with https://" }, { status: 400 });
+  if (!body.url || typeof body.url !== "string" || !body.url.startsWith("https://") || body.url.length > 2048) {
+    return NextResponse.json({ error: "URL must start with https:// and be under 2048 chars" }, { status: 400 });
   }
-  if (!body.request_id || typeof body.request_id !== "string") {
-    return NextResponse.json({ error: "request_id is required" }, { status: 400 });
+  // Block SSRF to private/internal addresses
+  try {
+    const parsed = new URL(body.url);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "[::1]" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".local") ||
+      host.endsWith(".internal") ||
+      /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(host)
+    ) {
+      return NextResponse.json({ error: "Private/internal URLs not allowed" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
   }
-  if (!body.burn_tx_hash || typeof body.burn_tx_hash !== "string") {
-    return NextResponse.json({ error: "burn_tx_hash is required" }, { status: 400 });
+  if (!body.request_id || typeof body.request_id !== "string" || body.request_id.length > 256) {
+    return NextResponse.json({ error: "request_id is required (max 256 chars)" }, { status: 400 });
+  }
+  if (
+    !body.burn_tx_hash ||
+    typeof body.burn_tx_hash !== "string" ||
+    !/^(0x)?[0-9a-fA-F]{1,128}$/.test(body.burn_tx_hash)
+  ) {
+    return NextResponse.json({ error: "burn_tx_hash must be a valid hex string" }, { status: 400 });
   }
 
   // Only forward whitelisted fields

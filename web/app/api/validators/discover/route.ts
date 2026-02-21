@@ -22,8 +22,9 @@ export async function GET() {
 
     return NextResponse.json({ validators });
   } catch (err) {
+    console.error("[discover] Metagraph discovery failed:", err);
     return NextResponse.json(
-      { error: String(err), validators: [] },
+      { error: "Metagraph discovery failed", validators: [] },
       { status: 500 },
     );
   }

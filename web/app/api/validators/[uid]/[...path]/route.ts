@@ -21,7 +21,7 @@ async function proxy(
   { params }: { params: { uid: string; path: string[] } },
 ) {
   const uid = parseInt(params.uid, 10);
-  if (isNaN(uid) || uid < 0) {
+  if (isNaN(uid) || uid < 0 || uid > 65535) {
     return NextResponse.json({ error: "Invalid UID" }, { status: 400 });
   }
 
@@ -49,7 +49,7 @@ async function proxy(
   }
 
   try {
-    const res = await fetch(target, init);
+    const res = await fetch(target, { ...init, signal: AbortSignal.timeout(30_000) });
     const body = await res.text();
     return new NextResponse(body, {
       status: res.status,
