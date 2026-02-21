@@ -48,7 +48,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </span>
               </Link>
 
-              <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
+              <nav className="hidden lg:flex items-center gap-1" aria-label="Main navigation">
                 {NAV_LINKS.map(({ href, label }) => {
                   const isActive =
                     href === "/"
@@ -113,7 +113,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               {/* Mobile hamburger */}
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="md:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                className="lg:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 aria-label="Toggle menu"
                 aria-expanded={menuOpen}
               >
@@ -133,7 +133,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="md:hidden border-t border-slate-200 bg-white">
+          <div className="lg:hidden border-t border-slate-200 bg-white">
             <nav className="mx-auto max-w-7xl px-4 py-3 space-y-1" aria-label="Mobile navigation">
               {NAV_LINKS.map(({ href, label }) => {
                 const isActive =

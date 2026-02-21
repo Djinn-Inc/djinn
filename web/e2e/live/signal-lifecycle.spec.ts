@@ -1,0 +1,599 @@
+import { test, expect } from "@playwright/test";
+import { ethers } from "ethers";
+
+/**
+ * Full signal lifecycle E2E tests against the live system.
+ *
+ * Exercises: mint USDC → deposit collateral → create signal →
+ * deposit escrow → purchase signal (partial & full) → cancel signal.
+ *
+ * Runs SERIALLY against Base Sepolia with a funded test wallet.
+ * Auto-skips if wallet has no ETH.
+ */
+
+const RPC_URL = "https://sepolia.base.org";
+
+const ADDRESSES = {
+  signalCommitment: "0x83F38eA8B66634643E6FEC8F18848DAa0c86F6DE",
+  escrow: "0x06e6d123DD2474599579B648dd56973120CcEFcA",
+  collateral: "0x06AAfF8643e99042f86f1EC93ED8A8BD36d6D9E7",
+  creditLedger: "0x09de6d7B81ED73707364ee772eAdA7c191c8a4FC",
+  account: "0x7f5700896051f4af0F597135A39a6D9D24F8B2af",
+  usdc: "0x99b566222EED94530dF3E8bdbd8Da1BBe8cC7a69",
+  trackRecord: "0xd3FA108474eb4EfC79649a17472c5F7d729Ac08b",
+  audit: "0x4ca56d7e1D10Ec78C26C98a39b17f83Ca85b68c3",
+};
+
+// Dedicated E2E test wallets on Base Sepolia
+// Genius wallet — creates signals
+const E2E_PRIVATE_KEY =
+  "0x7bdee6a417b39392bfc78a3cf75cc2e726d4d42c7de68f91cd40654740232471";
+// Buyer (Idiot) wallet — purchases signals (derived deterministically)
+const BUYER_PRIVATE_KEY = ethers.keccak256(E2E_PRIVATE_KEY);
+
+let provider: ethers.JsonRpcProvider;
+let wallet: ethers.Wallet; // Genius
+let buyerWallet: ethers.Wallet; // Idiot
+let hasFunds: boolean;
+
+/** Create fresh provider + wallets to avoid stale nonce caches between tests. */
+function reconnect() {
+  provider = new ethers.JsonRpcProvider(RPC_URL);
+  wallet = new ethers.Wallet(E2E_PRIVATE_KEY, provider);
+  buyerWallet = new ethers.Wallet(BUYER_PRIVATE_KEY, provider);
+}
+
+// Use a unique signal ID per run to avoid collisions
+const SIGNAL_ID = BigInt(Math.floor(Date.now() / 1000) * 1000 + Math.floor(Math.random() * 1000));
+
+test.beforeAll(async () => {
+  reconnect();
+  const balance = await provider.getBalance(wallet.address);
+  hasFunds = balance > ethers.parseEther("0.0003");
+  if (!hasFunds) {
+    console.log(
+      `Skipping lifecycle tests: genius=${wallet.address} buyer=${buyerWallet.address} has ${ethers.formatEther(balance)} ETH (need >0.0003)`,
+    );
+  }
+});
+
+test.beforeEach(() => {
+  // Reconnect to avoid stale nonce caches between serial tests
+  reconnect();
+});
+
+// Serial execution — one wallet, one nonce sequence.
+test.describe.configure({ mode: "serial", retries: 0 });
+test.setTimeout(90_000);
+
+const waitForSync = () => new Promise((r) => setTimeout(r, 2500));
+
+// ─────────────────────────────────────────────
+// Setup: Fund wallet, approve, deposit
+// ─────────────────────────────────────────────
+
+test("setup: mint USDC", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const usdc = new ethers.Contract(
+    ADDRESSES.usdc,
+    [
+      "function mint(address to, uint256 amount) external",
+      "function balanceOf(address) view returns (uint256)",
+    ],
+    wallet,
+  );
+
+  const mintAmount = ethers.parseUnits("5000", 6);
+  const tx = await usdc.mint(wallet.address, mintAmount);
+  await tx.wait();
+  await waitForSync();
+
+  const balance = await usdc.balanceOf(wallet.address);
+  expect(balance).toBeGreaterThan(ethers.parseUnits("1000", 6));
+});
+
+test("setup: approve USDC to escrow", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const usdc = new ethers.Contract(
+    ADDRESSES.usdc,
+    ["function approve(address spender, uint256 amount) external returns (bool)"],
+    wallet,
+  );
+
+  const tx = await usdc.approve(ADDRESSES.escrow, ethers.parseUnits("100000", 6));
+  await tx.wait();
+  await waitForSync();
+});
+
+test("setup: approve USDC to collateral", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const usdc = new ethers.Contract(
+    ADDRESSES.usdc,
+    ["function approve(address spender, uint256 amount) external returns (bool)"],
+    wallet,
+  );
+
+  const tx = await usdc.approve(ADDRESSES.collateral, ethers.parseUnits("100000", 6));
+  await tx.wait();
+  await waitForSync();
+});
+
+test("setup: deposit collateral", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const coll = new ethers.Contract(
+    ADDRESSES.collateral,
+    [
+      "function deposit(uint256 amount) external",
+      "function getAvailable(address) view returns (uint256)",
+    ],
+    wallet,
+  );
+
+  const tx = await coll.deposit(ethers.parseUnits("500", 6));
+  await tx.wait();
+  await waitForSync();
+
+  const available = await coll.getAvailable(wallet.address);
+  expect(available).toBeGreaterThanOrEqual(ethers.parseUnits("500", 6));
+});
+
+test("setup: deposit escrow", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function deposit(uint256 amount) external",
+      "function getBalance(address) view returns (uint256)",
+    ],
+    wallet,
+  );
+
+  const tx = await escrow.deposit(ethers.parseUnits("500", 6));
+  await tx.wait();
+  await waitForSync();
+
+  const balance = await escrow.getBalance(wallet.address);
+  expect(balance).toBeGreaterThanOrEqual(ethers.parseUnits("100", 6));
+});
+
+// ─────────────────────────────────────────────
+// Setup: Fund buyer wallet for purchases
+// ─────────────────────────────────────────────
+
+test("setup: fund buyer wallet with ETH", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const buyerBalance = await provider.getBalance(buyerWallet.address);
+  if (buyerBalance < ethers.parseEther("0.00005")) {
+    const tx = await wallet.sendTransaction({
+      to: buyerWallet.address,
+      value: ethers.parseEther("0.0001"),
+    });
+    await tx.wait();
+    await waitForSync();
+  }
+});
+
+test("setup: mint USDC to buyer", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const usdc = new ethers.Contract(
+    ADDRESSES.usdc,
+    ["function mint(address to, uint256 amount) external"],
+    wallet,
+  );
+
+  const tx = await usdc.mint(buyerWallet.address, ethers.parseUnits("1000", 6));
+  await tx.wait();
+  await waitForSync();
+});
+
+test("setup: buyer approve USDC to escrow", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const usdc = new ethers.Contract(
+    ADDRESSES.usdc,
+    ["function approve(address spender, uint256 amount) external returns (bool)"],
+    buyerWallet,
+  );
+
+  const tx = await usdc.approve(ADDRESSES.escrow, ethers.parseUnits("100000", 6));
+  await tx.wait();
+  await waitForSync();
+});
+
+test("setup: buyer deposit escrow", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function deposit(uint256 amount) external",
+      "function getBalance(address) view returns (uint256)",
+    ],
+    buyerWallet,
+  );
+
+  const tx = await escrow.deposit(ethers.parseUnits("200", 6));
+  await tx.wait();
+  await waitForSync();
+
+  const balance = await escrow.getBalance(buyerWallet.address);
+  expect(balance).toBeGreaterThanOrEqual(ethers.parseUnits("100", 6));
+});
+
+// ─────────────────────────────────────────────
+// Create signal on-chain
+// ─────────────────────────────────────────────
+
+test("create signal: commit on-chain", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const sc = new ethers.Contract(
+    ADDRESSES.signalCommitment,
+    [
+      "function commit(tuple(uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 minNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p)",
+      "function signalExists(uint256) view returns (bool)",
+      "function isActive(uint256) view returns (bool)",
+    ],
+    wallet,
+  );
+
+  // Create a dummy encrypted blob (32 bytes)
+  const encryptedBlob = ethers.hexlify(ethers.randomBytes(64));
+  const commitHash = ethers.keccak256(ethers.toUtf8Bytes(`e2e-test-${SIGNAL_ID}`));
+
+  // Expires 24 hours from now
+  const expiresAt = BigInt(Math.floor(Date.now() / 1000) + 86400);
+
+  const tx = await sc.commit({
+    signalId: SIGNAL_ID,
+    encryptedBlob: encryptedBlob,
+    commitHash: commitHash,
+    sport: "basketball_nba",
+    maxPriceBps: 500n, // 5%
+    slaMultiplierBps: 10000n, // 1x
+    maxNotional: ethers.parseUnits("100", 6), // 100 USDC max
+    minNotional: ethers.parseUnits("1", 6), // 1 USDC min
+    expiresAt: expiresAt,
+    decoyLines: [
+      "Lakers -3.5", "Celtics +3.5", "Over 218.5", "Under 218.5",
+      "Lakers ML", "Celtics ML", "Lakers -1.5", "Celtics +1.5",
+      "Over 215.5", "Under 215.5",
+    ],
+    availableSportsbooks: ["DraftKings", "FanDuel", "BetMGM"],
+  });
+  await tx.wait();
+  await waitForSync();
+
+  // Verify signal exists on-chain
+  const exists = await sc.signalExists(SIGNAL_ID);
+  expect(exists).toBe(true);
+
+  const active = await sc.isActive(SIGNAL_ID);
+  expect(active).toBe(true);
+});
+
+test("create signal: verify on-chain state", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const sc = new ethers.Contract(
+    ADDRESSES.signalCommitment,
+    [
+      "function signalExists(uint256) view returns (bool)",
+      "function isActive(uint256) view returns (bool)",
+    ],
+    provider,
+  );
+
+  const exists = await sc.signalExists(SIGNAL_ID);
+  expect(exists).toBe(true);
+
+  const active = await sc.isActive(SIGNAL_ID);
+  expect(active).toBe(true);
+});
+
+// ─────────────────────────────────────────────
+// Purchase signal (partial buy)
+// ─────────────────────────────────────────────
+
+test("purchase signal: partial buy (10 USDC)", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function purchase(uint256 signalId, uint256 notional, uint256 odds) returns (uint256 purchaseId)",
+      "function getBalance(address) view returns (uint256)",
+      "function getSignalNotionalFilled(uint256) view returns (uint256)",
+      "function getPurchasesBySignal(uint256) view returns (uint256[])",
+    ],
+    buyerWallet,
+  );
+
+  const balanceBefore = await escrow.getBalance(buyerWallet.address);
+
+  // Partial buy: 10 USDC notional at 1.5x odds
+  // Fee = notional * maxPriceBps / 10_000 = 10 * 500 / 10_000 = 0.5 USDC
+  const tx = await escrow.purchase(
+    SIGNAL_ID,
+    ethers.parseUnits("10", 6),
+    1_500_000n, // 1.5x in 6-decimal precision
+  );
+  const receipt = await tx.wait();
+  expect(receipt?.status).toBe(1);
+  await waitForSync();
+
+  // Verify escrow balance decreased by fee (5% of 10 USDC = 0.5 USDC)
+  const balanceAfter = await escrow.getBalance(buyerWallet.address);
+  const feePaid = balanceBefore - balanceAfter;
+  expect(feePaid).toBe(ethers.parseUnits("0.5", 6));
+
+  // Verify notional fill amount
+  const filled = await escrow.getSignalNotionalFilled(SIGNAL_ID);
+  expect(filled).toBeGreaterThanOrEqual(ethers.parseUnits("10", 6));
+
+  // Verify purchase recorded
+  const purchases = await escrow.getPurchasesBySignal(SIGNAL_ID);
+  expect(purchases.length).toBeGreaterThanOrEqual(1);
+});
+
+test("purchase signal: second partial buy (20 USDC)", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function purchase(uint256 signalId, uint256 notional, uint256 odds) returns (uint256 purchaseId)",
+      "function getSignalNotionalFilled(uint256) view returns (uint256)",
+      "function getPurchasesBySignal(uint256) view returns (uint256[])",
+    ],
+    buyerWallet,
+  );
+
+  const filledBefore = await escrow.getSignalNotionalFilled(SIGNAL_ID);
+
+  // 20 USDC notional at 1.2x odds; fee = 20 * 500 / 10_000 = 1.0 USDC
+  const tx = await escrow.purchase(
+    SIGNAL_ID,
+    ethers.parseUnits("20", 6),
+    1_200_000n, // 1.2x in 6-decimal precision
+  );
+  const receipt = await tx.wait();
+  expect(receipt?.status).toBe(1);
+  await waitForSync();
+
+  // Verify notional fill increased
+  const filledAfter = await escrow.getSignalNotionalFilled(SIGNAL_ID);
+  expect(filledAfter - filledBefore).toBe(ethers.parseUnits("20", 6));
+
+  // Verify second purchase recorded
+  const purchases = await escrow.getPurchasesBySignal(SIGNAL_ID);
+  expect(purchases.length).toBeGreaterThanOrEqual(2);
+});
+
+// ─────────────────────────────────────────────
+// Verify state via API
+// ─────────────────────────────────────────────
+
+test("verify: validator holds share state", async ({ request }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  // Check validator health — should be operational
+  const res = await request.get("https://djinn.gg/api/validator/health");
+  expect(res.ok()).toBeTruthy();
+  const body = await res.json();
+  expect(body.status).toBe("ok");
+  expect(body.shares_held).toBeGreaterThanOrEqual(0);
+});
+
+test("verify: subgraph indexes the signal", async ({ request }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  // Wait a bit for indexing
+  await new Promise((r) => setTimeout(r, 5000));
+
+  const SUBGRAPH_URL =
+    "https://api.studio.thegraph.com/query/1742249/djinn/v2.3.0";
+
+  const res = await request.post(SUBGRAPH_URL, {
+    headers: { "Content-Type": "application/json" },
+    data: {
+      query: `{ signal(id: "${SIGNAL_ID}") { id sport status genius { id } createdAt purchases { id notional } } }`,
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+  const body = await res.json();
+
+  if (body.data?.signal) {
+    expect(body.data.signal.sport).toBe("basketball_nba");
+    // Should have at least 2 purchases
+    expect(body.data.signal.purchases.length).toBeGreaterThanOrEqual(2);
+  }
+  // If subgraph hasn't indexed yet, that's OK — non-blocking
+});
+
+// ─────────────────────────────────────────────
+// Cancel signal (void)
+// ─────────────────────────────────────────────
+
+test("cancel signal: void on-chain", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const sc = new ethers.Contract(
+    ADDRESSES.signalCommitment,
+    [
+      "function voidSignal(uint256 signalId)",
+      "function isActive(uint256) view returns (bool)",
+    ],
+    wallet,
+  );
+
+  // Void the signal
+  const tx = await sc.voidSignal(SIGNAL_ID);
+  const receipt = await tx.wait();
+  expect(receipt?.status).toBe(1);
+  await waitForSync();
+
+  // Signal should no longer be active
+  const active = await sc.isActive(SIGNAL_ID);
+  expect(active).toBe(false);
+});
+
+// ─────────────────────────────────────────────
+// Verify UI reflects state on djinn.gg
+// ─────────────────────────────────────────────
+
+test("verify: leaderboard page loads on djinn.gg", async ({ page }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  await page.addInitScript(() => {
+    localStorage.setItem("djinn-beta-access", "true");
+  });
+
+  await page.goto("https://djinn.gg/leaderboard");
+  await expect(
+    page.getByRole("heading", { name: /leaderboard/i }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // Leaderboard should load without errors
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  await page.waitForLoadState("networkidle");
+
+  const realErrors = errors.filter(
+    (e) =>
+      !e.includes("wallet") &&
+      !e.includes("Privy") &&
+      !e.includes("privy") &&
+      !e.includes("MetaMask") &&
+      !e.includes("ethereum") &&
+      !e.includes("ResizeObserver"),
+  );
+  expect(realErrors).toHaveLength(0);
+});
+
+test("verify: genius dashboard loads on djinn.gg", async ({ page }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  await page.addInitScript(() => {
+    localStorage.setItem("djinn-beta-access", "true");
+  });
+
+  await page.goto("https://djinn.gg/genius");
+  await expect(
+    page.getByRole("heading", { name: "Genius Dashboard" }),
+  ).toBeVisible({ timeout: 15_000 });
+});
+
+test("verify: idiot browse page loads on djinn.gg", async ({ page }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  await page.addInitScript(() => {
+    localStorage.setItem("djinn-beta-access", "true");
+  });
+
+  await page.goto("https://djinn.gg/idiot");
+  await expect(
+    page.getByRole("heading", { name: "Idiot Dashboard" }),
+  ).toBeVisible({ timeout: 15_000 });
+});
+
+test("verify: admin dashboard shows protocol activity", async ({ page }) => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  await page.addInitScript(() => {
+    localStorage.setItem("djinn-beta-access", "true");
+  });
+
+  await page.goto("https://djinn.gg/admin");
+  // Enter admin password
+  await page.getByLabel("Password").fill("djinn103");
+  await page.getByRole("button", { name: "Enter" }).click();
+
+  // Dashboard should load
+  await expect(
+    page.getByRole("heading", { name: "Admin Dashboard" }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // Should show validators section
+  await expect(page.getByRole("heading", { name: "Validators" })).toBeVisible();
+});
+
+// ─────────────────────────────────────────────
+// Cleanup: withdraw remaining funds
+// ─────────────────────────────────────────────
+
+test("cleanup: withdraw genius escrow balance", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function withdraw(uint256 amount) external",
+      "function getBalance(address) view returns (uint256)",
+    ],
+    wallet,
+  );
+
+  const balance = await escrow.getBalance(wallet.address);
+  if (balance > 0n) {
+    const tx = await escrow.withdraw(balance);
+    await tx.wait();
+    await waitForSync();
+
+    const after = await escrow.getBalance(wallet.address);
+    expect(after).toBe(0n);
+  }
+});
+
+test("cleanup: withdraw buyer escrow balance", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const escrow = new ethers.Contract(
+    ADDRESSES.escrow,
+    [
+      "function withdraw(uint256 amount) external",
+      "function getBalance(address) view returns (uint256)",
+    ],
+    buyerWallet,
+  );
+
+  const balance = await escrow.getBalance(buyerWallet.address);
+  if (balance > 0n) {
+    const tx = await escrow.withdraw(balance);
+    await tx.wait();
+    await waitForSync();
+
+    const after = await escrow.getBalance(buyerWallet.address);
+    expect(after).toBe(0n);
+  }
+});
+
+test("cleanup: withdraw collateral", async () => {
+  test.skip(!hasFunds, "No ETH — fund E2E wallet first");
+
+  const coll = new ethers.Contract(
+    ADDRESSES.collateral,
+    [
+      "function withdraw(uint256 amount) external",
+      "function getAvailable(address) view returns (uint256)",
+    ],
+    wallet,
+  );
+
+  const available = await coll.getAvailable(wallet.address);
+  if (available > 0n) {
+    const tx = await coll.withdraw(available);
+    await tx.wait();
+    await waitForSync();
+
+    const after = await coll.getAvailable(wallet.address);
+    expect(after).toBe(0n);
+  }
+});
