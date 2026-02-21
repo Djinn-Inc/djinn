@@ -144,6 +144,15 @@ class MinerScorer:
         """Remove a deregistered miner."""
         self._miners.pop(uid, None)
 
+    def prune_absent(self, active_uids: set[int]) -> int:
+        """Remove metrics for UIDs no longer on the metagraph. Returns count pruned."""
+        stale = [uid for uid in self._miners if uid not in active_uids]
+        for uid in stale:
+            del self._miners[uid]
+        if stale:
+            log.info("scorer_pruned_absent", count=len(stale), uids=stale)
+        return len(stale)
+
     def compute_weights(self, is_active_epoch: bool) -> dict[int, float]:
         """Compute normalized weights for all tracked miners.
 

@@ -86,8 +86,14 @@ class HealthTracker:
     def get_status(self) -> HealthResponse:
         """Return current health status."""
         uptime = time.monotonic() - self._start_time
+        if self._odds_api_connected and self._bt_connected:
+            status = "ok"
+        elif self._odds_api_connected or self._bt_connected:
+            status = "degraded"
+        else:
+            status = "degraded"
         return HealthResponse(
-            status="ok",
+            status=status,
             version=__version__,
             uid=self._uid,
             odds_api_connected=self._odds_api_connected,

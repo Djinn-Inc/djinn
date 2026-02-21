@@ -106,6 +106,13 @@ class MPCOrchestrator:
         """Release the shared HTTP client."""
         await self._http.aclose()
 
+    def prune_stale_breakers(self, active_uids: set[int]) -> int:
+        """Remove circuit breakers for UIDs no longer on the metagraph."""
+        stale = [uid for uid in self._peer_breakers if uid not in active_uids]
+        for uid in stale:
+            del self._peer_breakers[uid]
+        return len(stale)
+
     def _mark_session_failed(self, session: Any) -> None:
         """Mark an MPC session as FAILED to prevent resource leaks."""
         if session.status not in (SessionStatus.COMPLETE, SessionStatus.FAILED):

@@ -94,6 +94,9 @@ class Config:
         "5GrsjiBeCErhUGj339vu5GubTgyJMyZLGQqUFBJAtKrCziU9",  # Djinn-specific burn wallet (seed discarded)
     )
 
+    # Data directory for SQLite databases (shares, burns, purchases)
+    data_dir: str = os.getenv("DATA_DIR", "data")
+
     # Protocol constants
     signals_per_cycle: int = 10
     shares_total: int = 10

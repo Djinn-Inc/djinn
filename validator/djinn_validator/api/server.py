@@ -38,9 +38,12 @@ from djinn_validator.api.metrics import (
     ATTESTATION_DURATION,
     ATTESTATION_GATED,
     ATTESTATION_VERIFIED,
+    BT_CONNECTED,
+    MPC_ACTIVE_SESSIONS,
     OUTCOMES_ATTESTED,
     PURCHASES_PROCESSED,
     SHARES_STORED,
+    UPTIME_SECONDS,
     metrics_response,
 )
 from djinn_validator.api.middleware import (
@@ -190,6 +193,10 @@ def create_app(
     # Mutable container for last-cleanup timestamp (throttle purchase-path cleanup)
     _last_cleanup = [0.0]
 
+    import time as _startup_time_mod
+
+    _startup_monotonic = _startup_time_mod.monotonic()
+
     async def _periodic_state_cleanup() -> None:
         """Background task to evict stale participant/OT states every 60s."""
         while not _shutdown_event.is_set():
@@ -210,6 +217,10 @@ def create_app(
                         del _purchase_locks[k]
                     if to_remove:
                         log.debug("purchase_locks_pruned", count=len(to_remove))
+                # Update operational gauges
+                MPC_ACTIVE_SESSIONS.set(_mpc.active_session_count)
+                UPTIME_SECONDS.set(_startup_time_mod.monotonic() - _startup_monotonic)
+                BT_CONNECTED.set(1 if neuron and neuron.metagraph is not None else 0)
             except Exception:
                 log.warning("periodic_cleanup_error", exc_info=True)
 
@@ -717,14 +728,13 @@ def create_app(
             miner_uid=selected["uid"],
         )
 
-        # Dispatch to miner
+        # Dispatch to miner (shared client for connection reuse)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    miner_url,
-                    json={"url": req.url, "request_id": req.request_id},
-                    timeout=120.0,
-                )
+            resp = await _attest_client.post(
+                miner_url,
+                json={"url": req.url, "request_id": req.request_id},
+                timeout=120.0,
+            )
         except httpx.HTTPError as e:
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
@@ -947,6 +957,15 @@ def create_app(
         return ReadinessResponse(ready=ready, checks=checks)
 
     # ------------------------------------------------------------------
+    # Shared HTTP client for attestation dispatch (connection reuse)
+    # ------------------------------------------------------------------
+    _attest_client = httpx.AsyncClient(
+        timeout=120.0,
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=50),
+    )
+    _cleanup_resources.append(_attest_client)
+
+    # ------------------------------------------------------------------
     # MPC orchestration
     # ------------------------------------------------------------------
     _mpc = mpc_coordinator or MPCCoordinator()
@@ -1117,7 +1136,8 @@ def create_app(
                         triple_b=triple_b,
                         triple_c=triple_c,
                     )
-            except (ValueError, TypeError, KeyError):
+            except (ValueError, TypeError, KeyError) as e:
+                log.warning("mpc_init_parse_error", error=str(e), session_id=req.session_id)
                 raise HTTPException(status_code=400, detail="Invalid MPC init data format")
 
             with _participant_lock:

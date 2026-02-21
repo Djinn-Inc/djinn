@@ -158,6 +158,9 @@ async def epoch_loop(
 
             # Health-check all miners by pinging their axon /health endpoint
             miner_uids = neuron.get_miner_uids()
+
+            # Prune deregistered miner UIDs from scorer
+            scorer.prune_absent(set(miner_uids))
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
                 for uid in miner_uids:
                     axon = neuron.get_axon_info(uid)
@@ -321,9 +324,13 @@ async def async_main() -> None:
         log.warning("config_warning", msg=w)
 
     # Initialize components — SQLite persistence for key shares and burn ledger
-    share_store = ShareStore(db_path="data/shares.db")
-    burn_ledger = BurnLedger(db_path="data/burns.db")
-    purchase_orch = PurchaseOrchestrator(share_store, db_path="data/purchases.db")
+    from pathlib import Path
+
+    data_dir = Path(config.data_dir).resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    share_store = ShareStore(db_path=str(data_dir / "shares.db"))
+    burn_ledger = BurnLedger(db_path=str(data_dir / "burns.db"))
+    purchase_orch = PurchaseOrchestrator(share_store, db_path=str(data_dir / "purchases.db"))
     outcome_attestor = OutcomeAttestor(sports_api_key=config.sports_api_key)
     scorer = MinerScorer()
 

@@ -32,7 +32,7 @@ def app(mock_odds_response: list[dict]) -> TestClient:
     )
     checker = LineChecker(odds_client=odds_client, line_tolerance=0.5)
     proof_gen = ProofGenerator()
-    health_tracker = HealthTracker(uid=42, odds_api_connected=True)
+    health_tracker = HealthTracker(uid=42, odds_api_connected=True, bt_connected=True)
 
     fastapi_app = create_app(
         checker=checker,

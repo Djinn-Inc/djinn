@@ -117,6 +117,22 @@ class AttestRequest(BaseModel):
     def validate_https(cls, v: str) -> str:
         if not v.startswith("https://"):
             raise ValueError("URL must use HTTPS")
+        import ipaddress
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if not parsed.hostname:
+            raise ValueError("URL must have a valid hostname")
+        hostname = parsed.hostname.lower()
+        if hostname in ("localhost", "ip6-localhost", "ip6-loopback"):
+            raise ValueError("URL must not point to private/internal addresses")
+        try:
+            addr = ipaddress.ip_address(hostname)
+        except ValueError:
+            pass  # Domain name, not IP literal — fine
+        else:
+            if not addr.is_global:
+                raise ValueError("URL must not point to private/internal addresses")
         return v
 
 

@@ -337,9 +337,13 @@ class OddsApiClient:
                 "oddsFormat": "decimal",
             }
 
+            from djinn_miner.api.metrics import ODDS_API_QUERIES
+
             try:
                 resp = await self._request_with_retry(url, params, api_sport)
+                ODDS_API_QUERIES.labels(status="success").inc()
             except Exception as exc:
+                ODDS_API_QUERIES.labels(status="error").inc()
                 self._evict_stale_cache()
                 self._error_cache[cache_key] = CachedError(
                     error=exc,

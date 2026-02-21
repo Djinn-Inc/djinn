@@ -224,6 +224,8 @@ def create_app(
                 error="Attestation timed out",
             )
         except asyncio.CancelledError:
+            ATTESTATION_REQUESTS.labels(status="cancelled").inc()
+            ATTESTATION_DURATION.observe(time.perf_counter() - start)
             log.info("attest_cancelled", request_id=request.request_id)
             return JSONResponse(
                 status_code=503,
