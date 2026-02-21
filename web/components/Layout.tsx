@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import WalletButton from "./WalletButton";
-import ReportError from "./ReportError";
+import ReportErrorModal from "./ReportError";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -22,6 +22,7 @@ const IS_TESTNET = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532") !== 8453;
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -199,7 +200,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <ReportError />
+      <ReportErrorModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -267,6 +268,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-4">
               <Link href="/terms" className="hover:text-slate-600 transition-colors">Terms</Link>
               <Link href="/privacy" className="hover:text-slate-600 transition-colors">Privacy</Link>
+              <button onClick={() => setFeedbackOpen(true)} className="hover:text-slate-600 transition-colors">Feedback</button>
             </div>
           </div>
         </div>

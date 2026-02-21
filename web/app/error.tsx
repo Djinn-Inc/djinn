@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import ReportErrorModal from "@/components/ReportError";
 
 export default function Error({
   error,
@@ -9,31 +10,30 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const [reported, setReported] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [autoReported, setAutoReported] = useState(false);
 
   useEffect(() => {
     console.error("Unhandled error:", error);
   }, [error]);
 
-  const reportError = useCallback(async () => {
-    try {
-      await fetch("/api/report-error", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: `Unhandled crash: ${error.message}`,
-          url: window.location.pathname,
-          errorMessage: error.message,
-          errorStack: error.stack?.slice(0, 2000),
-          userAgent: navigator.userAgent,
-          source: "error-boundary",
-        }),
-      });
-      setReported(true);
-    } catch {
-      // Silently fail — don't compound the error
-    }
-  }, [error]);
+  // Auto-report crashes (non-blocking, one-shot)
+  useEffect(() => {
+    if (autoReported) return;
+    setAutoReported(true);
+    fetch("/api/report-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `Crash: ${error.message}`,
+        url: typeof window !== "undefined" ? window.location.pathname : "",
+        errorMessage: error.message,
+        errorStack: error.stack?.slice(0, 2000),
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        source: "error-boundary",
+      }),
+    }).catch(() => {});
+  }, [error, autoReported]);
 
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
@@ -51,16 +51,20 @@ export default function Error({
           Try again
         </button>
         <button
-          onClick={reportError}
-          disabled={reported}
-          className="rounded-lg border border-slate-300 px-6 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          onClick={() => setReportOpen(true)}
+          className="rounded-lg border border-slate-300 px-6 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
         >
-          {reported ? "Reported" : "Report this error"}
+          Report this error
         </button>
       </div>
-      {reported && (
-        <p className="text-xs text-green-600 mt-3">Error report sent. Thank you!</p>
-      )}
+      <p className="text-xs text-slate-400 mt-4">This error has been automatically reported.</p>
+
+      <ReportErrorModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        error={error}
+        source="error-boundary"
+      />
     </div>
   );
 }
