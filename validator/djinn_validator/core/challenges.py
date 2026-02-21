@@ -305,6 +305,11 @@ async def challenge_miners_attestation(
                     try:
                         data = resp.json()
                     except Exception:
+                        log.warning(
+                            "attest_challenge_malformed_json",
+                            uid=uid,
+                            response_text=resp.text[:300] if hasattr(resp, "text") else "<no text>",
+                        )
                         metrics.record_attestation(latency=latency, proof_valid=False)
                         return True
 

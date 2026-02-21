@@ -345,8 +345,8 @@ class ShareStore:
             except Exception:
                 try:
                     self._conn.execute("ROLLBACK")
-                except Exception:
-                    pass
+                except Exception as rollback_err:
+                    log.error("share_remove_rollback_failed", signal_id=signal_id, error=str(rollback_err))
                 raise
 
     @property

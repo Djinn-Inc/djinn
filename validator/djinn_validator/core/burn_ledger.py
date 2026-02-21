@@ -150,5 +150,5 @@ class BurnLedger:
         """Close the database connection."""
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("burn_ledger_close_error", error=str(e))

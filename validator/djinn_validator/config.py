@@ -171,6 +171,11 @@ class Config:
             )
         if self.shares_threshold < 1:
             raise ValueError(f"SHAMIR_THRESHOLD must be >= 1, got {self.shares_threshold}")
+        if is_production and self.shares_threshold < 3:
+            raise ValueError(
+                f"SHAMIR_THRESHOLD must be >= 3 in production for meaningful secret sharing, "
+                f"got {self.shares_threshold}"
+            )
         if self.rate_limit_capacity < self.rate_limit_rate:
             warnings.append(
                 f"RATE_LIMIT_CAPACITY ({self.rate_limit_capacity}) < RATE_LIMIT_RATE ({self.rate_limit_rate}) "

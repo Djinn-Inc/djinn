@@ -332,6 +332,48 @@ class TestMpcAvailabilityTimeout:
         config.validate()
 
 
+class TestShamirThresholdProduction:
+    """Production requires SHAMIR_THRESHOLD >= 3 for meaningful security."""
+
+    def _prod_config(self, **overrides: object) -> Config:
+        defaults = dict(
+            bt_network="finney",
+            sports_api_key="key",
+            escrow_address="0x1234567890abcdef1234567890abcdef12345678",
+            signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
+            account_address="0x1234567890abcdef1234567890abcdef12345678",
+            collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            base_validator_private_key="0x" + "ab" * 32,
+        )
+        defaults.update(overrides)
+        return _config(**defaults)
+
+    def test_threshold_1_raises_in_production(self) -> None:
+        config = self._prod_config(shares_threshold=1)
+        with pytest.raises(ValueError, match="SHAMIR_THRESHOLD must be >= 3 in production"):
+            config.validate()
+
+    def test_threshold_2_raises_in_production(self) -> None:
+        config = self._prod_config(shares_threshold=2)
+        with pytest.raises(ValueError, match="SHAMIR_THRESHOLD must be >= 3 in production"):
+            config.validate()
+
+    def test_threshold_3_passes_in_production(self) -> None:
+        config = self._prod_config(shares_threshold=3)
+        warnings = config.validate()
+        assert not any("SHAMIR_THRESHOLD" in w for w in warnings)
+
+    def test_threshold_7_passes_in_production(self) -> None:
+        config = self._prod_config(shares_threshold=7)
+        warnings = config.validate()
+        assert not any("SHAMIR_THRESHOLD" in w for w in warnings)
+
+    def test_threshold_1_allowed_in_dev(self) -> None:
+        config = _config(bt_network="local", sports_api_key="key", shares_threshold=1)
+        warnings = config.validate()
+        assert not any("SHAMIR_THRESHOLD" in w for w in warnings)
+
+
 class TestBaseRpcUrls:
     def test_single_url(self) -> None:
         config = _config(base_rpc_url="https://mainnet.base.org")

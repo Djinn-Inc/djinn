@@ -125,8 +125,8 @@ class PurchaseOrchestrator:
         """Close the database connection."""
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("purchase_db_close_error", error=str(e))
 
     _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
 

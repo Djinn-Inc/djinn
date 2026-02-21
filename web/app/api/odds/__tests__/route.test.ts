@@ -120,6 +120,21 @@ describe("GET /api/odds", () => {
     expect(fetchUrl.searchParams.get("oddsFormat")).toBe("decimal");
   });
 
+  it("sends commenceTimeFrom without milliseconds", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [],
+    });
+
+    await GET(makeRequest({ sport: "soccer_france_ligue_one" }));
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchUrl = new URL(mockFetch.mock.calls[0][0]);
+    const dateParam = fetchUrl.searchParams.get("commenceTimeFrom")!;
+    // Must end with Z, must NOT contain milliseconds (e.g. .000Z)
+    expect(dateParam).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
   it("uses default markets when not specified", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

@@ -136,13 +136,16 @@ export async function GET(request: NextRequest) {
     url.searchParams.set("markets", markets);
     url.searchParams.set("oddsFormat", "decimal");
     // Only fetch upcoming games — live/started games can't be used for signals
-    url.searchParams.set("commenceTimeFrom", new Date().toISOString());
+    // The Odds API rejects milliseconds in ISO dates (422), so strip them
+    url.searchParams.set("commenceTimeFrom", new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
 
     const resp = await fetch(url.toString(), {
       signal: AbortSignal.timeout(10_000),
     });
 
     if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      console.error(`[odds-api] ${resp.status} ${resp.statusText}: ${body.slice(0, 200)}`);
       return NextResponse.json(
         { error: `Odds provider returned an error (${resp.status})` },
         { status: 502 },

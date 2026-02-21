@@ -1346,3 +1346,107 @@ class TestAttestEndpoint:
             "burn_tx_hash": "0xaabb",
         })
         assert resp.status_code == 422
+
+
+class TestProductionChainGuard:
+    """Tests that production mode (BT_NETWORK=finney/mainnet) blocks share release when chain_client is None."""
+
+    def _store_signal(self, share_store: ShareStore) -> None:
+        from djinn_validator.utils.crypto import generate_signal_index_shares
+        shares = generate_signal_index_shares(5)
+        share_store.store("sig-prod-guard", "0xGenius", shares[0], b"encrypted-key")
+
+    def _make_purchase_request(self, client: TestClient) -> "requests.Response":
+        return client.post("/v1/signal/sig-prod-guard/purchase", json={
+            "buyer_address": "0x" + "b0" * 20,
+            "sportsbook": "DraftKings",
+            "available_indices": [1, 3, 5, 7, 9],
+        })
+
+    def test_purchase_returns_503_when_no_chain_client_finney(self) -> None:
+        """BT_NETWORK=finney with chain_client=None must return 503 on purchase."""
+        import os
+        from unittest.mock import patch
+        from djinn_validator.core.mpc import MPCResult
+
+        store = ShareStore()
+        self._store_signal(store)
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+
+        # Mock MPC to return available=True so we reach the chain guard
+        async def mock_check_availability(*args, **kwargs):
+            return MPCResult(available=True, participating_validators=1)
+
+        with patch.dict(os.environ, {"BT_NETWORK": "finney", "CORS_ORIGINS": "https://test.example.com"}):
+            app = create_app(store, purchase_orch, outcome_attestor, chain_client=None)
+            with patch(
+                "djinn_validator.core.mpc_orchestrator.MPCOrchestrator.check_availability",
+                new=mock_check_availability,
+            ):
+                client = TestClient(app)
+                resp = self._make_purchase_request(client)
+
+        assert resp.status_code == 503
+        assert "Payment verification unavailable" in resp.json()["detail"]
+
+        store.close()
+
+    def test_purchase_returns_503_when_no_chain_client_mainnet(self) -> None:
+        """BT_NETWORK=mainnet with chain_client=None must return 503 on purchase."""
+        import os
+        from unittest.mock import patch
+        from djinn_validator.core.mpc import MPCResult
+
+        store = ShareStore()
+        self._store_signal(store)
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+
+        async def mock_check_availability(*args, **kwargs):
+            return MPCResult(available=True, participating_validators=1)
+
+        with patch.dict(os.environ, {"BT_NETWORK": "mainnet", "CORS_ORIGINS": "https://test.example.com"}):
+            app = create_app(store, purchase_orch, outcome_attestor, chain_client=None)
+            with patch(
+                "djinn_validator.core.mpc_orchestrator.MPCOrchestrator.check_availability",
+                new=mock_check_availability,
+            ):
+                client = TestClient(app)
+                resp = self._make_purchase_request(client)
+
+        assert resp.status_code == 503
+        assert "Payment verification unavailable" in resp.json()["detail"]
+
+        store.close()
+
+    def test_purchase_works_in_dev_mode_no_chain_client(self) -> None:
+        """BT_NETWORK=test with chain_client=None must NOT return 503 (dev mode)."""
+        import os
+        from unittest.mock import patch
+        from djinn_validator.core.mpc import MPCResult
+
+        store = ShareStore()
+        self._store_signal(store)
+        purchase_orch = PurchaseOrchestrator(store)
+        outcome_attestor = OutcomeAttestor()
+
+        async def mock_check_availability(*args, **kwargs):
+            return MPCResult(available=True, participating_validators=1)
+
+        with patch.dict(os.environ, {"BT_NETWORK": "test"}):
+            app = create_app(store, purchase_orch, outcome_attestor, chain_client=None)
+            with patch(
+                "djinn_validator.core.mpc_orchestrator.MPCOrchestrator.check_availability",
+                new=mock_check_availability,
+            ):
+                client = TestClient(app)
+                resp = self._make_purchase_request(client)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["signal_id"] == "sig-prod-guard"
+        # Dev mode should complete without chain verification — never 503
+        assert data["status"] == "complete"
+
+        store.close()

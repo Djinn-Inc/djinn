@@ -155,8 +155,8 @@ class MPCOrchestrator:
             ctx = structlog.contextvars.get_contextvars()
             if "request_id" in ctx:
                 headers["X-Request-ID"] = ctx["request_id"]
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("request_id_propagation_failed", error=str(e))
         kwargs["headers"] = headers
 
         last_exc: Exception | None = None

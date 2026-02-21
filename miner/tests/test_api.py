@@ -519,6 +519,115 @@ class TestEndpointTimeouts:
         assert "timed out" in resp.json()["detail"]
 
 
+class TestEndpointErrorHandling:
+    """Error handling across /v1/check, /v1/proof, and /v1/attest endpoints."""
+
+    def test_check_raises_exception_returns_500(self) -> None:
+        """If checker.check() raises, the endpoint returns 500 with a safe message."""
+        mock_checker = AsyncMock()
+        mock_checker.check.side_effect = ValueError("corrupt odds data")
+        mock_proof = AsyncMock()
+        health = HealthTracker()
+
+        app = create_app(checker=mock_checker, proof_gen=mock_proof, health_tracker=health)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                "event_id": "ev-001",
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+        # No internal details leaked
+        assert "corrupt odds data" not in resp.text
+        assert "ValueError" not in resp.text
+
+    def test_proof_generate_raises_exception_returns_500(self) -> None:
+        """If proof_gen.generate() raises, the endpoint returns 500 with a safe message."""
+        mock_checker = AsyncMock()
+        mock_proof = AsyncMock()
+        mock_proof.generate.side_effect = OSError("disk full")
+        health = HealthTracker()
+
+        app = create_app(checker=mock_checker, proof_gen=mock_proof, health_tracker=health)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/v1/proof", json={"query_id": "q-fail"})
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+        assert "disk full" not in resp.text
+        assert "OSError" not in resp.text
+
+    def test_check_with_empty_body_returns_422(self, app: TestClient) -> None:
+        """POST /v1/check with an empty JSON object (no 'lines' key) is rejected."""
+        resp = app.post("/v1/check", json={})
+        assert resp.status_code == 422
+
+    def test_check_with_malformed_json_returns_422(self, app: TestClient) -> None:
+        """POST /v1/check with non-JSON body is rejected."""
+        resp = app.post(
+            "/v1/check",
+            content="this is not json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 422
+
+    def test_proof_with_missing_query_id_returns_422(self, app: TestClient) -> None:
+        """POST /v1/proof with empty body (missing query_id) returns 422."""
+        resp = app.post("/v1/proof", json={})
+        assert resp.status_code == 422
+
+    def test_check_with_missing_event_id_returns_422(self, app: TestClient) -> None:
+        """POST /v1/check with a line missing the event_id field returns 422."""
+        resp = app.post("/v1/check", json={
+            "lines": [{
+                "index": 1,
+                "sport": "basketball_nba",
+                # event_id deliberately omitted
+                "home_team": "A",
+                "away_team": "B",
+                "market": "h2h",
+                "side": "A",
+            }],
+        })
+        assert resp.status_code == 422
+        body = resp.json()
+        # Pydantic error should reference the missing field
+        assert any("event_id" in str(err) for err in body.get("detail", []))
+
+    def test_attest_with_generate_proof_exception_returns_500(self) -> None:
+        """If tlsn.generate_proof() raises an unexpected exception, returns 500."""
+        mock_checker = AsyncMock()
+        mock_proof = AsyncMock()
+        health = HealthTracker()
+
+        fastapi_app = create_app(checker=mock_checker, proof_gen=mock_proof, health_tracker=health)
+        client = TestClient(fastapi_app, raise_server_exceptions=False)
+
+        with (
+            patch("djinn_miner.core.tlsn.is_available", return_value=True),
+            patch(
+                "djinn_miner.core.tlsn.generate_proof",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("segfault in prover"),
+            ),
+        ):
+            resp = client.post(
+                "/v1/attest",
+                json={"url": "https://example.com", "request_id": "err-1"},
+            )
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+        assert "segfault" not in resp.text
+
+
 class TestAttestEndpoint:
     """Tests for the POST /v1/attest web attestation endpoint."""
 

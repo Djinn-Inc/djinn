@@ -237,8 +237,8 @@ def create_app(
         for resource in _cleanup_resources:
             try:
                 await resource.close()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("resource_cleanup_error", resource=type(resource).__name__, error=str(e))
 
     from djinn_validator import __version__
 
@@ -512,15 +512,20 @@ def create_app(
             # Record the payment to prevent replay attacks
             if not purchase_orch.record_payment(signal_id, req.buyer_address, tx_hash, "PAYMENT_CONFIRMED"):
                 log.warning("concurrent_payment_race", signal_id=signal_id, buyer=req.buyer_address)
-                # Another concurrent request already recorded — return existing share
-                record = share_store.get(signal_id)
-                if record and record.encrypted_key_share:
-                    return PurchaseResponse(
-                        signal_id=signal_id,
-                        status="shares_released",
-                        encrypted_key_share=record.encrypted_key_share.hex(),
-                    )
-                raise HTTPException(status_code=409, detail="Payment already processed")
+                # Another concurrent request already recorded — wait briefly for share release
+                for _retry in range(5):
+                    record = share_store.get(signal_id)
+                    if record and record.encrypted_key_share and req.buyer_address in record.released_to:
+                        return PurchaseResponse(
+                            signal_id=signal_id,
+                            status="complete",
+                            available=True,
+                            encrypted_key_share=record.encrypted_key_share.hex(),
+                            share_x=record.share.x,
+                            message="Share already released (concurrent request)",
+                        )
+                    await asyncio.sleep(0.5)
+                raise HTTPException(status_code=409, detail="Payment already processed — share not yet available, retry shortly")
 
             result = purchase_orch.confirm_payment(signal_id, req.buyer_address, tx_hash)
             if result is None or result.status == PurchaseStatus.FAILED:
@@ -773,6 +778,12 @@ def create_app(
             elapsed = _t.perf_counter() - start
             ATTESTATION_DURATION.observe(elapsed)
             ATTESTATION_VERIFIED.labels(valid="false").inc()
+            log.error(
+                "miner_malformed_json",
+                request_id=req.request_id,
+                response_text=resp.text[:500] if hasattr(resp, "text") else "<no text>",
+                status_code=resp.status_code,
+            )
             _refund()
             return AttestResponse(
                 request_id=req.request_id,
