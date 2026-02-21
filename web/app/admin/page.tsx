@@ -49,7 +49,6 @@ export default function AdminDashboard() {
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    // Check against env var or fallback
     const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
     if (password === expected) {
       setAuthed(true);
@@ -59,6 +58,30 @@ export default function AdminDashboard() {
       setAuthError(true);
     }
   };
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+
+    const [validatorResults, minerResult, statsResult] = await Promise.allSettled([
+      fetchValidatorHealth(),
+      fetchMinerHealth(),
+      fetchProtocolStats(),
+    ]);
+
+    if (validatorResults.status === "fulfilled") setValidators(validatorResults.value);
+    if (minerResult.status === "fulfilled") setMiner(minerResult.value);
+    if (statsResult.status === "fulfilled") setStats(statsResult.value);
+
+    setLastRefresh(new Date());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+    refresh();
+    const interval = setInterval(refresh, 30_000);
+    return () => clearInterval(interval);
+  }, [authed, refresh]);
 
   if (!authed) {
     return (
@@ -84,30 +107,6 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-
-    // Fetch all data in parallel
-    const [validatorResults, minerResult, statsResult] = await Promise.allSettled([
-      fetchValidatorHealth(),
-      fetchMinerHealth(),
-      fetchProtocolStats(),
-    ]);
-
-    if (validatorResults.status === "fulfilled") setValidators(validatorResults.value);
-    if (minerResult.status === "fulfilled") setMiner(minerResult.value);
-    if (statsResult.status === "fulfilled") setStats(statsResult.value);
-
-    setLastRefresh(new Date());
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 30_000); // Auto-refresh every 30s
-    return () => clearInterval(interval);
-  }, [refresh]);
 
   const healthyValidators = validators.filter((v) => v.status === "ok");
   const totalShares = validators.reduce((sum, v) => sum + (v.shares_held || 0), 0);
