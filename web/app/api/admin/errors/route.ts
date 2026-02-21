@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from "next/server";
+
+/**
+ * GET /api/admin/errors?limit=50
+ *
+ * Returns recent error reports from the local JSONL log.
+ * Protected by admin password check via query param.
+ */
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const password = searchParams.get("auth");
+  const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
+  if (password !== expected) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
+
+  try {
+    const { readFile } = await import("fs/promises");
+    const dir = process.env.ERROR_REPORT_DIR || "/tmp/djinn-error-reports";
+    const content = await readFile(`${dir}/errors.jsonl`, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    const errors = lines
+      .slice(-limit)
+      .reverse()
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    return NextResponse.json({ errors, total: lines.length });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return NextResponse.json({ errors: [], total: 0 });
+    }
+    return NextResponse.json(
+      { error: "Failed to read error logs" },
+      { status: 500 },
+    );
+  }
+}

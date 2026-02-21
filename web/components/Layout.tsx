@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import WalletButton from "./WalletButton";
+import ReportError from "./ReportError";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -197,6 +198,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
         {children}
       </main>
+
+      <ReportError />
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">

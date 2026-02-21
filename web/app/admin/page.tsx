@@ -4,6 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchProtocolStats, type SubgraphProtocolStats } from "@/lib/subgraph";
 import { formatUsdc } from "@/lib/types";
 
+interface ErrorReport {
+  message: string;
+  url: string;
+  errorMessage: string;
+  source: string;
+  timestamp: string;
+  wallet: string;
+  signalId: string;
+  ip: string;
+}
+
 interface ValidatorNode {
   uid: number;
   ip: string;
@@ -35,6 +46,8 @@ export default function AdminDashboard() {
   const [validators, setValidators] = useState<ValidatorHealth[]>([]);
   const [miner, setMiner] = useState<MinerHealth | null>(null);
   const [stats, setStats] = useState<SubgraphProtocolStats | null>(null);
+  const [errorReports, setErrorReports] = useState<ErrorReport[]>([]);
+  const [errorTotal, setErrorTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [authed, setAuthed] = useState(false);
@@ -62,15 +75,21 @@ export default function AdminDashboard() {
   const refresh = useCallback(async () => {
     setLoading(true);
 
-    const [validatorResults, minerResult, statsResult] = await Promise.allSettled([
+    const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
+    const [validatorResults, minerResult, statsResult, errorsResult] = await Promise.allSettled([
       fetchValidatorHealth(),
       fetchMinerHealth(),
       fetchProtocolStats(),
+      fetchErrorReports(adminPass),
     ]);
 
     if (validatorResults.status === "fulfilled") setValidators(validatorResults.value);
     if (minerResult.status === "fulfilled") setMiner(minerResult.value);
     if (statsResult.status === "fulfilled") setStats(statsResult.value);
+    if (errorsResult.status === "fulfilled" && errorsResult.value) {
+      setErrorReports(errorsResult.value.errors);
+      setErrorTotal(errorsResult.value.total);
+    }
 
     setLastRefresh(new Date());
     setLoading(false);
@@ -312,6 +331,60 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Error Reports */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Error Reports
+            {errorTotal > 0 && (
+              <span className="ml-2 text-sm font-normal text-slate-400">({errorTotal} total)</span>
+            )}
+          </h2>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          {errorReports.length === 0 ? (
+            <div className="px-4 py-8 text-center text-slate-400 text-sm">
+              No error reports yet
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {errorReports.slice(0, 20).map((err, i) => (
+                <div key={i} className="px-4 py-3 hover:bg-slate-50">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                          err.source === "error-boundary"
+                            ? "bg-red-100 text-red-700"
+                            : err.source === "api-error"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {err.source}
+                        </span>
+                        {err.wallet && (
+                          <span className="text-[10px] font-mono text-slate-400">{err.wallet}</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-900 truncate">{err.message}</p>
+                      {err.errorMessage && err.errorMessage !== err.message && (
+                        <p className="text-xs text-red-600 font-mono truncate mt-0.5">{err.errorMessage}</p>
+                      )}
+                      {err.url && (
+                        <p className="text-[11px] text-slate-400 mt-0.5">{err.url}</p>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {new Date(err.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Quick Links — only show when Grafana is configured */}
       {GRAFANA_URL && (
         <div>
@@ -417,6 +490,18 @@ async function fetchValidatorHealth(): Promise<ValidatorHealth[]> {
     );
   } catch {
     return [];
+  }
+}
+
+async function fetchErrorReports(auth: string): Promise<{ errors: ErrorReport[]; total: number } | null> {
+  try {
+    const res = await fetch(`/api/admin/errors?auth=${encodeURIComponent(auth)}&limit=50`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 
