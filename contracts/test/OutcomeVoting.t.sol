@@ -780,6 +780,58 @@ contract OutcomeVotingTest is Test {
         assertEq(result.protocolFee, 0, "Early exit: no protocol fee");
     }
 
+    // ─── Signal Lock Per-Purchase Release ────────────────────
+
+    /// @notice When two Idiots buy the same signal, settling one pair should
+    ///         only release that Idiot's portion of the collateral lock, not all of it.
+    function test_settlementReleasesOnlyPerPurchaseLock() public {
+        address idiot2 = address(0xD00D);
+
+        // Create one signal (shared by two Idiots)
+        _createSignal(1);
+
+        // Deposit enough genius collateral for two purchases + fees
+        uint256 lockPerPurchase = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        uint256 fee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        uint256 protocolFee = (NOTIONAL * 50) / 10_000;
+        uint256 totalNeeded = (lockPerPurchase + fee + protocolFee) * 2;
+        _depositGeniusCollateral(totalNeeded);
+
+        // Idiot 1 purchases
+        _depositIdiotEscrow(fee);
+        vm.prank(idiot);
+        escrow.purchase(1, NOTIONAL, ODDS);
+
+        // Idiot 2 purchases the same signal
+        usdc.mint(idiot2, fee);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), fee);
+        escrow.deposit(fee);
+        escrow.purchase(1, NOTIONAL, ODDS);
+        vm.stopPrank();
+
+        // Both Idiots' locks should be accumulated on signalId 1
+        uint256 totalSignalLock = collateral.getSignalLock(genius, 1);
+        assertEq(totalSignalLock, lockPerPurchase * 2, "Both locks accumulated");
+
+        // Fill 10 signals for genius-idiot pair to make it audit-ready
+        // (purchase 1 already counts as signal 1, need 9 more)
+        for (uint256 i = 2; i <= 10; i++) {
+            _createAndPurchaseSignal(i);
+        }
+
+        // Vote to settle genius-idiot pair with a positive score (no damages)
+        int256 score = 1000e6;
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, score);
+        vm.prank(validator2);
+        voting.submitVote(genius, idiot, score);
+
+        // After settling idiot's cycle, only idiot's portion of signal 1 lock should be released
+        uint256 remainingLock = collateral.getSignalLock(genius, 1);
+        assertEq(remainingLock, lockPerPurchase, "Idiot2's lock on signal 1 should remain");
+    }
+
     // ─── Internal Helpers ────────────────────────────────────
 
     function _cycleKey(uint256 cycle) internal view returns (bytes32) {

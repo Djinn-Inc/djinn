@@ -460,15 +460,21 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    /// @dev Releases all remaining signal collateral locks for purchases in the cycle
+    /// @dev Releases signal collateral locks for purchases in the cycle.
+    ///      Only releases the portion locked for THIS purchase (notional * slaMultiplierBps / 10000),
+    ///      not the full signalLock, since multiple Idiots may share the same signal lock.
     /// @param genius The Genius address
     /// @param purchaseIds Array of purchase IDs in the cycle
     function _releaseSignalLocks(address genius, uint256[] memory purchaseIds) internal {
         for (uint256 i; i < purchaseIds.length; ++i) {
             Purchase memory p = escrow.getPurchase(purchaseIds[i]);
-            uint256 lockAmount = collateral.getSignalLock(genius, p.signalId);
-            if (lockAmount > 0) {
-                collateral.release(p.signalId, genius, lockAmount);
+            Signal memory sig = signalCommitment.getSignal(p.signalId);
+            uint256 expectedLock = (p.notional * sig.slaMultiplierBps) / BPS_DENOMINATOR;
+            // Cap at actual remaining lock to avoid revert if partially slashed
+            uint256 actualLock = collateral.getSignalLock(genius, p.signalId);
+            uint256 releaseAmount = expectedLock < actualLock ? expectedLock : actualLock;
+            if (releaseAmount > 0) {
+                collateral.release(p.signalId, genius, releaseAmount);
             }
         }
     }
