@@ -26,12 +26,27 @@ function isAllowed(path: string): boolean {
   return ALLOWED_PATHS.has(path) || PURCHASE_RE.test(path);
 }
 
+function isValidOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin") ?? "";
+  if (!origin) return true; // same-origin requests omit Origin
+  const allowed = [
+    process.env.NEXT_PUBLIC_APP_URL || "https://djinn.gg",
+    ...(process.env.NODE_ENV !== "production" ? ["http://localhost:3000"] : []),
+  ];
+  return allowed.includes(origin);
+}
+
 async function proxy(
   request: NextRequest,
   { params }: { params: { path: string[] } },
 ) {
   if (isRateLimited("validator-proxy", getIp(request))) {
     return rateLimitResponse();
+  }
+
+  // CSRF: validate Origin header on state-changing requests
+  if (request.method === "POST" && !isValidOrigin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const path = params.path.join("/");
