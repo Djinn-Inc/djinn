@@ -1,7 +1,7 @@
 import { BigInt, Bytes } from "@graphprotocol/graph-ts";
 import {
   SignalCommitted,
-  SignalVoided,
+  SignalCancelled,
   SignalStatusUpdated,
 } from "../generated/SignalCommitment/SignalCommitment";
 import { Signal, Genius, ProtocolStats } from "../generated/schema";
@@ -9,9 +9,8 @@ import { Signal, Genius, ProtocolStats } from "../generated/schema";
 // Maps the Solidity SignalStatus enum (uint8) to the GraphQL enum string
 function statusToString(status: i32): string {
   if (status == 0) return "Active";
-  if (status == 1) return "Purchased";
+  if (status == 1) return "Cancelled";
   if (status == 2) return "Settled";
-  if (status == 3) return "Voided";
   return "Active";
 }
 
@@ -92,17 +91,17 @@ export function handleSignalCommitted(event: SignalCommitted): void {
   stats.save();
 }
 
-export function handleSignalVoided(event: SignalVoided): void {
+export function handleSignalCancelled(event: SignalCancelled): void {
   let signalId = event.params.signalId.toString();
   let signal = Signal.load(signalId);
   if (signal == null) return;
 
   let wasActive = signal.status == "Active";
-  signal.status = "Voided";
+  signal.status = "Cancelled";
   signal.save();
 
   // Only decrement if transitioning from Active (prevents double-decrement
-  // when both SignalVoided and SignalStatusUpdated fire for the same signal)
+  // when both SignalCancelled and SignalStatusUpdated fire for the same signal)
   if (wasActive) {
     let genius = Genius.load(signal.genius);
     if (genius != null) {

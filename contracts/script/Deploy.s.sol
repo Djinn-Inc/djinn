@@ -16,9 +16,13 @@ import {Groth16TrackRecordVerifier} from "../src/Groth16TrackRecordVerifier.sol"
 import {TrackRecord} from "../src/TrackRecord.sol";
 
 /// @title Deploy
-/// @notice Deploys the full Djinn Protocol to a testnet (Base Sepolia).
-///         Deploys MockUSDC, all protocol contracts, wires permissions, and mints test USDC.
+/// @notice Deploys the full Djinn Protocol to Base (Sepolia testnet or mainnet).
+///         On testnet, deploys MockUSDC and mints test tokens.
+///         On mainnet, uses the real USDC contract at 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913.
 contract Deploy is Script {
+    /// @dev Base mainnet USDC (Circle's official deployment)
+    address constant BASE_MAINNET_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+
     function run() external {
         uint256 deployerKey = vm.envUint("DEPLOYER_KEY");
         address deployer = vm.addr(deployerKey);
@@ -26,12 +30,21 @@ contract Deploy is Script {
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
 
+        bool isMainnet = block.chainid == 8453;
+
         vm.startBroadcast(deployerKey);
 
-        // ─── 1. Deploy MockUSDC
+        // ─── 1. USDC: deploy mock on testnet, use real on mainnet
         // ─────────────────────────────────────────
-        MockUSDC usdc_ = new MockUSDC();
-        console.log("MockUSDC:", address(usdc_));
+        address usdcAddr;
+        if (isMainnet) {
+            usdcAddr = BASE_MAINNET_USDC;
+            console.log("Using real USDC:", usdcAddr);
+        } else {
+            MockUSDC usdc_ = new MockUSDC();
+            usdcAddr = address(usdc_);
+            console.log("MockUSDC:", usdcAddr);
+        }
 
         // ─── 2. Deploy independent contracts
         // ────────────────────────────
@@ -52,10 +65,10 @@ contract Deploy is Script {
 
         // ─── 3. Deploy USDC-dependent contracts
         // ─────────────────────────
-        Collateral coll_ = new Collateral(address(usdc_), deployer);
+        Collateral coll_ = new Collateral(usdcAddr, deployer);
         console.log("Collateral:", address(coll_));
 
-        Escrow esc_ = new Escrow(address(usdc_), deployer);
+        Escrow esc_ = new Escrow(usdcAddr, deployer);
         console.log("Escrow:", address(esc_));
 
         // ─── 4. Deploy Audit
@@ -136,10 +149,14 @@ contract Deploy is Script {
         require(zk_.trackRecordVerifier() == address(trVerifier_), "ZKVerifier.trackRecordVerifier not wired");
         console.log("All contract wiring verified");
 
-        // ─── 8. Mint test USDC to deployer
+        // ─── 8. Mint test USDC to deployer (testnet only)
         // ──────────────────────────────
-        usdc_.mint(deployer, 1_000_000 * 1e6); // 1M USDC
-        console.log("Minted 1,000,000 USDC to deployer");
+        if (!isMainnet) {
+            MockUSDC(usdcAddr).mint(deployer, 1_000_000 * 1e6); // 1M USDC
+            console.log("Minted 1,000,000 USDC to deployer");
+        } else {
+            console.log("Mainnet: skipping USDC mint (use real USDC)");
+        }
 
         vm.stopBroadcast();
 
@@ -149,7 +166,7 @@ contract Deploy is Script {
         console.log("=== DEPLOYMENT COMPLETE ===");
         console.log("Copy these to your .env files:");
         console.log("");
-        console.log("NEXT_PUBLIC_USDC_ADDRESS=", address(usdc_));
+        console.log("NEXT_PUBLIC_USDC_ADDRESS=", usdcAddr);
         console.log("NEXT_PUBLIC_SIGNAL_COMMITMENT_ADDRESS=", address(sc_));
         console.log("NEXT_PUBLIC_ESCROW_ADDRESS=", address(esc_));
         console.log("NEXT_PUBLIC_COLLATERAL_ADDRESS=", address(coll_));

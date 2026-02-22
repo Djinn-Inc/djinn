@@ -1,8 +1,7 @@
 export enum SignalStatus {
   Active = 0,
-  Purchased = 1,
+  Cancelled = 1,
   Settled = 2,
-  Voided = 3,
 }
 
 export enum Outcome {
@@ -108,12 +107,10 @@ export function signalStatusLabel(status: SignalStatus): string {
   switch (status) {
     case SignalStatus.Active:
       return "Active";
-    case SignalStatus.Purchased:
-      return "Purchased";
+    case SignalStatus.Cancelled:
+      return "Cancelled";
     case SignalStatus.Settled:
       return "Settled";
-    case SignalStatus.Voided:
-      return "Voided";
   }
 }
 

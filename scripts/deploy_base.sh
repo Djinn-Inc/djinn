@@ -108,6 +108,9 @@ echo "Deployer: $DEPLOYER"
 echo "Balance:  $BALANCE ETH"
 echo "RPC:      $RPC_URL"
 echo "Chain ID: $CHAIN_ID"
+if [ "$NETWORK" = "mainnet" ]; then
+    echo "USDC:     0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (Base mainnet)"
+fi
 echo ""
 
 # Deploy
@@ -133,6 +136,10 @@ echo "Output saved to /tmp/djinn-deploy-output.txt"
 echo ""
 echo "Next steps:"
 echo "  1. Copy contract addresses to .env files (including AUDIT_ADDRESS)"
-echo "  2. Update the subgraph deployment (subgraph/subgraph.yaml)"
-echo "  3. Set CORS_ORIGINS, LOG_FORMAT=json in production .env files"
-echo "  4. Push updated configs to the repo"
+echo "  2. Update subgraph/networks.json with deployed addresses"
+echo "  3. Deploy subgraph: cd subgraph && graph deploy --network $NETWORK"
+if [ "$NETWORK" = "mainnet" ]; then
+    echo "  4. Transfer ownership to multisig: ./scripts/transfer-ownership.sh"
+    echo "  5. Verify contracts on Basescan"
+fi
+echo "  6. Push updated configs to the repo"

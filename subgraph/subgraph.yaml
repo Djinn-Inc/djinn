@@ -1,6 +1,6 @@
-# NOTE: Contract addresses are placeholders. After deploying contracts (see scripts/deploy_base.sh),
-# run: ./scripts/update_subgraph.sh --signal 0x... --escrow 0x... [...]
-# Also set startBlock to the deployment block number for fast initial sync.
+# Network-specific addresses and start blocks are in networks.json.
+# Deploy with: graph deploy --network base-sepolia (or --network base for mainnet)
+# After mainnet deployment, update networks.json "base" entries with real addresses.
 specVersion: 1.0.0
 indexerHints:
   prune: auto
@@ -29,8 +29,8 @@ dataSources:
       eventHandlers:
         - event: SignalCommitted(indexed uint256,indexed address,string,uint256,uint256,uint256,uint256)
           handler: handleSignalCommitted
-        - event: SignalVoided(indexed uint256,indexed address)
-          handler: handleSignalVoided
+        - event: SignalCancelled(indexed uint256,indexed address)
+          handler: handleSignalCancelled
         - event: SignalStatusUpdated(indexed uint256,uint8)
           handler: handleSignalStatusUpdated
       file: ./src/signal-commitment.ts
@@ -67,6 +67,8 @@ dataSources:
           handler: handleRefunded
         - event: OutcomeUpdated(indexed uint256,uint8)
           handler: handleOutcomeUpdated
+        - event: FeesClaimed(indexed address,indexed address,uint256,uint256)
+          handler: handleFeesClaimed
       file: ./src/escrow.ts
 
   # --- Collateral ---

@@ -220,3 +220,24 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Architecture:** User burns alpha → provides extrinsic hash → validator queries substrate to verify transfer destination and amount → checks SQLite ledger for double-spend → dispatches to miner if valid.
 **Future:** Add USDC and TAO payment options alongside alpha. MVP = alpha burn only.
 **Impact:** Attestation is no longer free but essentially free for legitimate users (~$0.02). At volume (1,000/day = $20/day burned permanently). Spam is deterred. Burn address: `5GrsjiBeCErhUGj339vu5GubTgyJMyZLGQqUFBJAtKrCziU9` (Djinn-specific wallet, seed discarded — prevents cross-subnet burn reuse). Supports multi-credit bulk burns: burn N * 0.0001 TAO for N attestation credits. Sender coldkey tracked per burn.
+
+---
+
+## DEV-010: Genius Fee Claim Mechanism
+
+**Date:** 2026-02-21
+**Whitepaper Section:** Section 7 — Settlement / Fee Pool
+**Whitepaper Says:** "Genius keeps all fees" when Quality Score >= 0 after audit. No explicit withdrawal mechanism specified.
+**What we did:** Added `claimFees(idiot, cycle)` and `claimFeesBatch(idiots[], cycles[])` to the Escrow contract. After an audit cycle settles, the Genius calls `claimFees` to withdraw their earned USDC from the fee pool. The function verifies settlement via `IAuditForEscrow.auditResults()` and transfers the remaining fee pool balance to the Genius wallet.
+**Why:** Without an explicit claim function, fees accumulated in the fee pool with no withdrawal path. The whitepaper describes fees being "kept" but never specifies how the Genius receives them. Pull-based claiming (vs automatic push during settlement) keeps settlement gas costs predictable and gives Geniuses control over timing.
+**Impact:** Geniuses can now withdraw earned fees. Batch claiming reduces gas for prolific Geniuses with many Idiot pairs. Double-claim is prevented by zeroing the fee pool entry.
+
+## DEV-011: Track Record Proofs Prove Claimed Outcomes, Not Validator Consensus
+
+**Date:** 2026-02-22
+**Whitepaper Section:** Section 8 — ZK Track Record / Portable Credentials
+**Whitepaper Says:** Geniuses generate ZK proofs of their track record that are cryptographically verifiable.
+**What we did:** The ZK track record circuit proves outcomes as claimed by the Genius (via their signal preimages and stated outcomes). It does NOT prove that these outcomes match what validators voted on via OutcomeVoting. With the aggregate voting architecture (DEV-043), individual per-purchase outcomes never go on-chain, so the circuit cannot verify them against on-chain state.
+**Why:** Storing per-purchase validator votes on-chain would leak which lines are real (defeating the privacy goal of aggregate voting). The track record proof serves a different purpose: portable credibility for leaderboards and discovery, not automated dispute resolution.
+**Impact:** Track record proofs are safe for reputation/leaderboard use. They are NOT suitable for automated dispute resolution without additional on-chain vote storage. This is acceptable for the current phase. Future iterations could use proof composition with off-chain validator attestations.
+**Security Model:** A malicious Genius could claim different outcomes than validators voted. However, the economic incentive to lie is low: the leaderboard affects discovery priority but not settlement amounts (which are determined by OutcomeVoting consensus).

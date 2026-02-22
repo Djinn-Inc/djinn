@@ -542,7 +542,7 @@
   },
   {
     "type": "event",
-    "name": "SignalVoided",
+    "name": "SignalCancelled",
     "inputs": [
       {
         "name": "signalId",

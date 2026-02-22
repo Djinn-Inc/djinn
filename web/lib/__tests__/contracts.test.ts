@@ -90,7 +90,7 @@ describe("ABI definitions", () => {
     const abiStr = SIGNAL_COMMITMENT_ABI.join("\n");
     expect(abiStr).toContain("commit");
     expect(abiStr).toContain("getSignal");
-    expect(abiStr).toContain("voidSignal");
+    expect(abiStr).toContain("cancelSignal");
     expect(abiStr).toContain("isActive");
     expect(abiStr).toContain("signalExists");
   });

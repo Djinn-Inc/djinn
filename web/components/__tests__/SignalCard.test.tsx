@@ -153,14 +153,14 @@ describe("SignalCard", () => {
       expect(screen.getByText("Active")).toBeInTheDocument();
     });
 
-    it("shows 'Purchased' badge for purchased signals", () => {
+    it("shows 'Cancelled' badge for cancelled signals", () => {
       render(
         <SignalCard
           signalId="1"
-          signal={createMockSignal({ status: SignalStatus.Purchased })}
+          signal={createMockSignal({ status: SignalStatus.Cancelled })}
         />
       );
-      expect(screen.getByText("Purchased")).toBeInTheDocument();
+      expect(screen.getByText("Cancelled")).toBeInTheDocument();
     });
 
     it("shows 'Settled' badge for settled signals", () => {
@@ -171,16 +171,6 @@ describe("SignalCard", () => {
         />
       );
       expect(screen.getByText("Settled")).toBeInTheDocument();
-    });
-
-    it("shows 'Voided' badge for voided signals", () => {
-      render(
-        <SignalCard
-          signalId="1"
-          signal={createMockSignal({ status: SignalStatus.Voided })}
-        />
-      );
-      expect(screen.getByText("Voided")).toBeInTheDocument();
     });
 
     it("applies green styling for Active status", () => {
@@ -195,18 +185,6 @@ describe("SignalCard", () => {
       expect(badge.className).toContain("bg-green-100");
     });
 
-    it("applies blue styling for Purchased status", () => {
-      render(
-        <SignalCard
-          signalId="1"
-          signal={createMockSignal({ status: SignalStatus.Purchased })}
-        />
-      );
-      const badge = screen.getByText("Purchased");
-      expect(badge.className).toContain("text-blue-600");
-      expect(badge.className).toContain("bg-blue-100");
-    });
-
     it("applies slate styling for Settled status", () => {
       render(
         <SignalCard
@@ -219,14 +197,14 @@ describe("SignalCard", () => {
       expect(badge.className).toContain("bg-slate-100");
     });
 
-    it("applies red styling for Voided status", () => {
+    it("applies red styling for Cancelled status", () => {
       render(
         <SignalCard
           signalId="1"
-          signal={createMockSignal({ status: SignalStatus.Voided })}
+          signal={createMockSignal({ status: SignalStatus.Cancelled })}
         />
       );
-      const badge = screen.getByText("Voided");
+      const badge = screen.getByText("Cancelled");
       expect(badge.className).toContain("text-red-600");
       expect(badge.className).toContain("bg-red-100");
     });
@@ -260,7 +238,7 @@ describe("SignalCard", () => {
       render(
         <SignalCard
           signalId="1"
-          signal={createMockSignal({ status: SignalStatus.Purchased })}
+          signal={createMockSignal({ status: SignalStatus.Cancelled })}
           showPurchaseLink
         />
       );

@@ -236,6 +236,9 @@ export default function PurchaseSignal() {
         try {
           const result = await miner.checkLines({ lines: candidateLines });
           if (result.available_indices.length > 0) {
+            // At least some lines are available — validators will MPC-check
+            // whether the real pick is among them without revealing which is real.
+            // Stale decoys don't block the purchase; only a stale real pick does.
             checkResult = result;
             usedSportsbook = book;
             break;
@@ -249,8 +252,8 @@ export default function PurchaseSignal() {
       if (!checkResult || checkResult.available_indices.length === 0) {
         setStepError(
           savedPrefs.length > 1
-            ? `No lines available at any of your preferred sportsbooks (${sportsbooksToTry.join(", ")}). Try another sportsbook or check back later.`
-            : "No lines are currently available at this sportsbook. Try another sportsbook or check back later.",
+            ? `No lines available at any of your preferred sportsbooks (${sportsbooksToTry.join(", ")}). The signal may have gone stale.`
+            : "No lines are currently available at this sportsbook. The signal may have gone stale — try another sportsbook or check back later.",
         );
         setStep("idle");
         return;
@@ -417,12 +420,12 @@ export default function PurchaseSignal() {
                   import("@/lib/hooks/useSettledSignals"),
                 ]).then(([{ waitForTransactionReceipt }, { wagmiConfig }, { storeRecovery }, { getPurchasedSignals }, { getSavedSignals }]) => {
                   storeRecovery(
-                    (params: any) => walletClient.signTypedData(params),
+                    (params) => walletClient.signTypedData(params),
                     walletClient,
                     getSavedSignals(buyerAddress),
                     async (h) => { await waitForTransactionReceipt(wagmiConfig, { hash: h }); },
                     getPurchasedSignals(buyerAddress),
-                  ).catch((err: any) => {
+                  ).catch((err: unknown) => {
                     console.warn("[recovery] Failed to store idiot recovery blob:", err);
                   });
                 });

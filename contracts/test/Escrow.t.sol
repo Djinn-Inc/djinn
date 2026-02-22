@@ -312,9 +312,9 @@ contract EscrowIntegrationTest is Test {
         uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
         _depositGeniusCollateral(requiredCollateral);
 
-        // Void the signal so it's not Active
+        // Cancel the signal so it's not Active
         vm.prank(genius);
-        signalCommitment.voidSignal(SIGNAL_ID);
+        signalCommitment.cancelSignal(SIGNAL_ID);
 
         uint256 expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
         _depositIdiotEscrow(expectedFee);
@@ -733,13 +733,13 @@ contract EscrowIntegrationTest is Test {
         assertEq(bytes(reason).length, 0, "No reason for purchasable signal");
     }
 
-    function test_canPurchase_voided_signal() public {
+    function test_canPurchase_cancelled_signal() public {
         _createSignal(SIGNAL_ID);
         vm.prank(genius);
-        signalCommitment.voidSignal(SIGNAL_ID);
+        signalCommitment.cancelSignal(SIGNAL_ID);
 
         (bool canBuy, string memory reason) = escrow.canPurchase(SIGNAL_ID, NOTIONAL);
-        assertFalse(canBuy, "Voided signal should not be purchasable");
+        assertFalse(canBuy, "Cancelled signal should not be purchasable");
         assertEq(reason, "Signal not active");
     }
 
@@ -851,8 +851,9 @@ contract EscrowIntegrationTest is Test {
 
     function test_multiPurchase_exceedsRemaining() public {
         _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+        address idiot2 = address(0xDADA);
 
-        // First purchase: 8000 USDC
+        // First purchase: 8000 USDC (idiot)
         uint256 notional1 = 8000e6;
         uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
         _depositGeniusCollateral(collateral1);
@@ -862,23 +863,28 @@ contract EscrowIntegrationTest is Test {
         vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, notional1, ODDS);
 
-        // Second purchase: 3000 USDC (only 2000 remaining)
+        // Second purchase by different idiot: 3000 USDC (only 2000 remaining)
         uint256 notional2 = 3000e6;
         uint256 collateral2 = (notional2 * SLA_MULTIPLIER_BPS) / 10_000;
         _depositGeniusCollateral(collateral2);
         uint256 fee2 = (notional2 * MAX_PRICE_BPS) / 10_000;
-        _depositIdiotEscrow(fee2);
+        usdc.mint(idiot2, fee2);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), fee2);
+        escrow.deposit(fee2);
 
         uint256 remaining = 10_000e6 - notional1; // 2000e6
         vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalExceedsSignalMax.selector, notional2, remaining));
-        vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, notional2, ODDS);
+        vm.stopPrank();
     }
 
     function test_multiPurchase_fillsExactly() public {
         _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
+        address idiot2 = address(0xDADA);
+        address idiot3 = address(0xFADE);
 
-        // First purchase: 6000 USDC
+        // First purchase: 6000 USDC (idiot)
         uint256 notional1 = 6000e6;
         uint256 collateral1 = (notional1 * SLA_MULTIPLIER_BPS) / 10_000;
         _depositGeniusCollateral(collateral1);
@@ -888,29 +894,33 @@ contract EscrowIntegrationTest is Test {
         vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, notional1, ODDS);
 
-        // Second purchase: exactly 4000 USDC remaining
+        // Second purchase: exactly 4000 USDC remaining (idiot2 — different buyer)
         uint256 notional2 = 4000e6;
         uint256 collateral2 = (notional2 * SLA_MULTIPLIER_BPS) / 10_000;
         _depositGeniusCollateral(collateral2);
         uint256 fee2 = (notional2 * MAX_PRICE_BPS) / 10_000;
-        _depositIdiotEscrow(fee2);
-
-        vm.prank(idiot);
+        usdc.mint(idiot2, fee2);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), fee2);
+        escrow.deposit(fee2);
         escrow.purchase(SIGNAL_ID, notional2, ODDS);
+        vm.stopPrank();
 
         assertEq(escrow.signalNotionalFilled(SIGNAL_ID), 10_000e6, "Signal should be fully filled");
 
         // Third purchase should fail: 0 remaining
         _depositGeniusCollateral((1e6 * SLA_MULTIPLIER_BPS) / 10_000);
         uint256 fee3 = (1e6 * MAX_PRICE_BPS) / 10_000;
-        _depositIdiotEscrow(fee3);
-
+        usdc.mint(idiot3, fee3);
+        vm.startPrank(idiot3);
+        usdc.approve(address(escrow), fee3);
+        escrow.deposit(fee3);
         vm.expectRevert(abi.encodeWithSelector(Escrow.NotionalExceedsSignalMax.selector, 1e6, 0));
-        vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, 1e6, ODDS);
+        vm.stopPrank();
     }
 
-    function test_multiPurchase_voidAfterPartialFill() public {
+    function test_multiPurchase_cancelAfterPartialFill() public {
         _createSignal(SIGNAL_ID); // maxNotional = 10_000e6
 
         // First purchase: 5000 USDC
@@ -923,13 +933,13 @@ contract EscrowIntegrationTest is Test {
         vm.prank(idiot);
         escrow.purchase(SIGNAL_ID, notional1, ODDS);
 
-        // Genius voids the signal (stops new purchases)
+        // Genius cancels the signal (stops new purchases)
         vm.prank(genius);
-        signalCommitment.voidSignal(SIGNAL_ID);
+        signalCommitment.cancelSignal(SIGNAL_ID);
 
-        assertEq(uint8(signalCommitment.getSignal(SIGNAL_ID).status), uint8(SignalStatus.Voided));
+        assertEq(uint8(signalCommitment.getSignal(SIGNAL_ID).status), uint8(SignalStatus.Cancelled));
 
-        // Second purchase should fail: signal voided
+        // Second purchase should fail: signal cancelled
         _depositGeniusCollateral((1000e6 * SLA_MULTIPLIER_BPS) / 10_000);
         _depositIdiotEscrow((1000e6 * MAX_PRICE_BPS) / 10_000);
 
@@ -975,6 +985,53 @@ contract EscrowIntegrationTest is Test {
         escrow.purchase(SIGNAL_ID, notional1, ODDS);
 
         assertEq(escrow.getSignalNotionalFilled(SIGNAL_ID), notional1, "Should track first purchase");
+    }
+
+    // ─── Duplicate Purchase Prevention
+    // ──────────────────────────────────────────────
+
+    function test_duplicatePurchase_reverts() public {
+        _createSignal(SIGNAL_ID);
+
+        uint256 notional1 = 1000e6;
+        _depositGeniusCollateral((notional1 * SLA_MULTIPLIER_BPS) / 10_000);
+        _depositIdiotEscrow((notional1 * MAX_PRICE_BPS) / 10_000);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Same idiot tries to purchase the same signal again
+        _depositGeniusCollateral((notional1 * SLA_MULTIPLIER_BPS) / 10_000);
+        _depositIdiotEscrow((notional1 * MAX_PRICE_BPS) / 10_000);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.AlreadyPurchased.selector, SIGNAL_ID, idiot));
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+    }
+
+    function test_duplicatePurchase_differentIdiotsAllowed() public {
+        _createSignal(SIGNAL_ID);
+        address idiot2 = address(0xDADA);
+
+        // First idiot purchases
+        uint256 notional1 = 1000e6;
+        _depositGeniusCollateral((notional1 * SLA_MULTIPLIER_BPS) / 10_000);
+        _depositIdiotEscrow((notional1 * MAX_PRICE_BPS) / 10_000);
+
+        vm.prank(idiot);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+
+        // Second (different) idiot purchases the same signal — allowed
+        _depositGeniusCollateral((notional1 * SLA_MULTIPLIER_BPS) / 10_000);
+        uint256 fee2 = (notional1 * MAX_PRICE_BPS) / 10_000;
+        usdc.mint(idiot2, fee2);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), fee2);
+        escrow.deposit(fee2);
+        escrow.purchase(SIGNAL_ID, notional1, ODDS);
+        vm.stopPrank();
+
+        assertEq(escrow.signalNotionalFilled(SIGNAL_ID), notional1 * 2, "Both purchases should be tracked");
     }
 
     // ─── minNotional Tests
@@ -1064,5 +1121,269 @@ contract EscrowIntegrationTest is Test {
         (bool canBuy, string memory reason) = escrow.canPurchase(sigId, 100e6);
         assertFalse(canBuy, "Below minNotional should fail");
         assertEq(reason, "Below minimum notional");
+    }
+}
+
+/// @title MockAuditForClaims
+/// @notice Minimal mock that implements the auditResults view for fee claim tests
+contract MockAuditForClaims {
+    mapping(address => mapping(address => mapping(uint256 => uint256))) public settledTimestamps;
+
+    function markSettled(address genius, address idiot, uint256 cycle) external {
+        settledTimestamps[genius][idiot][cycle] = block.timestamp;
+    }
+
+    function auditResults(address genius, address idiot, uint256 cycle)
+        external
+        view
+        returns (int256, uint256, uint256, uint256, uint256)
+    {
+        return (0, 0, 0, 0, settledTimestamps[genius][idiot][cycle]);
+    }
+
+    // Also implement refund interface so it can act as audit for Escrow
+    function refund(address, address, uint256, uint256) external pure {}
+}
+
+/// @title EscrowFeeClaimTest
+/// @notice Tests for the Genius fee claim mechanism
+contract EscrowFeeClaimTest is Test {
+    MockUSDC usdc;
+    SignalCommitment signalCommitment;
+    Escrow escrow;
+    Collateral collateral;
+    CreditLedger creditLedger;
+    DjinnAccount account;
+    MockAuditForClaims mockAudit;
+
+    address owner;
+    address genius = address(0xBEEF);
+    address idiot = address(0xCAFE);
+
+    uint256 constant SIGNAL_ID = 1;
+    uint256 constant MAX_PRICE_BPS = 500;
+    uint256 constant SLA_MULTIPLIER_BPS = 15_000;
+    uint256 constant NOTIONAL = 1000e6;
+    uint256 constant ODDS = 1_910_000;
+
+    function setUp() public {
+        owner = address(this);
+
+        usdc = new MockUSDC();
+        signalCommitment = new SignalCommitment(owner);
+        escrow = new Escrow(address(usdc), owner);
+        collateral = new Collateral(address(usdc), owner);
+        creditLedger = new CreditLedger(owner);
+        account = new DjinnAccount(owner);
+        mockAudit = new MockAuditForClaims();
+
+        escrow.setSignalCommitment(address(signalCommitment));
+        escrow.setCollateral(address(collateral));
+        escrow.setCreditLedger(address(creditLedger));
+        escrow.setAccount(address(account));
+        escrow.setAuditContract(address(mockAudit));
+
+        signalCommitment.setAuthorizedCaller(address(escrow), true);
+        collateral.setAuthorized(address(escrow), true);
+        creditLedger.setAuthorizedCaller(address(escrow), true);
+        account.setAuthorizedCaller(address(escrow), true);
+    }
+
+    function _buildDecoyLines() internal pure returns (string[] memory) {
+        string[] memory decoys = new string[](10);
+        for (uint256 i; i < 10; i++) decoys[i] = "decoy";
+        return decoys;
+    }
+
+    function _buildSportsbooks() internal pure returns (string[] memory) {
+        string[] memory books = new string[](2);
+        books[0] = "DraftKings";
+        books[1] = "FanDuel";
+        return books;
+    }
+
+    function _createSignalAndPurchase() internal returns (uint256 expectedFee) {
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: SIGNAL_ID,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("signal"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 10_000e6,
+                minNotional: 0,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        usdc.mint(genius, requiredCollateral);
+        vm.startPrank(genius);
+        usdc.approve(address(collateral), requiredCollateral);
+        collateral.deposit(requiredCollateral);
+        vm.stopPrank();
+
+        expectedFee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        usdc.mint(idiot, expectedFee);
+        vm.startPrank(idiot);
+        usdc.approve(address(escrow), expectedFee);
+        escrow.deposit(expectedFee);
+        escrow.purchase(SIGNAL_ID, NOTIONAL, ODDS);
+        vm.stopPrank();
+    }
+
+    function test_claimFees_success() public {
+        uint256 expectedFee = _createSignalAndPurchase();
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+
+        // Mark cycle as settled in mock audit
+        mockAudit.markSettled(genius, idiot, cycle);
+
+        uint256 geniusBalBefore = usdc.balanceOf(genius);
+
+        vm.prank(genius);
+        escrow.claimFees(idiot, cycle);
+
+        assertEq(usdc.balanceOf(genius), geniusBalBefore + expectedFee, "Genius should receive fees");
+        assertEq(escrow.feePool(genius, idiot, cycle), 0, "Fee pool should be zero after claim");
+    }
+
+    function test_claimFees_revertCycleNotSettled() public {
+        _createSignalAndPurchase();
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+
+        // Do NOT mark cycle as settled
+        vm.expectRevert(abi.encodeWithSelector(Escrow.CycleNotSettled.selector, genius, idiot, cycle));
+        vm.prank(genius);
+        escrow.claimFees(idiot, cycle);
+    }
+
+    function test_claimFees_revertNoFees() public {
+        // No purchase made, so fee pool is empty
+        mockAudit.markSettled(genius, idiot, 0);
+
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NoFeesToClaim.selector, genius, idiot, 0));
+        vm.prank(genius);
+        escrow.claimFees(idiot, 0);
+    }
+
+    function test_claimFees_revertDoubleClaim() public {
+        uint256 expectedFee = _createSignalAndPurchase();
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        mockAudit.markSettled(genius, idiot, cycle);
+
+        vm.prank(genius);
+        escrow.claimFees(idiot, cycle);
+
+        // Second claim should revert — pool is empty
+        vm.expectRevert(abi.encodeWithSelector(Escrow.NoFeesToClaim.selector, genius, idiot, cycle));
+        vm.prank(genius);
+        escrow.claimFees(idiot, cycle);
+    }
+
+    function test_claimFees_onlyGeniusCaller() public {
+        _createSignalAndPurchase();
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        mockAudit.markSettled(genius, idiot, cycle);
+
+        // Idiot tries to claim genius's fees — should get CycleNotSettled
+        // because auditResults is keyed by msg.sender (idiot), not genius
+        vm.expectRevert(abi.encodeWithSelector(Escrow.CycleNotSettled.selector, idiot, idiot, cycle));
+        vm.prank(idiot);
+        escrow.claimFees(idiot, cycle);
+    }
+
+    function test_claimFeesBatch_success() public {
+        // Create 2 signals with 2 different idiots
+        address idiot2 = address(0xDADA);
+
+        // First purchase with idiot
+        uint256 expectedFee1 = _createSignalAndPurchase();
+        uint256 cycle1 = account.getCurrentCycle(genius, idiot);
+
+        // Second purchase with idiot2
+        uint256 sigId2 = 2;
+        vm.prank(genius);
+        signalCommitment.commit(
+            SignalCommitment.CommitParams({
+                signalId: sigId2,
+                encryptedBlob: hex"deadbeef",
+                commitHash: keccak256("signal2"),
+                sport: "NFL",
+                maxPriceBps: MAX_PRICE_BPS,
+                slaMultiplierBps: SLA_MULTIPLIER_BPS,
+                maxNotional: 10_000e6,
+                minNotional: 0,
+                expiresAt: block.timestamp + 1 days,
+                decoyLines: _buildDecoyLines(),
+                availableSportsbooks: _buildSportsbooks()
+            })
+        );
+
+        uint256 requiredCollateral = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
+        usdc.mint(genius, requiredCollateral);
+        vm.startPrank(genius);
+        usdc.approve(address(collateral), requiredCollateral);
+        collateral.deposit(requiredCollateral);
+        vm.stopPrank();
+
+        account.setAuthorizedCaller(address(escrow), true);
+
+        uint256 expectedFee2 = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
+        usdc.mint(idiot2, expectedFee2);
+        vm.startPrank(idiot2);
+        usdc.approve(address(escrow), expectedFee2);
+        escrow.deposit(expectedFee2);
+        escrow.purchase(sigId2, NOTIONAL, ODDS);
+        vm.stopPrank();
+
+        uint256 cycle2 = account.getCurrentCycle(genius, idiot2);
+
+        // Mark both cycles as settled
+        mockAudit.markSettled(genius, idiot, cycle1);
+        mockAudit.markSettled(genius, idiot2, cycle2);
+
+        uint256 geniusBalBefore = usdc.balanceOf(genius);
+
+        address[] memory idiots = new address[](2);
+        idiots[0] = idiot;
+        idiots[1] = idiot2;
+        uint256[] memory cycles = new uint256[](2);
+        cycles[0] = cycle1;
+        cycles[1] = cycle2;
+
+        vm.prank(genius);
+        escrow.claimFeesBatch(idiots, cycles);
+
+        assertEq(usdc.balanceOf(genius), geniusBalBefore + expectedFee1 + expectedFee2, "Genius should receive both fees");
+    }
+
+    function test_claimFeesBatch_revertAllEmpty() public {
+        mockAudit.markSettled(genius, idiot, 0);
+
+        address[] memory idiots = new address[](1);
+        idiots[0] = idiot;
+        uint256[] memory cycles = new uint256[](1);
+        cycles[0] = 0;
+
+        vm.expectRevert(Escrow.ZeroAmount.selector);
+        vm.prank(genius);
+        escrow.claimFeesBatch(idiots, cycles);
+    }
+
+    function test_claimFees_emitsEvent() public {
+        uint256 expectedFee = _createSignalAndPurchase();
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        mockAudit.markSettled(genius, idiot, cycle);
+
+        vm.expectEmit(true, true, false, true);
+        emit Escrow.FeesClaimed(genius, idiot, cycle, expectedFee);
+
+        vm.prank(genius);
+        escrow.claimFees(idiot, cycle);
     }
 }

@@ -31,6 +31,12 @@ interface IAccount {
     function getCurrentCycle(address genius, address idiot) external view returns (uint256);
 }
 
+/// @notice Minimal interface for the Audit contract (used for fee claim settlement check)
+interface IAuditForEscrow {
+    function auditResults(address genius, address idiot, uint256 cycle) external view
+        returns (int256 qualityScore, uint256 trancheA, uint256 trancheB, uint256 protocolFee, uint256 timestamp);
+}
+
 /// @title Escrow
 /// @notice Holds Idiot USDC deposits and processes signal purchases in the Djinn Protocol.
 ///         Buyers deposit USDC ahead of time for instant purchases. Fees are split between
@@ -76,6 +82,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     /// @notice Cumulative notional purchased per signal
     mapping(uint256 => uint256) public signalNotionalFilled;
 
+    /// @notice Tracks whether an Idiot has already purchased a given signal (one purchase per Idiot per signal)
+    mapping(uint256 => mapping(address => bool)) public hasPurchased;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -99,6 +108,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Emitted when the Audit contract triggers a refund to an Idiot
     event Refunded(address indexed genius, address indexed idiot, uint256 cycle, uint256 amount);
+
+    /// @notice Emitted when a Genius claims earned fees from a settled cycle
+    event FeesClaimed(address indexed genius, address indexed idiot, uint256 cycle, uint256 amount);
 
     /// @notice Emitted when a purchase outcome is updated
     event OutcomeUpdated(uint256 indexed purchaseId, Outcome outcome);
@@ -125,6 +137,9 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
     error NotionalTooLarge(uint256 provided, uint256 max);
     error OddsOutOfRange(uint256 odds);
     error NotionalExceedsSignalMax(uint256 notional, uint256 maxNotional);
+    error CycleNotSettled(address genius, address idiot, uint256 cycle);
+    error NoFeesToClaim(address genius, address idiot, uint256 cycle);
+    error AlreadyPurchased(uint256 signalId, address idiot);
 
     /// @notice Minimum notional per purchase (1 USDC in 6 decimals — prevents dust griefing)
     uint256 public constant MIN_NOTIONAL = 1e6;
@@ -289,6 +304,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         Signal memory sig = signalCommitment.getSignal(signalId);
         if (sig.status != SignalStatus.Active) revert SignalNotActive(signalId);
         if (block.timestamp >= sig.expiresAt) revert SignalExpired(signalId);
+        if (hasPurchased[signalId][msg.sender]) revert AlreadyPurchased(signalId, msg.sender);
         if (sig.minNotional > 0 && notional < sig.minNotional) {
             revert NotionalTooSmall(notional, sig.minNotional);
         }
@@ -331,6 +347,7 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         });
 
         _purchasesBySignal[signalId].push(purchaseId);
+        hasPurchased[signalId][msg.sender] = true;
 
         uint256 cycle = account.getCurrentCycle(sig.genius, msg.sender);
         feePool[sig.genius][msg.sender][cycle] += usdcPaid;
@@ -366,6 +383,54 @@ contract Escrow is Ownable, Pausable, ReentrancyGuard {
         balances[idiot] += amount;
 
         emit Refunded(genius, idiot, cycle, amount);
+    }
+
+    // -------------------------------------------------------------------------
+    // Genius fee claim
+    // -------------------------------------------------------------------------
+
+    /// @notice Claim earned fees from a settled audit cycle. Only the Genius can claim.
+    ///         Transfers the remaining feePool balance for the given genius-idiot-cycle to the Genius.
+    /// @param idiot The Idiot address for the pair
+    /// @param cycle The settled audit cycle to claim from
+    function claimFees(address idiot, uint256 cycle) external whenNotPaused nonReentrant {
+        if (auditContract == address(0)) revert ContractNotSet("Audit");
+
+        // Verify the cycle is settled by querying the Audit contract
+        (, , , , uint256 settledAt) = IAuditForEscrow(auditContract).auditResults(msg.sender, idiot, cycle);
+        if (settledAt == 0) revert CycleNotSettled(msg.sender, idiot, cycle);
+
+        uint256 amount = feePool[msg.sender][idiot][cycle];
+        if (amount == 0) revert NoFeesToClaim(msg.sender, idiot, cycle);
+
+        feePool[msg.sender][idiot][cycle] = 0;
+        usdc.safeTransfer(msg.sender, amount);
+
+        emit FeesClaimed(msg.sender, idiot, cycle, amount);
+    }
+
+    /// @notice Batch claim fees from multiple settled idiot-cycle pairs.
+    /// @param idiots Array of Idiot addresses
+    /// @param cycles Array of cycle numbers (must match idiots length)
+    function claimFeesBatch(address[] calldata idiots, uint256[] calldata cycles) external whenNotPaused nonReentrant {
+        if (auditContract == address(0)) revert ContractNotSet("Audit");
+        require(idiots.length == cycles.length, "Length mismatch");
+
+        uint256 total;
+        for (uint256 i; i < idiots.length; ++i) {
+            (, , , , uint256 settledAt) = IAuditForEscrow(auditContract).auditResults(msg.sender, idiots[i], cycles[i]);
+            if (settledAt == 0) revert CycleNotSettled(msg.sender, idiots[i], cycles[i]);
+
+            uint256 amount = feePool[msg.sender][idiots[i]][cycles[i]];
+            if (amount > 0) {
+                feePool[msg.sender][idiots[i]][cycles[i]] = 0;
+                total += amount;
+                emit FeesClaimed(msg.sender, idiots[i], cycles[i], amount);
+            }
+        }
+
+        if (total == 0) revert ZeroAmount();
+        usdc.safeTransfer(msg.sender, total);
     }
 
     // -------------------------------------------------------------------------

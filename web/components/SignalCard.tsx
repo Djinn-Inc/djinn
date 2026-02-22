@@ -20,12 +20,10 @@ function statusColor(status: SignalStatus): string {
   switch (status) {
     case SignalStatus.Active:
       return "bg-green-100 text-green-600 border-green-200";
-    case SignalStatus.Purchased:
-      return "bg-blue-100 text-blue-600 border-blue-200";
+    case SignalStatus.Cancelled:
+      return "bg-red-100 text-red-600 border-red-200";
     case SignalStatus.Settled:
       return "bg-slate-100 text-slate-500 border-slate-200";
-    case SignalStatus.Voided:
-      return "bg-red-100 text-red-600 border-red-200";
   }
 }
 

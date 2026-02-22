@@ -5,6 +5,7 @@ import {
   SignalPurchased,
   Refunded,
   OutcomeUpdated,
+  FeesClaimed,
 } from "../generated/Escrow/Escrow";
 import {
   Purchase,
@@ -205,6 +206,14 @@ export function handleOutcomeUpdated(event: OutcomeUpdated): void {
       genius.totalVoid = genius.totalVoid.plus(BigInt.fromI32(1));
     }
 
+    genius.save();
+  }
+}
+
+export function handleFeesClaimed(event: FeesClaimed): void {
+  let geniusId = event.params.genius.toHexString();
+  let genius = Genius.load(geniusId);
+  if (genius != null) {
     genius.save();
   }
 }

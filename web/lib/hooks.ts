@@ -21,9 +21,9 @@ import type { Signal, CommitParams } from "./types";
 // ---------------------------------------------------------------------------
 
 const isDev = process.env.NODE_ENV === "development";
-const debug = isDev
-  ? (...args: unknown[]) => debug(...args)
-  : (..._args: unknown[]) => {};
+const debug: (...args: unknown[]) => void = isDev
+  ? (...args: unknown[]) => console.log(...args)
+  : () => {};
 
 // ---------------------------------------------------------------------------
 // Error humanization — turn raw contract errors into readable messages
@@ -438,7 +438,7 @@ const COLLATERAL_ABI = parseAbi([
 
 const SIGNAL_COMMITMENT_VIEM_ABI = parseAbi([
   "function commit((uint256 signalId, bytes encryptedBlob, bytes32 commitHash, string sport, uint256 maxPriceBps, uint256 slaMultiplierBps, uint256 maxNotional, uint256 minNotional, uint256 expiresAt, string[] decoyLines, string[] availableSportsbooks) p)",
-  "function voidSignal(uint256 signalId)",
+  "function cancelSignal(uint256 signalId)",
 ]);
 
 const TRACK_RECORD_VIEM_ABI = parseAbi([
@@ -983,14 +983,14 @@ export function useAccountState(genius?: string, idiot?: string) {
 // Void (cancel) a signal
 // ---------------------------------------------------------------------------
 
-export function useVoidSignal() {
+export function useCancelSignal() {
   const { data: walletClient } = useWalletClient();
   const { address } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  const voidSignal = useCallback(
+  const cancelSignal = useCallback(
     async (signalId: bigint) => {
       if (!walletClient || !address) throw new Error("Wallet not connected");
       setLoading(true);
@@ -1000,7 +1000,7 @@ export function useVoidSignal() {
         const hash = await walletClient.writeContract({
           address: ADDRESSES.signalCommitment as Hex,
           abi: SIGNAL_COMMITMENT_VIEM_ABI,
-          functionName: "voidSignal",
+          functionName: "cancelSignal",
           args: [signalId],
         });
         setTxHash(hash);
@@ -1017,7 +1017,13 @@ export function useVoidSignal() {
     [walletClient, address],
   );
 
-  return { voidSignal, loading, error, txHash };
+  return { cancelSignal, loading, error, txHash };
+}
+
+/** @deprecated Use useCancelSignal instead */
+export function useVoidSignal() {
+  const result = useCancelSignal();
+  return { voidSignal: result.cancelSignal, loading: result.loading, error: result.error, txHash: result.txHash };
 }
 
 // ---------------------------------------------------------------------------

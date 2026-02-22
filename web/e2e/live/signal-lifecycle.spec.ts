@@ -419,23 +419,23 @@ test("verify: subgraph indexes the signal", async ({ request }) => {
 });
 
 // ─────────────────────────────────────────────
-// Cancel signal (void)
+// Cancel signal
 // ─────────────────────────────────────────────
 
-test("cancel signal: void on-chain", async () => {
+test("cancel signal: cancel on-chain", async () => {
   test.skip(!hasFunds, "No ETH — fund E2E wallet first");
 
   const sc = new ethers.Contract(
     ADDRESSES.signalCommitment,
     [
-      "function voidSignal(uint256 signalId)",
+      "function cancelSignal(uint256 signalId)",
       "function isActive(uint256) view returns (bool)",
     ],
     wallet,
   );
 
-  // Void the signal
-  const tx = await sc.voidSignal(SIGNAL_ID);
+  // Cancel the signal
+  const tx = await sc.cancelSignal(SIGNAL_ID);
   const receipt = await tx.wait();
   expect(receipt?.status).toBe(1);
   await waitForSync();

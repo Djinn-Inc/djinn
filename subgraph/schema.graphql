@@ -9,9 +9,8 @@
 
 enum SignalStatus {
   Active
-  Purchased
+  Cancelled
   Settled
-  Voided
 }
 
 enum Outcome {
@@ -25,7 +24,7 @@ enum Outcome {
 
 """
 A committed encrypted signal from a Genius.
-Created on SignalCommitted, updated on SignalStatusUpdated / SignalVoided.
+Created on SignalCommitted, updated on SignalStatusUpdated / SignalCancelled.
 """
 type Signal @entity {
   "signalId from the contract"
@@ -98,7 +97,7 @@ type Genius @entity {
   id: ID!
   "Total signals committed by this Genius"
   totalSignals: BigInt!
-  "Total active (non-voided, non-settled) signals"
+  "Total active (non-cancelled, non-settled) signals"
   activeSignals: BigInt!
   "Total purchases across all signals"
   totalPurchases: BigInt!

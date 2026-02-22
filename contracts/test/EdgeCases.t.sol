@@ -227,19 +227,19 @@ contract EdgeCaseIntegrationTest is Test {
         escrow.purchase(sigId, NOTIONAL, ODDS);
     }
 
-    // ─── Genius Abandonment (Signal Voided by Genius) ───────────────────
+    // ─── Genius Abandonment (Signal Cancelled by Genius) ───────────────────
 
-    function test_geniusAbandonment_voidSignal() public {
+    function test_geniusAbandonment_cancelSignal() public {
         uint256 sigId = _createSignal();
 
-        // Genius voids the signal before anyone purchases it
+        // Genius cancels the signal before anyone purchases it
         vm.prank(genius);
-        signalCommitment.voidSignal(sigId);
+        signalCommitment.cancelSignal(sigId);
 
         Signal memory sig = signalCommitment.getSignal(sigId);
-        assertEq(uint8(sig.status), uint8(SignalStatus.Voided));
+        assertEq(uint8(sig.status), uint8(SignalStatus.Cancelled));
 
-        // Cannot purchase a voided signal
+        // Cannot purchase a cancelled signal
         uint256 lockAmount = (NOTIONAL * SLA_MULTIPLIER_BPS) / 10_000;
         uint256 fee = (NOTIONAL * MAX_PRICE_BPS) / 10_000;
         _depositCollateral(lockAmount);
@@ -250,17 +250,17 @@ contract EdgeCaseIntegrationTest is Test {
         escrow.purchase(sigId, NOTIONAL, ODDS);
     }
 
-    function test_cannotVoid_afterSettled() public {
+    function test_cannotCancel_afterSettled() public {
         uint256 sigId = _createSignal();
 
         // Settle the signal via authorized caller
         vm.prank(address(escrow));
         signalCommitment.updateStatus(sigId, SignalStatus.Settled);
 
-        // Genius tries to void after settlement
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotVoidable.selector, sigId, SignalStatus.Settled));
+        // Genius tries to cancel after settlement
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotCancellable.selector, sigId, SignalStatus.Settled));
         vm.prank(genius);
-        signalCommitment.voidSignal(sigId);
+        signalCommitment.cancelSignal(sigId);
     }
 
     // ─── Collateral Exhaustion

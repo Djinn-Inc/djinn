@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useSignal, useVoidSignal, useSignalPurchases, useSignalNotionalFilled, humanizeError } from "@/lib/hooks";
+import { useSignal, useCancelSignal, useSignalPurchases, useSignalNotionalFilled, humanizeError } from "@/lib/hooks";
 import { getSavedSignals } from "@/lib/hooks/useSettledSignals";
 import { SignalStatus, formatUsdc, formatBps, truncateAddress } from "@/lib/types";
 import { parseLine, formatLine, type StructuredLine } from "@/lib/odds";
@@ -18,7 +18,7 @@ export default function GeniusSignalDetail() {
   const { signal, loading, error } = useSignal(
     signalId ? BigInt(signalId) : undefined
   );
-  const { voidSignal, loading: voidLoading, error: voidError } = useVoidSignal();
+  const { cancelSignal, loading: cancelLoading, error: cancelError } = useCancelSignal();
   const { purchases, totalNotional, loading: purchasesLoading } = useSignalPurchases(signalId);
   const { filled: notionalFilled } = useSignalNotionalFilled(signalId);
 
@@ -41,14 +41,14 @@ export default function GeniusSignalDetail() {
   const isExpired = signal
     ? Number(signal.expiresAt) * 1000 < Date.now()
     : false;
-  const isPurchased = signal?.status === SignalStatus.Purchased;
-  const canCancel = isOwner && isActive && !isExpired && !isPurchased;
+  const isCancelled = signal?.status === SignalStatus.Cancelled;
+  const canCancel = isOwner && isActive && !isExpired && !isCancelled;
   const hasPurchases = purchases.length > 0;
 
   const handleCancel = async () => {
     setActionError(null);
     try {
-      await voidSignal(BigInt(signalId));
+      await cancelSignal(BigInt(signalId));
       setCancelSuccess(true);
       setShowConfirmCancel(false);
     } catch (err) {
@@ -59,7 +59,7 @@ export default function GeniusSignalDetail() {
   const handleCancelAndEdit = async () => {
     setActionError(null);
     try {
-      await voidSignal(BigInt(signalId));
+      await cancelSignal(BigInt(signalId));
       // Redirect to create new signal page
       router.push("/genius/signal/new");
     } catch (err) {
@@ -92,16 +92,14 @@ export default function GeniusSignalDetail() {
 
   const statusLabel =
     cancelSuccess ? "Cancelled" :
-    signal.status === SignalStatus.Voided ? "Cancelled" :
+    signal.status === SignalStatus.Cancelled ? "Cancelled" :
     signal.status === SignalStatus.Settled ? "Settled" :
-    signal.status === SignalStatus.Purchased ? "Purchased" :
     isExpired ? "Expired" : "Active";
 
   const statusColor =
     statusLabel === "Active" ? "bg-green-100 text-green-600 border-green-200" :
     statusLabel === "Expired" ? "bg-slate-100 text-slate-500 border-slate-200" :
     statusLabel === "Cancelled" ? "bg-red-100 text-red-500 border-red-200" :
-    statusLabel === "Purchased" ? "bg-blue-100 text-blue-600 border-blue-200" :
     "bg-slate-100 text-slate-500 border-slate-200";
 
   return (
@@ -129,9 +127,9 @@ export default function GeniusSignalDetail() {
       </div>
 
       {/* Action Errors */}
-      {(actionError || voidError) && (
+      {(actionError || cancelError) && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-4" role="alert">
-          <p className="text-sm text-red-600">{actionError || voidError}</p>
+          <p className="text-sm text-red-600">{actionError || cancelError}</p>
         </div>
       )}
 
@@ -302,14 +300,14 @@ export default function GeniusSignalDetail() {
       {isOwner && !cancelSuccess && (
         <div className="card">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Actions</h2>
-          {!isActive || signal.status === SignalStatus.Voided ? (
+          {!isActive || signal.status === SignalStatus.Cancelled ? (
             <p className="text-slate-500 text-sm">
               This signal is {statusLabel.toLowerCase()} and no actions are available.
-            </p>
-          ) : hasPurchases ? (
-            <p className="text-slate-500 text-sm">
-              This signal has been purchased and cannot be cancelled.
-              It will settle through the normal audit cycle.
+              {hasPurchases && signal.status === SignalStatus.Cancelled && (
+                <span className="block mt-1">
+                  Existing purchases will settle through the normal audit cycle.
+                </span>
+              )}
             </p>
           ) : isExpired ? (
             <p className="text-slate-500 text-sm">
@@ -318,31 +316,32 @@ export default function GeniusSignalDetail() {
           ) : showConfirmCancel ? (
             <div>
               <p className="text-sm text-slate-700 mb-4">
-                Are you sure you want to cancel this signal? This action is
-                irreversible. Your collateral backing this signal will be
-                released.
+                {hasPurchases
+                  ? `Cancel remaining capacity? ${purchases.length} existing purchase${purchases.length > 1 ? "s" : ""} will still settle through the normal audit cycle. No new purchases will be accepted.`
+                  : "Are you sure you want to cancel this signal? This action is irreversible. Your collateral backing this signal will be released."
+                }
               </p>
               <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={handleCancel}
-                  disabled={voidLoading}
+                  disabled={cancelLoading}
                   className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
                 >
-                  {voidLoading ? "Cancelling..." : "Confirm Cancel"}
+                  {cancelLoading ? "Cancelling..." : "Confirm Cancel"}
                 </button>
                 <button
                   type="button"
                   onClick={handleCancelAndEdit}
-                  disabled={voidLoading}
+                  disabled={cancelLoading}
                   className="px-4 py-2 text-sm font-medium rounded-lg bg-genius-600 text-white hover:bg-genius-700 disabled:opacity-50 transition-colors"
                 >
-                  {voidLoading ? "Cancelling..." : "Cancel & Create New"}
+                  {cancelLoading ? "Cancelling..." : "Cancel & Create New"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowConfirmCancel(false)}
-                  disabled={voidLoading}
+                  disabled={cancelLoading}
                   className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
                 >
                   Keep Signal

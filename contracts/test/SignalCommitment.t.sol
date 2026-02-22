@@ -303,59 +303,59 @@ contract SignalCommitmentTest is Test {
         sc.commit(p);
     }
 
-    // ─── Tests: Void signal by genius
+    // ─── Tests: Cancel signal by genius
     // ────────────────────────────────────
 
-    function test_voidSignal_success() public {
+    function test_cancelSignal_success() public {
         _commitDefault(600);
 
         vm.prank(genius);
-        sc.voidSignal(600);
+        sc.cancelSignal(600);
 
         Signal memory sig = sc.getSignal(600);
-        assertEq(uint8(sig.status), uint8(SignalStatus.Voided));
+        assertEq(uint8(sig.status), uint8(SignalStatus.Cancelled));
     }
 
-    function test_voidSignal_emitsEvent() public {
+    function test_cancelSignal_emitsEvent() public {
         _commitDefault(601);
 
         vm.expectEmit(true, true, false, true);
-        emit SignalCommitment.SignalVoided(601, genius);
+        emit SignalCommitment.SignalCancelled(601, genius);
 
         vm.prank(genius);
-        sc.voidSignal(601);
+        sc.cancelSignal(601);
     }
 
-    // ─── Tests: Revert void by non-genius
+    // ─── Tests: Revert cancel by non-genius
     // ────────────────────────────────
 
-    function test_voidSignal_revertByNonGenius() public {
+    function test_cancelSignal_revertByNonGenius() public {
         _commitDefault(700);
 
         address imposter = address(0xBEEF);
         vm.expectRevert(abi.encodeWithSelector(SignalCommitment.NotSignalGenius.selector, imposter, genius));
         vm.prank(imposter);
-        sc.voidSignal(700);
+        sc.cancelSignal(700);
     }
 
-    // ─── Tests: Revert void on settled signal ──────────────────
+    // ─── Tests: Revert cancel on settled signal ──────────────────
 
-    function test_voidSignal_revertOnSettledSignal_direct() public {
+    function test_cancelSignal_revertOnSettledSignal_direct() public {
         _commitDefault(800);
 
         // Set status to Settled via authorized caller
         vm.prank(authorizedCaller);
         sc.updateStatus(800, SignalStatus.Settled);
 
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotVoidable.selector, 800, SignalStatus.Settled));
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotCancellable.selector, 800, SignalStatus.Settled));
         vm.prank(genius);
-        sc.voidSignal(800);
+        sc.cancelSignal(800);
     }
 
-    function test_voidSignal_revertOnNonExistentSignal() public {
+    function test_cancelSignal_revertOnNonExistentSignal() public {
         vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotFound.selector, 999));
         vm.prank(genius);
-        sc.voidSignal(999);
+        sc.cancelSignal(999);
     }
 
     // ─── Tests: Update status by authorized caller
@@ -424,10 +424,10 @@ contract SignalCommitmentTest is Test {
         assertFalse(sc.isActive(2004));
     }
 
-    function test_isActive_falseForVoidedSignal() public {
+    function test_isActive_falseForCancelledSignal() public {
         _commitDefault(2005);
         vm.prank(genius);
-        sc.voidSignal(2005);
+        sc.cancelSignal(2005);
         assertFalse(sc.isActive(2005));
     }
 
@@ -477,25 +477,13 @@ contract SignalCommitmentTest is Test {
         assertEq(uint8(sc.getSignal(3000).status), uint8(SignalStatus.Settled));
     }
 
-    function test_updateStatus_revertActiveToPurchased() public {
-        _commitDefault(3001);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector, 3001, SignalStatus.Active, SignalStatus.Purchased
-            )
-        );
-        vm.prank(authorizedCaller);
-        sc.updateStatus(3001, SignalStatus.Purchased);
-    }
-
-    function test_updateStatus_activeToVoided() public {
+    function test_updateStatus_activeToCancelled() public {
         _commitDefault(3002);
 
         vm.prank(authorizedCaller);
-        sc.updateStatus(3002, SignalStatus.Voided);
+        sc.updateStatus(3002, SignalStatus.Cancelled);
 
-        assertEq(uint8(sc.getSignal(3002).status), uint8(SignalStatus.Voided));
+        assertEq(uint8(sc.getSignal(3002).status), uint8(SignalStatus.Cancelled));
     }
 
     function test_isActive_falseAfterSettled_v2() public {
@@ -507,27 +495,27 @@ contract SignalCommitmentTest is Test {
         assertFalse(sc.isActive(3003));
     }
 
-    function test_voidSignal_revertOnVoidedSignal() public {
+    function test_cancelSignal_revertOnCancelledSignal() public {
         _commitDefault(3005);
 
         vm.prank(genius);
-        sc.voidSignal(3005);
+        sc.cancelSignal(3005);
 
-        // Voided signals are not Active, so voidSignal should revert
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotVoidable.selector, 3005, SignalStatus.Voided));
+        // Cancelled signals are not Active, so cancelSignal should revert
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotCancellable.selector, 3005, SignalStatus.Cancelled));
         vm.prank(genius);
-        sc.voidSignal(3005);
+        sc.cancelSignal(3005);
     }
 
-    function test_voidSignal_revertOnSettledSignal_v2() public {
+    function test_cancelSignal_revertOnSettledSignal_v2() public {
         _commitDefault(3006);
 
         vm.prank(authorizedCaller);
         sc.updateStatus(3006, SignalStatus.Settled);
 
-        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotVoidable.selector, 3006, SignalStatus.Settled));
+        vm.expectRevert(abi.encodeWithSelector(SignalCommitment.SignalNotCancellable.selector, 3006, SignalStatus.Settled));
         vm.prank(genius);
-        sc.voidSignal(3006);
+        sc.cancelSignal(3006);
     }
 
     // ─── Tests: Invalid state transitions
@@ -575,34 +563,32 @@ contract SignalCommitmentTest is Test {
         sc.updateStatus(4002, SignalStatus.Settled);
     }
 
-    function test_updateStatus_revertVoidedToActive() public {
+    function test_updateStatus_revertCancelledToActive() public {
         _commitDefault(4003);
 
         vm.prank(authorizedCaller);
-        sc.updateStatus(4003, SignalStatus.Voided);
+        sc.updateStatus(4003, SignalStatus.Cancelled);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector, 4003, SignalStatus.Voided, SignalStatus.Active
+                SignalCommitment.InvalidStatusTransition.selector, 4003, SignalStatus.Cancelled, SignalStatus.Active
             )
         );
         vm.prank(authorizedCaller);
         sc.updateStatus(4003, SignalStatus.Active);
     }
 
-    function test_updateStatus_revertVoidedToSettled() public {
+    function test_updateStatus_cancelledToSettled() public {
         _commitDefault(4004);
 
         vm.prank(authorizedCaller);
-        sc.updateStatus(4004, SignalStatus.Voided);
+        sc.updateStatus(4004, SignalStatus.Cancelled);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SignalCommitment.InvalidStatusTransition.selector, 4004, SignalStatus.Voided, SignalStatus.Settled
-            )
-        );
+        // Cancelled signals can transition to Settled (existing purchases still settle)
         vm.prank(authorizedCaller);
         sc.updateStatus(4004, SignalStatus.Settled);
+
+        assertEq(uint8(sc.getSignal(4004).status), uint8(SignalStatus.Settled));
     }
 
     // ─── Tests: Blob size limit

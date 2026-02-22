@@ -55,8 +55,8 @@ contract SignalCommitment is Ownable, Pausable {
         uint256 expiresAt
     );
 
-    /// @notice Emitted when a Genius voids their own signal
-    event SignalVoided(uint256 indexed signalId, address indexed genius);
+    /// @notice Emitted when a Genius cancels their own signal
+    event SignalCancelled(uint256 indexed signalId, address indexed genius);
 
     /// @notice Emitted when an authorized contract updates signal status
     event SignalStatusUpdated(uint256 indexed signalId, SignalStatus newStatus);
@@ -89,8 +89,8 @@ contract SignalCommitment is Ownable, Pausable {
     /// @notice Only the Genius who committed the signal can call this
     error NotSignalGenius(address caller, address genius);
 
-    /// @notice Signal cannot be voided from its current status
-    error SignalNotVoidable(uint256 signalId, SignalStatus currentStatus);
+    /// @notice Signal cannot be cancelled from its current status
+    error SignalNotCancellable(uint256 signalId, SignalStatus currentStatus);
 
     /// @notice Address must not be zero
     error ZeroAddress();
@@ -217,29 +217,29 @@ contract SignalCommitment is Ownable, Pausable {
         emit SignalCommitted(p.signalId, msg.sender, p.sport, p.maxPriceBps, p.slaMultiplierBps, p.maxNotional, p.expiresAt);
     }
 
-    /// @notice Void a signal that has not yet been purchased
-    /// @dev Only the Genius who created the signal can void it.
-    ///      Voiding is irreversible and only allowed while status is Active.
-    /// @param signalId The signal to void
-    function voidSignal(uint256 signalId) external {
+    /// @notice Cancel a signal, preventing further purchases
+    /// @dev Only the Genius who created the signal can cancel it.
+    ///      Cancellation is irreversible and only allowed while status is Active.
+    ///      Existing purchases on a partially-filled signal still settle normally.
+    /// @param signalId The signal to cancel
+    function cancelSignal(uint256 signalId) external {
         if (!_exists[signalId]) revert SignalNotFound(signalId);
 
         Signal storage s = _signals[signalId];
         if (s.genius != msg.sender) revert NotSignalGenius(msg.sender, s.genius);
-        if (s.status != SignalStatus.Active) revert SignalNotVoidable(signalId, s.status);
+        if (s.status != SignalStatus.Active) revert SignalNotCancellable(signalId, s.status);
 
-        s.status = SignalStatus.Voided;
+        s.status = SignalStatus.Cancelled;
 
-        emit SignalVoided(signalId, msg.sender);
+        emit SignalCancelled(signalId, msg.sender);
     }
 
     /// @notice Update the status of a signal
     /// @dev Only callable by contracts authorized by the owner (e.g. Audit).
     ///      Enforces a state transition matrix:
-    ///        Active   → Settled, Voided
-    ///        Settled  → (terminal, no transitions)
-    ///        Voided   → (terminal, no transitions)
-    ///      Note: Purchased status is no longer used — signals stay Active while purchases accumulate.
+    ///        Active    → Cancelled, Settled
+    ///        Cancelled → Settled (existing purchases still settle)
+    ///        Settled   → (terminal, no transitions)
     /// @param signalId The signal to update
     /// @param newStatus The new status to set
     function updateStatus(uint256 signalId, SignalStatus newStatus) external onlyAuthorized {
@@ -248,11 +248,16 @@ contract SignalCommitment is Ownable, Pausable {
         SignalStatus current = _signals[signalId].status;
 
         if (current == SignalStatus.Active) {
-            if (newStatus != SignalStatus.Settled && newStatus != SignalStatus.Voided) {
+            if (newStatus != SignalStatus.Settled && newStatus != SignalStatus.Cancelled) {
+                revert InvalidStatusTransition(signalId, current, newStatus);
+            }
+        } else if (current == SignalStatus.Cancelled) {
+            // Cancelled signals can transition to Settled (existing purchases settle)
+            if (newStatus != SignalStatus.Settled) {
                 revert InvalidStatusTransition(signalId, current, newStatus);
             }
         } else {
-            // Settled and Voided are terminal states
+            // Settled is terminal
             revert InvalidStatusTransition(signalId, current, newStatus);
         }
 
@@ -291,7 +296,7 @@ contract SignalCommitment is Ownable, Pausable {
         return _signals[signalId].genius;
     }
 
-    /// @notice Check whether a signal is currently active (not expired, not voided/settled)
+    /// @notice Check whether a signal is currently active (not expired, not cancelled/settled)
     /// @param signalId The signal to check
     /// @return True if the signal exists, has Active status, and has not expired
     function isActive(uint256 signalId) external view returns (bool) {

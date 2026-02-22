@@ -13,9 +13,8 @@ import {
 describe("SignalStatus enum", () => {
   it("has correct numeric values", () => {
     expect(SignalStatus.Active).toBe(0);
-    expect(SignalStatus.Purchased).toBe(1);
+    expect(SignalStatus.Cancelled).toBe(1);
     expect(SignalStatus.Settled).toBe(2);
-    expect(SignalStatus.Voided).toBe(3);
   });
 });
 
@@ -132,9 +131,8 @@ describe("truncateAddress", () => {
 describe("signalStatusLabel", () => {
   it("returns correct label for each status", () => {
     expect(signalStatusLabel(SignalStatus.Active)).toBe("Active");
-    expect(signalStatusLabel(SignalStatus.Purchased)).toBe("Purchased");
+    expect(signalStatusLabel(SignalStatus.Cancelled)).toBe("Cancelled");
     expect(signalStatusLabel(SignalStatus.Settled)).toBe("Settled");
-    expect(signalStatusLabel(SignalStatus.Voided)).toBe("Voided");
   });
 });
 

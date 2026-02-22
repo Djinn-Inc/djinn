@@ -12,9 +12,8 @@ enum Outcome {
 /// @notice Status of a signal
 enum SignalStatus {
     Active,
-    Purchased,
-    Settled,
-    Voided
+    Cancelled,
+    Settled
 }
 
 /// @notice Data for a committed signal

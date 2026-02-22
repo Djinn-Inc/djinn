@@ -9,12 +9,12 @@ import {
 import { BigInt, Address, ethereum } from "@graphprotocol/graph-ts";
 import {
   handleSignalCommitted,
-  handleSignalVoided,
+  handleSignalCancelled,
   handleSignalStatusUpdated,
 } from "../src/signal-commitment";
 import {
   SignalCommitted,
-  SignalVoided,
+  SignalCancelled,
   SignalStatusUpdated,
 } from "../generated/SignalCommitment/SignalCommitment";
 
@@ -65,11 +65,11 @@ function createSignalCommittedEvent(
   return event;
 }
 
-function createSignalVoidedEvent(
+function createSignalCancelledEvent(
   signalId: BigInt,
   genius: Address
-): SignalVoided {
-  let event = changetype<SignalVoided>(newMockEvent());
+): SignalCancelled {
+  let event = changetype<SignalCancelled>(newMockEvent());
   event.parameters = new Array();
   event.parameters.push(
     new ethereum.EventParam(
@@ -176,7 +176,7 @@ describe("Signal Commitment", () => {
     assert.fieldEquals("ProtocolStats", "1", "uniqueGeniuses", "1");
   });
 
-  test("voids a signal and decrements active count", () => {
+  test("cancels a signal and decrements active count", () => {
     let commitEvent = createSignalCommittedEvent(
       BigInt.fromI32(1),
       GENIUS_ADDR,
@@ -187,15 +187,15 @@ describe("Signal Commitment", () => {
     );
     handleSignalCommitted(commitEvent);
 
-    let voidEvent = createSignalVoidedEvent(BigInt.fromI32(1), GENIUS_ADDR);
-    handleSignalVoided(voidEvent);
+    let cancelEvent = createSignalCancelledEvent(BigInt.fromI32(1), GENIUS_ADDR);
+    handleSignalCancelled(cancelEvent);
 
-    assert.fieldEquals("Signal", "1", "status", "Voided");
+    assert.fieldEquals("Signal", "1", "status", "Cancelled");
     let geniusId = GENIUS_ADDR.toHexString();
     assert.fieldEquals("Genius", geniusId, "activeSignals", "0");
   });
 
-  test("updates signal status from Active to Purchased", () => {
+  test("updates signal status from Active to Cancelled", () => {
     let commitEvent = createSignalCommittedEvent(
       BigInt.fromI32(1),
       GENIUS_ADDR,
@@ -209,17 +209,17 @@ describe("Signal Commitment", () => {
     let statusEvent = createSignalStatusUpdatedEvent(BigInt.fromI32(1), 1);
     handleSignalStatusUpdated(statusEvent);
 
-    assert.fieldEquals("Signal", "1", "status", "Purchased");
+    assert.fieldEquals("Signal", "1", "status", "Cancelled");
     let geniusId = GENIUS_ADDR.toHexString();
     assert.fieldEquals("Genius", geniusId, "activeSignals", "0");
   });
 
-  test("ignores void for non-existent signal", () => {
-    let voidEvent = createSignalVoidedEvent(
+  test("ignores cancel for non-existent signal", () => {
+    let cancelEvent = createSignalCancelledEvent(
       BigInt.fromI32(999),
       GENIUS_ADDR
     );
-    handleSignalVoided(voidEvent);
+    handleSignalCancelled(cancelEvent);
 
     assert.entityCount("Signal", 0);
   });

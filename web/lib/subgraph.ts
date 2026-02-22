@@ -170,7 +170,7 @@ export interface SubgraphSignal {
   sport: string;
   maxPriceBps: string;
   slaMultiplierBps: string;
-  status: string; // "Active" | "Purchased" | "Settled" | "Voided"
+  status: string; // "Active" | "Cancelled" | "Settled"
   createdAt: string;
   purchases: SubgraphSignalPurchase[];
 }
