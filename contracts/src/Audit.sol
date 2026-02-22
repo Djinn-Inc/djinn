@@ -352,6 +352,12 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         }
         _validateDependencies();
 
+        // Full settlement requires 10 signals (audit-ready). For fewer signals,
+        // parties must use earlyExitByVote which pays damages as Credits only.
+        if (!account.isAuditReady(genius, idiot)) {
+            revert NotAuditReady(genius, idiot);
+        }
+
         uint256 cycle = account.getCurrentCycle(genius, idiot);
         if (auditResults[genius][idiot][cycle].timestamp != 0) {
             revert AlreadySettled(genius, idiot, cycle);

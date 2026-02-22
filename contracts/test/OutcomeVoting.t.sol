@@ -737,6 +737,49 @@ contract OutcomeVotingTest is Test {
         assertEq(voting.cycleQuorumThreshold(genius, idiot, 0), 2);
     }
 
+    // ─── settleByVote requires isAuditReady ────────────────
+
+    function test_settleByVote_revertsWhenNotAuditReady() public {
+        // Only create 5 signals (not 10), so isAuditReady returns false
+        _createNSignals(5);
+
+        // No early exit requested — so quorum routes to settleByVote
+        int256 score = 1000e6;
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, score);
+
+        // Second vote reaches quorum → triggers settleByVote → reverts NotAuditReady
+        vm.prank(validator2);
+        vm.expectRevert();
+        voting.submitVote(genius, idiot, score);
+
+        // Not finalized because settlement reverted
+        assertFalse(voting.isCycleFinalized(genius, idiot, 0));
+    }
+
+    function test_earlyExitByVote_worksWhenNotAuditReady() public {
+        // Only 5 signals — early exit path should work
+        _createNSignals(5);
+
+        // Request early exit
+        vm.prank(idiot);
+        voting.requestEarlyExit(genius, idiot);
+
+        int256 score = -1000e6;
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, score);
+        vm.prank(validator2);
+        voting.submitVote(genius, idiot, score);
+
+        // Early exit should succeed even with fewer than 10 signals
+        assertTrue(voting.isCycleFinalized(genius, idiot, 0));
+        AuditResult memory result = audit.getAuditResult(genius, idiot, 0);
+        assertEq(result.qualityScore, score);
+        assertEq(result.protocolFee, 0, "Early exit: no protocol fee");
+    }
+
     // ─── Internal Helpers ────────────────────────────────────
 
     function _cycleKey(uint256 cycle) internal view returns (bytes32) {
