@@ -241,3 +241,14 @@ Append-only log. Each entry documents where implementation diverges from `docs/w
 **Why:** Storing per-purchase validator votes on-chain would leak which lines are real (defeating the privacy goal of aggregate voting). The track record proof serves a different purpose: portable credibility for leaderboards and discovery, not automated dispute resolution.
 **Impact:** Track record proofs are safe for reputation/leaderboard use. They are NOT suitable for automated dispute resolution without additional on-chain vote storage. This is acceptable for the current phase. Future iterations could use proof composition with off-chain validator attestations.
 **Security Model:** A malicious Genius could claim different outcomes than validators voted. However, the economic incentive to lie is low: the leaderboard affects discovery priority but not settlement amounts (which are determined by OutcomeVoting consensus).
+
+## DEV-012: Buyer-Supplied Odds and Sybil Resistance
+
+**Date:** 2026-02-22
+**Whitepaper Section:** Section 5 — Quality Score formula
+**Whitepaper Says:** Quality Score = Σ(favorable gains) - Σ(unfavorable losses). Gain uses odds; loss uses SLA multiplier.
+**What we did:** Odds are buyer-supplied at purchase time (validated at 1.01x–1000x). The asymmetry between gain (proportional to odds) and loss (proportional to slaMultiplierBps) is intentional per the whitepaper — favorable longshots should reward the Genius more.
+**Known risk:** A Genius could create a sock-puppet Idiot, buy their own signals with very high odds on signals they know will be favorable, inflating their quality score and track record. This is a Sybil attack, not a code vulnerability.
+**Mitigations in place:** Rate limiting, one purchase per Idiot per signal (`hasPurchased` mapping), odds bounded at 1000x max.
+**Future mitigations:** Per-signal odds range set by Genius (add minOdds/maxOdds to Signal struct), stake-based Sybil resistance, identity verification for leaderboard prominence.
+**Impact:** Track record inflation via self-dealing is possible but limited (attacker pays fees and collateral). Settlement economics are unaffected — damages are per Genius-Idiot pair. No code change needed at this stage.
