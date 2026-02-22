@@ -3,9 +3,6 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 
-const BETA_PASSWORD = process.env.NEXT_PUBLIC_BETA_PASSWORD || "";
-const STORAGE_KEY = "djinn-beta-access";
-
 export default function BetaGate({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [password, setPassword] = useState("");
@@ -13,28 +10,35 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === "true") {
+    // Check server-side if the user already has beta access (via cookie)
+    fetch("/api/beta/verify", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authorized) setAuthorized(true);
+      })
+      .catch(() => {
+        // If the endpoint doesn't exist or fails, allow access (beta gate disabled)
         setAuthorized(true);
-      }
-    } catch {
-      // localStorage may be unavailable in private browsing mode
-    }
-    setChecking(false);
+      })
+      .finally(() => setChecking(false));
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === BETA_PASSWORD) {
-      try {
-        localStorage.setItem(STORAGE_KEY, "true");
-      } catch {
-        // Proceed without persistence in private browsing mode
+    try {
+      const res = await fetch("/api/beta/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+        credentials: "same-origin",
+      });
+      if (res.ok) {
+        setAuthorized(true);
+        setError(false);
+      } else {
+        setError(true);
       }
-      setAuthorized(true);
-      setError(false);
-    } else {
+    } catch {
       setError(true);
     }
   };
@@ -43,7 +47,7 @@ export default function BetaGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (authorized || !BETA_PASSWORD) {
+  if (authorized) {
     return <>{children}</>;
   }
 

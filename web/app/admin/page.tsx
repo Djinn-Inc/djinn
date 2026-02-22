@@ -54,20 +54,28 @@ export default function AdminDashboard() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState(false);
 
-  // Simple client-side password gate
+  // Check for existing admin session cookie (set by server-side auth)
   useEffect(() => {
-    const stored = sessionStorage.getItem("djinn_admin_auth");
-    if (stored === "1") setAuthed(true);
+    // If the cookie exists, the server will validate it on API calls
+    const hasCookie = document.cookie.includes("djinn_admin_token=");
+    if (hasCookie) setAuthed(true);
   }, []);
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
-    if (password === expected) {
-      setAuthed(true);
-      sessionStorage.setItem("djinn_admin_auth", "1");
-      setAuthError(false);
-    } else {
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        setAuthed(true);
+        setAuthError(false);
+      } else {
+        setAuthError(true);
+      }
+    } catch {
       setAuthError(true);
     }
   };
@@ -75,12 +83,11 @@ export default function AdminDashboard() {
   const refresh = useCallback(async () => {
     setLoading(true);
 
-    const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "djinn103";
     const [validatorResults, minerResult, statsResult, errorsResult] = await Promise.allSettled([
       fetchValidatorHealth(),
       fetchMinerHealth(),
       fetchProtocolStats(),
-      fetchErrorReports(adminPass),
+      fetchErrorReports(),
     ]);
 
     if (validatorResults.status === "fulfilled") setValidators(validatorResults.value);
@@ -493,11 +500,12 @@ async function fetchValidatorHealth(): Promise<ValidatorHealth[]> {
   }
 }
 
-async function fetchErrorReports(auth: string): Promise<{ errors: ErrorReport[]; total: number } | null> {
+async function fetchErrorReports(): Promise<{ errors: ErrorReport[]; total: number } | null> {
   try {
+    // Auth is handled via httpOnly cookie set by /api/admin/auth
     const res = await fetch("/api/admin/errors?limit=50", {
       signal: AbortSignal.timeout(5000),
-      headers: { Authorization: `Bearer ${auth}` },
+      credentials: "same-origin",
     });
     if (!res.ok) return null;
     return await res.json();

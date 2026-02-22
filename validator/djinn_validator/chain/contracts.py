@@ -25,6 +25,18 @@ from djinn_validator.utils.circuit_breaker import CircuitBreaker
 
 log = structlog.get_logger()
 
+
+def _sanitize_url(url: str) -> str:
+    """Strip credentials and path from URL for safe logging."""
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port or 443}"
+    except Exception:
+        return "<unparseable>"
+
+
 # Minimal ABIs — only the functions the validator needs
 ESCROW_ABI = [
     {
@@ -300,7 +312,7 @@ class ChainClient:
         if self._rpc_index == old_index:
             return False
         new_url = self._rpc_urls[self._rpc_index]
-        log.warning("rpc_failover", new_url=new_url, old_index=old_index, new_index=self._rpc_index)
+        log.warning("rpc_failover", new_url=_sanitize_url(new_url), old_index=old_index, new_index=self._rpc_index)
         self._w3 = self._create_provider(new_url)
         self._setup_contracts()
         return True

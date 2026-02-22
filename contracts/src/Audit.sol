@@ -15,7 +15,7 @@ interface IEscrowForAudit {
 
 /// @notice Minimal interface for the Collateral contract
 interface ICollateralForAudit {
-    function slash(address genius, uint256 amount, address recipient) external;
+    function slash(address genius, uint256 amount, address recipient) external returns (uint256 slashAmount);
     function release(uint256 signalId, address genius, uint256 amount) external;
     function getSignalLock(address genius, uint256 signalId) external view returns (uint256);
 }
@@ -66,6 +66,11 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Odds precision: 6-decimal fixed point (1.91 = 1_910_000)
     uint256 public constant ODDS_PRECISION = 1e6;
+
+    /// @notice Maximum absolute quality score (1 billion USDC, 6 decimals)
+    /// @dev Prevents int256 overflow when converting negative scores to uint256.
+    ///      No realistic cycle can produce a score exceeding this bound.
+    int256 public constant MAX_QUALITY_SCORE = 1_000_000_000e6;
 
     // -------------------------------------------------------------------------
     // State
@@ -129,6 +134,7 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     error AuditAlreadyReady(address genius, address idiot);
     error OutcomesNotFinalized(address genius, address idiot);
     error CallerNotOutcomeVoting(address caller);
+    error QualityScoreOutOfBounds(int256 score, int256 maxAbsolute);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -341,6 +347,9 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         nonReentrant
     {
         if (msg.sender != outcomeVoting) revert CallerNotOutcomeVoting(msg.sender);
+        if (qualityScore > MAX_QUALITY_SCORE || qualityScore < -MAX_QUALITY_SCORE) {
+            revert QualityScoreOutOfBounds(qualityScore, MAX_QUALITY_SCORE);
+        }
         _validateDependencies();
 
         uint256 cycle = account.getCurrentCycle(genius, idiot);
@@ -363,6 +372,9 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         nonReentrant
     {
         if (msg.sender != outcomeVoting) revert CallerNotOutcomeVoting(msg.sender);
+        if (qualityScore > MAX_QUALITY_SCORE || qualityScore < -MAX_QUALITY_SCORE) {
+            revert QualityScoreOutOfBounds(qualityScore, MAX_QUALITY_SCORE);
+        }
         _validateDependencies();
 
         uint256 cycle = account.getCurrentCycle(genius, idiot);
@@ -423,9 +435,17 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
             trancheB = totalDamages - trancheA;
         }
 
-        // Slash Genius collateral — send USDC directly to the Idiot
+        // Slash Genius collateral — send USDC directly to the Idiot.
+        // slash() returns the actual amount slashed (may be less if deposits insufficient).
+        // Any shortfall moves from Tranche A to Tranche B (Credits instead of USDC).
         if (trancheA > 0) {
-            collateral.slash(genius, trancheA, idiot);
+            uint256 actualSlash = collateral.slash(genius, trancheA, idiot);
+            if (actualSlash < trancheA) {
+                // Shortfall: Genius didn't have enough collateral
+                uint256 shortfall = trancheA - actualSlash;
+                trancheB += shortfall;
+                trancheA = actualSlash;
+            }
         }
 
         // Mint Credits for Tranche B
@@ -483,11 +503,12 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         _releaseSignalLocks(genius, purchaseIds);
 
         // Protocol fee -- slash from genius collateral to treasury
-        // Early exits use credits only, no USDC movement
+        // Early exits use credits only, no USDC movement.
+        // Record actual slashed amount (may be less if collateral insufficient).
         if (isEarlyExit) {
             protocolFee = 0;
         } else if (protocolFee > 0) {
-            collateral.slash(genius, protocolFee, protocolTreasury);
+            protocolFee = collateral.slash(genius, protocolFee, protocolTreasury);
         }
 
         // Store audit result
@@ -554,11 +575,12 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         // Release signal locks before slashing
         _releaseSignalLocks(genius, purchaseIds);
 
-        // Protocol fee — early exits use credits only, no USDC movement
+        // Protocol fee — early exits use credits only, no USDC movement.
+        // Record actual slashed amount (may be less if collateral insufficient).
         if (isEarlyExit) {
             protocolFee = 0;
         } else if (protocolFee > 0) {
-            collateral.slash(genius, protocolFee, protocolTreasury);
+            protocolFee = collateral.slash(genius, protocolFee, protocolTreasury);
         }
 
         // Store audit result

@@ -608,6 +608,135 @@ contract OutcomeVotingTest is Test {
         audit.setOutcomeVoting(address(0));
     }
 
+    // ─── Quality Score Bounds Checking ──────────────────────
+
+    function test_settleByVote_revertsOnExtremePositiveScore() public {
+        _create10SignalsNoOutcomes();
+
+        int256 extremeScore = audit.MAX_QUALITY_SCORE() + 1;
+
+        // First vote succeeds (no quorum yet)
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, extremeScore);
+
+        // Second vote reaches quorum → triggers settleByVote → reverts with bounds check
+        vm.prank(validator2);
+        vm.expectRevert();
+        voting.submitVote(genius, idiot, extremeScore);
+
+        // Cycle should NOT be finalized (settlement reverted)
+        assertFalse(voting.isCycleFinalized(genius, idiot, 0));
+    }
+
+    function test_settleByVote_revertsOnExtremeNegativeScore() public {
+        _create10SignalsNoOutcomes();
+
+        int256 extremeScore = -(audit.MAX_QUALITY_SCORE() + 1);
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, extremeScore);
+
+        vm.prank(validator2);
+        vm.expectRevert();
+        voting.submitVote(genius, idiot, extremeScore);
+
+        assertFalse(voting.isCycleFinalized(genius, idiot, 0));
+    }
+
+    function test_settleByVote_maxBoundaryAccepted() public {
+        _create10SignalsNoOutcomes();
+
+        // Exactly at the boundary should work (though damages may exceed collateral)
+        int256 maxScore = audit.MAX_QUALITY_SCORE();
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, maxScore);
+        vm.prank(validator2);
+        voting.submitVote(genius, idiot, maxScore);
+
+        assertTrue(voting.isCycleFinalized(genius, idiot, 0));
+    }
+
+    // ─── Validator Snapshot for Quorum ──────────────────────
+
+    function test_quorumSnapshot_recordedOnFirstVote() public {
+        _create10SignalsNoOutcomes();
+
+        bytes32 cycleKey = _cycleKey(0);
+        assertEq(voting.cycleValidatorSnapshot(cycleKey), 0, "No snapshot before voting");
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, 1000e6);
+
+        assertEq(voting.cycleValidatorSnapshot(cycleKey), 3, "Snapshot should be 3 after first vote");
+    }
+
+    function test_quorumSnapshot_addingValidatorMidVoteDoesNotChangeThreshold() public {
+        _create10SignalsNoOutcomes();
+
+        // First vote snapshots at 3 validators (quorum = ceil(3*2/3) = 2)
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, 1000e6);
+
+        // Add 2 more validators after first vote
+        voting.addValidator(validator4);
+        voting.addValidator(validator5);
+
+        // Current validator count is 5, but snapshot is 3
+        assertEq(voting.validatorCount(), 5);
+        bytes32 cycleKey = _cycleKey(0);
+        assertEq(voting.cycleValidatorSnapshot(cycleKey), 3);
+
+        // Second matching vote should still trigger quorum (2/3 from snapshot)
+        vm.prank(validator2);
+        voting.submitVote(genius, idiot, 1000e6);
+
+        assertTrue(voting.isCycleFinalized(genius, idiot, 0), "Quorum should use snapshot, not current count");
+    }
+
+    function test_quorumSnapshot_removingValidatorMidVoteDoesNotChangeThreshold() public {
+        // Start with 5 validators (quorum = ceil(5*2/3) = 4)
+        voting.addValidator(validator4);
+        voting.addValidator(validator5);
+
+        _create10SignalsNoOutcomes();
+
+        // First vote snapshots at 5
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, 2000e6);
+
+        bytes32 cycleKey = _cycleKey(0);
+        assertEq(voting.cycleValidatorSnapshot(cycleKey), 5);
+
+        // Remove 2 validators (current count drops to 3)
+        voting.removeValidator(validator4);
+        voting.removeValidator(validator5);
+        assertEq(voting.validatorCount(), 3);
+
+        // 2 more matching votes (3 total of 5 snapshotted, need 4)
+        vm.prank(validator2);
+        voting.submitVote(genius, idiot, 2000e6);
+        vm.prank(validator3);
+        voting.submitVote(genius, idiot, 2000e6);
+
+        // 3/5 is not enough (need 4/5 from snapshot)
+        assertFalse(voting.isCycleFinalized(genius, idiot, 0), "Should need 4/5 from snapshot, not 2/3 from current");
+    }
+
+    function test_cycleQuorumThreshold_returnsZeroBeforeVotes() public {
+        assertEq(voting.cycleQuorumThreshold(genius, idiot, 0), 0);
+    }
+
+    function test_cycleQuorumThreshold_matchesSnapshotAfterVote() public {
+        _create10SignalsNoOutcomes();
+
+        vm.prank(validator1);
+        voting.submitVote(genius, idiot, 1000e6);
+
+        // 3 validators snapshotted, threshold = ceil(3*2/3) = 2
+        assertEq(voting.cycleQuorumThreshold(genius, idiot, 0), 2);
+    }
+
     // ─── Internal Helpers ────────────────────────────────────
 
     function _cycleKey(uint256 cycle) internal view returns (bytes32) {

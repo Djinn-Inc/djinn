@@ -70,6 +70,10 @@ contract OutcomeVoting is Ownable, Pausable, ReentrancyGuard {
     /// @notice Whether a cycle has been finalized (settlement triggered)
     mapping(bytes32 => bool) public finalized;
 
+    /// @notice Validator count snapshot when first vote is cast per cycle.
+    /// @dev Prevents quorum manipulation by adding/removing validators mid-vote.
+    mapping(bytes32 => uint256) public cycleValidatorSnapshot;
+
     /// @notice Pending early exit requests: cycleKey => requested
     mapping(bytes32 => bool) public earlyExitRequested;
 
@@ -248,6 +252,11 @@ contract OutcomeVoting is Ownable, Pausable, ReentrancyGuard {
         if (finalized[cycleKey]) revert CycleAlreadyFinalized(cycleKey);
         if (hasVoted[cycleKey][msg.sender]) revert AlreadyVoted(msg.sender, cycleKey);
 
+        // Snapshot validator count on first vote for this cycle
+        if (cycleValidatorSnapshot[cycleKey] == 0) {
+            cycleValidatorSnapshot[cycleKey] = validators.length;
+        }
+
         // Record vote
         hasVoted[cycleKey][msg.sender] = true;
         votedScore[cycleKey][msg.sender] = qualityScore;
@@ -259,8 +268,8 @@ contract OutcomeVoting is Ownable, Pausable, ReentrancyGuard {
 
         emit VoteSubmitted(genius, idiot, cycle, msg.sender, qualityScore);
 
-        // Check quorum: ceil(validators.length * 2 / 3)
-        uint256 totalValidators = validators.length;
+        // Check quorum using the snapshot (prevents manipulation via add/remove mid-vote)
+        uint256 totalValidators = cycleValidatorSnapshot[cycleKey];
         uint256 threshold = (totalValidators * QUORUM_NUMERATOR + QUORUM_DENOMINATOR - 1)
             / QUORUM_DENOMINATOR;
 
@@ -288,11 +297,29 @@ contract OutcomeVoting is Ownable, Pausable, ReentrancyGuard {
         return validators.length;
     }
 
-    /// @notice Get the quorum threshold for the current validator set
-    /// @return threshold Number of matching votes needed to finalize
+    /// @notice Get the quorum threshold for the current validator set.
+    /// @dev For active cycles, the actual threshold uses the snapshot from when the
+    ///      first vote was cast. Use cycleValidatorSnapshot(cycleKey) for the actual value.
+    /// @return threshold Number of matching votes needed to finalize (based on current set)
     function quorumThreshold() external view returns (uint256 threshold) {
         return (validators.length * QUORUM_NUMERATOR + QUORUM_DENOMINATOR - 1)
             / QUORUM_DENOMINATOR;
+    }
+
+    /// @notice Get the quorum threshold for a specific cycle (using snapshot)
+    /// @param genius The Genius address
+    /// @param idiot The Idiot address
+    /// @param cycle The audit cycle number
+    /// @return threshold Number of matching votes needed (0 if no votes cast yet)
+    function cycleQuorumThreshold(address genius, address idiot, uint256 cycle)
+        external
+        view
+        returns (uint256 threshold)
+    {
+        bytes32 cycleKey = _cycleKey(genius, idiot, cycle);
+        uint256 snapshot = cycleValidatorSnapshot[cycleKey];
+        if (snapshot == 0) return 0;
+        return (snapshot * QUORUM_NUMERATOR + QUORUM_DENOMINATOR - 1) / QUORUM_DENOMINATOR;
     }
 
     /// @notice Check if a cycle has been finalized
