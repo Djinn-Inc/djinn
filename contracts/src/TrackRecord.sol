@@ -91,8 +91,8 @@ contract TrackRecord is Ownable {
     error CommitTooRecent(uint256 commitBlock, uint256 currentBlock);
     error CommitExpired(uint256 commitBlock, uint256 currentBlock);
 
-    /// @notice Maximum blocks between commit and submit (prevents strategic delay)
-    uint256 public constant COMMIT_EXPIRY_BLOCKS = 256;
+    /// @notice Maximum blocks between commit and submit (~96s on Base at 3s blocks)
+    uint256 public constant COMMIT_EXPIRY_BLOCKS = 32;
 
     // -------------------------------------------------------------------------
     // Constructor

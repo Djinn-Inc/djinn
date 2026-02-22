@@ -252,6 +252,11 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
                 score -= loss;
             }
             // Void and Pending: skip
+
+            // Bounds check per iteration to catch overflow before it compounds
+            if (score > MAX_QUALITY_SCORE || score < -MAX_QUALITY_SCORE) {
+                revert QualityScoreOutOfBounds(score, MAX_QUALITY_SCORE);
+            }
         }
     }
 

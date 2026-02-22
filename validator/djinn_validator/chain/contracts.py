@@ -268,7 +268,7 @@ class ChainClient:
                 self._validator_address = acct.address
                 log.info("chain_client_signer_configured", address=acct.address)
             except Exception as e:
-                log.error("invalid_validator_private_key", err=str(e))
+                log.error("invalid_validator_private_key", err_type=type(e).__name__)
                 self._private_key = ""
 
     def _create_provider(self, url: str) -> AsyncWeb3:

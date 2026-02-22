@@ -99,7 +99,7 @@ FIELD_BYTES = 32
 def _ot_key(dh_result: int, bit_idx: int, choice: int, dh_bytes: int = 256) -> bytes:
     """Derive 32-byte OT encryption key from a DH result via SHA-256."""
     h = hashlib.sha256()
-    byte_len = max(dh_bytes, (dh_result.bit_length() + 7) // 8)
+    byte_len = dh_bytes
     h.update(dh_result.to_bytes(byte_len, "big"))
     h.update(bit_idx.to_bytes(4, "big"))
     h.update(choice.to_bytes(1, "big"))
