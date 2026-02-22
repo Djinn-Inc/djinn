@@ -63,6 +63,7 @@ class Config:
     signal_commitment_address: str = os.getenv("SIGNAL_COMMITMENT_ADDRESS", "")
     account_address: str = os.getenv("ACCOUNT_ADDRESS", "")
     collateral_address: str = os.getenv("COLLATERAL_ADDRESS", "")
+    outcome_voting_address: str = os.getenv("OUTCOME_VOTING_ADDRESS", "")
 
     # Validator API
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
@@ -127,15 +128,16 @@ class Config:
             if is_production:
                 raise ValueError("SPORTS_API_KEY must be set in production — outcome resolution requires it")
             warnings.append("SPORTS_API_KEY not set — outcome resolution will fail")
+        contract_names = ("escrow_address", "signal_commitment_address", "account_address", "collateral_address", "outcome_voting_address")
         if is_production:
-            for name in ("escrow_address", "signal_commitment_address", "account_address", "collateral_address"):
+            for name in contract_names:
                 addr = getattr(self, name)
                 if not addr:
                     raise ValueError(f"{name.upper()} must be set in production")
                 elif not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
                     raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")
         elif self.bt_network not in ("finney", "mainnet"):
-            for name in ("escrow_address", "signal_commitment_address", "account_address", "collateral_address"):
+            for name in contract_names:
                 addr = getattr(self, name)
                 if addr and not re.match(r"^0x[0-9a-fA-F]{40}$", addr):
                     raise ValueError(f"{name.upper()} is not a valid Ethereum address: {addr!r}")

@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 import { useActiveSignals } from "@/lib/hooks/useSignals";
+import { useActiveRelationships } from "@/lib/hooks/useActiveRelationships";
 import { formatUsdc, formatBps, truncateAddress } from "@/lib/types";
 
-type SortOption = "expiry" | "fee" | "sla";
+type SortOption = "expiry" | "fee" | "sla" | "relationship";
 
 const SPORT_OPTIONS = [
   { value: "", label: "All Sports" },
@@ -18,14 +20,27 @@ const SPORT_OPTIONS = [
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "expiry", label: "Expiry (soonest)" },
+  { value: "relationship", label: "My relationships" },
   { value: "fee", label: "Fee (lowest)" },
   { value: "sla", label: "SLA (highest)" },
 ];
 
 export default function BrowseSignals() {
+  const { address } = useAccount();
   const [sportFilter, setSportFilter] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("expiry");
   const { signals, loading } = useActiveSignals(sportFilter || undefined);
+  const { relationships } = useActiveRelationships(address, "idiot");
+
+  const geniusesWithOpenAuditSets = useMemo(() => {
+    const set = new Set<string>();
+    for (const rel of relationships) {
+      if (rel.signalCount > 0 && rel.signalCount < 10) {
+        set.add(rel.genius.toLowerCase());
+      }
+    }
+    return set;
+  }, [relationships]);
 
   const sortedSignals = useMemo(() => {
     const copy = [...signals];
@@ -41,9 +56,17 @@ export default function BrowseSignals() {
           (a, b) => Number(b.slaMultiplierBps) - Number(a.slaMultiplierBps),
         );
         break;
+      case "relationship":
+        copy.sort((a, b) => {
+          const aHas = geniusesWithOpenAuditSets.has(a.genius.toLowerCase()) ? 1 : 0;
+          const bHas = geniusesWithOpenAuditSets.has(b.genius.toLowerCase()) ? 1 : 0;
+          if (bHas !== aHas) return bHas - aHas;
+          return Number(a.expiresAt) - Number(b.expiresAt);
+        });
+        break;
     }
     return copy;
-  }, [signals, sortBy]);
+  }, [signals, sortBy, geniusesWithOpenAuditSets]);
 
   return (
     <div>
@@ -204,12 +227,19 @@ export default function BrowseSignals() {
                   </span>
                 </div>
 
-                <p className="text-sm text-slate-500 mb-4">
-                  by{" "}
-                  <span className="font-medium text-slate-700">
-                    {truncateAddress(s.genius)}
+                <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
+                  <span>
+                    by{" "}
+                    <span className="font-medium text-slate-700">
+                      {truncateAddress(s.genius)}
+                    </span>
                   </span>
-                </p>
+                  {geniusesWithOpenAuditSets.has(s.genius.toLowerCase()) && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-idiot-100 text-idiot-700">
+                      Open audit set
+                    </span>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   <div>

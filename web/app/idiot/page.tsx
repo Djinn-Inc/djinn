@@ -42,10 +42,11 @@ export default function IdiotDashboard() {
   const [slaMin, setSlaMin] = useState(0);
   const [expiryFilter, setExpiryFilter] = useState("");
   const [geniusSearch, setGeniusSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"expiry" | "fee-asc" | "fee-desc" | "sla" | "score">("expiry");
+  const [sortBy, setSortBy] = useState<"expiry" | "fee-asc" | "fee-desc" | "sla" | "score" | "relationship">("expiry");
   const [showFilters, setShowFilters] = useState(false);
   const { signals, loading: signalsLoading } = useActiveSignals(sportFilter || undefined);
   const { data: leaderboard } = useLeaderboard();
+  const { relationships: myRelationships } = useActiveRelationships(address, "idiot");
   const router = useRouter();
 
   // Key recovery: if no local purchased data, check for on-chain recovery blob
@@ -70,7 +71,7 @@ export default function IdiotDashboard() {
     try {
       const result = await loadRecovery(
         address,
-        (params: any) => walletClient.signTypedData(params),
+        (params) => walletClient.signTypedData(params),
       );
       if (result && (result.signals.length > 0 || result.purchases.length > 0)) {
         if (result.signals.length > 0) {
@@ -104,6 +105,16 @@ export default function IdiotDashboard() {
     }
     return map;
   }, [leaderboard]);
+
+  const geniusesWithOpenAuditSets = useMemo(() => {
+    const set = new Set<string>();
+    for (const rel of myRelationships) {
+      if (rel.signalCount > 0 && rel.signalCount < 10) {
+        set.add(rel.genius.toLowerCase());
+      }
+    }
+    return set;
+  }, [myRelationships]);
 
   const filteredSignals = useMemo(() => {
     const now = Date.now();
@@ -148,9 +159,18 @@ export default function IdiotDashboard() {
           return sb - sa;
         });
         break;
+      case "relationship":
+        sorted.sort((a, b) => {
+          const aHas = geniusesWithOpenAuditSets.has(a.genius.toLowerCase()) ? 1 : 0;
+          const bHas = geniusesWithOpenAuditSets.has(b.genius.toLowerCase()) ? 1 : 0;
+          if (bHas !== aHas) return bHas - aHas;
+          // Secondary sort: by expiry within each group
+          return Number(a.expiresAt) - Number(b.expiresAt);
+        });
+        break;
     }
     return sorted;
-  }, [filteredSignals, sortBy, geniusScoreMap]);
+  }, [filteredSignals, sortBy, geniusScoreMap, geniusesWithOpenAuditSets]);
 
   const handleDeposit = async () => {
     if (!depositAmount) return;
@@ -408,6 +428,7 @@ export default function IdiotDashboard() {
               aria-label="Sort signals"
             >
               <option value="expiry">Expiring soon</option>
+              <option value="relationship">My relationships</option>
               <option value="fee-asc">Fee: low to high</option>
               <option value="fee-desc">Fee: high to low</option>
               <option value="sla">Highest SLA</option>
@@ -627,11 +648,12 @@ export default function IdiotDashboard() {
                   ? `${Math.round(hoursLeft)}h left`
                   : `${Math.floor(hoursLeft / 24)}d left`;
               const geniusStats = geniusScoreMap.get(s.genius.toLowerCase());
+              const hasOpenAuditSet = geniusesWithOpenAuditSets.has(s.genius.toLowerCase());
               return (
                 <Link
                   key={s.signalId}
                   href={`/idiot/signal/${s.signalId}`}
-                  className="card block hover:border-idiot-300 active:bg-slate-50 transition-colors"
+                  className={`card block hover:border-idiot-300 active:bg-slate-50 transition-colors${hasOpenAuditSet ? " ring-1 ring-idiot-200" : ""}`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -642,6 +664,11 @@ export default function IdiotDashboard() {
                         <span className="text-xs text-slate-400">
                           by {truncateAddress(s.genius)}
                         </span>
+                        {hasOpenAuditSet && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-idiot-100 text-idiot-700">
+                            Open audit set
+                          </span>
+                        )}
                         {geniusStats && (
                           <span className={`text-xs font-medium ${geniusStats.qualityScore >= 0 ? "text-green-600" : "text-red-500"}`}>
                             {geniusStats.qualityScore >= 0 ? "+" : ""}{geniusStats.qualityScore.toFixed(2)} QS

@@ -81,6 +81,9 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     /// @notice Protocol treasury address that receives the 0.5% fee
     address public protocolTreasury;
 
+    /// @notice OutcomeVoting contract address (sole caller for voted settlements)
+    address public outcomeVoting;
+
     /// @notice Stored audit results: genius -> idiot -> cycle -> AuditResult
     mapping(address => mapping(address => mapping(uint256 => AuditResult))) public auditResults;
 
@@ -125,6 +128,7 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     error NoPurchasesInCycle(address genius, address idiot, uint256 cycle);
     error AuditAlreadyReady(address genius, address idiot);
     error OutcomesNotFinalized(address genius, address idiot);
+    error CallerNotOutcomeVoting(address caller);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -183,6 +187,14 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
         if (_treasury == address(0)) revert ZeroAddress();
         protocolTreasury = _treasury;
         emit TreasuryUpdated(_treasury);
+    }
+
+    /// @notice Set the OutcomeVoting contract address
+    /// @param _addr OutcomeVoting contract address
+    function setOutcomeVoting(address _addr) external onlyOwner {
+        if (_addr == address(0)) revert ZeroAddress();
+        outcomeVoting = _addr;
+        emit ContractAddressUpdated("OutcomeVoting", _addr);
     }
 
     // -------------------------------------------------------------------------
@@ -313,6 +325,55 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
     }
 
     // -------------------------------------------------------------------------
+    // Voted settlement (called by OutcomeVoting after 2/3+ quorum)
+    // -------------------------------------------------------------------------
+
+    /// @notice Settle a full audit cycle using a validator-voted quality score.
+    ///         Called by OutcomeVoting when 2/3+ validators agree on the aggregate
+    ///         quality score. Individual purchase outcomes are computed off-chain via
+    ///         MPC and never written on-chain (privacy preservation).
+    /// @param genius The Genius address
+    /// @param idiot The Idiot address
+    /// @param qualityScore The voted aggregate quality score (USDC, 6 decimals, can be negative)
+    function settleByVote(address genius, address idiot, int256 qualityScore)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (msg.sender != outcomeVoting) revert CallerNotOutcomeVoting(msg.sender);
+        _validateDependencies();
+
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        if (auditResults[genius][idiot][cycle].timestamp != 0) {
+            revert AlreadySettled(genius, idiot, cycle);
+        }
+
+        _settleVoted(genius, idiot, cycle, qualityScore, false);
+    }
+
+    /// @notice Settle an early exit using a validator-voted quality score.
+    ///         Called by OutcomeVoting when 2/3+ validators agree and the cycle
+    ///         had an early exit request. All damages are paid as Credits only.
+    /// @param genius The Genius address
+    /// @param idiot The Idiot address
+    /// @param qualityScore The voted aggregate quality score (USDC, 6 decimals, can be negative)
+    function earlyExitByVote(address genius, address idiot, int256 qualityScore)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (msg.sender != outcomeVoting) revert CallerNotOutcomeVoting(msg.sender);
+        _validateDependencies();
+
+        uint256 cycle = account.getCurrentCycle(genius, idiot);
+        if (auditResults[genius][idiot][cycle].timestamp != 0) {
+            revert AlreadySettled(genius, idiot, cycle);
+        }
+
+        _settleVoted(genius, idiot, cycle, qualityScore, true);
+    }
+
+    // -------------------------------------------------------------------------
     // Internal settlement logic
     // -------------------------------------------------------------------------
 
@@ -423,6 +484,77 @@ contract Audit is Ownable, Pausable, ReentrancyGuard {
 
         // Protocol fee -- slash from genius collateral to treasury
         // Early exits use credits only, no USDC movement
+        if (isEarlyExit) {
+            protocolFee = 0;
+        } else if (protocolFee > 0) {
+            collateral.slash(genius, protocolFee, protocolTreasury);
+        }
+
+        // Store audit result
+        auditResults[genius][idiot][cycle] = AuditResult({
+            qualityScore: score,
+            trancheA: trancheA,
+            trancheB: trancheB,
+            protocolFee: protocolFee,
+            timestamp: block.timestamp
+        });
+
+        // Mark account as settled, start new cycle
+        account.settleAudit(genius, idiot);
+
+        if (isEarlyExit) {
+            emit EarlyExitSettled(genius, idiot, cycle, score, trancheB);
+        } else {
+            emit AuditSettled(genius, idiot, cycle, score, trancheA, trancheB, protocolFee);
+        }
+    }
+
+    /// @dev Voted settlement: aggregates all purchases (no void filtering since individual
+    ///      outcomes are never written on-chain in the voted path). The quality score was
+    ///      already computed by validators via MPC and agreed upon through on-chain voting.
+    /// @param genius The Genius address
+    /// @param idiot The Idiot address
+    /// @param cycle The current audit cycle
+    /// @param score The voted quality score
+    /// @param isEarlyExit If true, all damages paid as Credits only
+    function _settleVoted(address genius, address idiot, uint256 cycle, int256 score, bool isEarlyExit) internal {
+        AccountState memory state = account.getAccountState(genius, idiot);
+        uint256[] memory purchaseIds = state.purchaseIds;
+
+        if (purchaseIds.length == 0) {
+            revert NoPurchasesInCycle(genius, idiot, cycle);
+        }
+
+        // Aggregate all purchases — no void filtering (outcomes are off-chain)
+        uint256 totalNotional;
+        uint256 totalUsdcFeesPaid;
+        for (uint256 i; i < purchaseIds.length; ++i) {
+            Purchase memory p = escrow.getPurchase(purchaseIds[i]);
+            totalNotional += p.notional;
+            totalUsdcFeesPaid += p.usdcPaid;
+        }
+
+        // Protocol fee: 0.5% of total notional
+        uint256 protocolFee = (totalNotional * PROTOCOL_FEE_BPS) / BPS_DENOMINATOR;
+
+        uint256 trancheA;
+        uint256 trancheB;
+
+        if (isEarlyExit) {
+            // Early exit: all damages as Credits, no USDC movement
+            if (score < 0) {
+                trancheB = uint256(-score);
+                creditLedger.mint(idiot, trancheB);
+            }
+        } else if (score < 0) {
+            // Standard settlement with negative score
+            (trancheA, trancheB) = _distributeDamages(genius, idiot, cycle, uint256(-score), totalUsdcFeesPaid);
+        }
+
+        // Release signal locks before slashing
+        _releaseSignalLocks(genius, purchaseIds);
+
+        // Protocol fee — early exits use credits only, no USDC movement
         if (isEarlyExit) {
             protocolFee = 0;
         } else if (protocolFee > 0) {

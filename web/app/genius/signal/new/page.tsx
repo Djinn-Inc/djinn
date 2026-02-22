@@ -105,6 +105,7 @@ export default function CreateSignal() {
   const [slaMultiplier, setSlaMultiplier] = useState("100");
   const [maxNotional, setMaxNotional] = useState("100");
   const [minNotional, setMinNotional] = useState("");
+  const [isExclusive, setIsExclusive] = useState(false);
   const [expiresIn, setExpiresIn] = useState("24");
   const [selectedSportsbooks, setSelectedSportsbooks] = useState<string[]>([]);
 
@@ -277,17 +278,30 @@ export default function CreateSignal() {
         return;
       }
 
-      // Pre-flight: miner executability check — verify all lines are real available markets.
+      // Pre-flight: miner executability check — ALL 10 lines must be available.
+      // Miners are blind to which line is real. If any line fails, the signal cannot be created.
       // This prevents Geniuses from creating signals with fake/expired lines to game track records.
-      // Signals that fail verification are marked "unverified" and excluded from track record proofs.
       let minerVerified = false;
       const candidateLines = allLines.map((line, i) => toCandidateLine(line, i + 1));
       try {
         const minerClient = getMinerClient();
         const checkResult = await minerClient.checkLines({ lines: candidateLines });
+
+        // Check which lines failed
+        const failedLines: number[] = [];
         const realLineIdx = realIndex + 1; // Protocol uses 1-indexed
-        const realLineResult = checkResult.results.find((r) => r.index === realLineIdx);
-        if (!realLineResult || !realLineResult.available) {
+        let realLineFailed = false;
+
+        for (let i = 1; i <= 10; i++) {
+          const result = checkResult.results.find((r) => r.index === i);
+          if (!result || !result.available) {
+            failedLines.push(i);
+            if (i === realLineIdx) realLineFailed = true;
+          }
+        }
+
+        if (realLineFailed) {
+          // Real pick is unavailable — hard block, must pick a new bet
           setStepError(
             "Your pick is not currently available at any sportsbook. " +
             "The line may have moved or the game may have started. Please select a different bet.",
@@ -295,6 +309,20 @@ export default function CreateSignal() {
           setStep("browse");
           return;
         }
+
+        if (failedLines.length > 0) {
+          // Decoys are unavailable — send back to review so Genius can fix
+          const failedStr = failedLines.map((n) => `#${n}`).join(", ");
+          setStepError(
+            `${failedLines.length} decoy line${failedLines.length > 1 ? "s" : ""} (${failedStr}) ` +
+            `${failedLines.length > 1 ? "are" : "is"} not currently executable. ` +
+            "All 10 lines must be available at sportsbooks. " +
+            "Try regenerating decoys or editing the failed lines, then re-submit.",
+          );
+          setStep("review");
+          return;
+        }
+
         minerVerified = true;
       } catch (minerErr) {
         console.warn("Miner executability check failed, signal will be marked unverified:", minerErr);
@@ -1215,7 +1243,11 @@ export default function CreateSignal() {
             id="maxNotional"
             type="number"
             value={maxNotional}
-            onChange={(e) => setMaxNotional(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMaxNotional(val);
+              if (isExclusive) setMinNotional(val);
+            }}
             placeholder="10000"
             min="1"
             max="1000000000"
@@ -1230,7 +1262,9 @@ export default function CreateSignal() {
             }
             return (
               <p className="text-xs text-slate-500 mt-1">
-                Total notional capacity for this signal. Multiple buyers can purchase until this is filled.
+                {isExclusive
+                  ? "Exactly one buyer will purchase this full amount."
+                  : "Total notional capacity for this signal. Multiple buyers can purchase until this is filled."}
               </p>
             );
           })()}
@@ -1249,13 +1283,49 @@ export default function CreateSignal() {
           })()}
         </div>
 
+        <div className="flex items-start gap-3">
+          <input
+            id="exclusive"
+            type="checkbox"
+            checked={isExclusive}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setIsExclusive(checked);
+              if (checked) {
+                setMinNotional(maxNotional);
+              } else {
+                setMinNotional("");
+              }
+            }}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-genius-600 focus:ring-genius-500"
+          />
+          <div>
+            <label htmlFor="exclusive" className="text-sm font-medium text-slate-700 cursor-pointer">
+              Exclusive signal
+            </label>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Only one buyer can purchase this signal for the full notional amount.
+            </p>
+          </div>
+        </div>
+
+        {!isExclusive && (
         <div>
           <label htmlFor="minNotional" className="label">Min Purchase (USDC) <span className="text-slate-400 font-normal">— optional</span></label>
           <input
             id="minNotional"
             type="number"
             value={minNotional}
-            onChange={(e) => setMinNotional(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMinNotional(val);
+              // Auto-detect exclusivity: if min == max and both are valid numbers
+              const minN = parseFloat(val);
+              const maxN = parseFloat(maxNotional);
+              if (val && !isNaN(minN) && !isNaN(maxN) && minN === maxN && maxN > 0) {
+                setIsExclusive(true);
+              }
+            }}
             placeholder="0 (no minimum)"
             min="0"
             max={maxNotional || "1000000000"}
@@ -1275,6 +1345,7 @@ export default function CreateSignal() {
             );
           })()}
         </div>
+        )}
 
         {(commitError || stepError) && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-4" role="alert">

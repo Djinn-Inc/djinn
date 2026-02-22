@@ -45,18 +45,24 @@ def _sanitize_url(url: str) -> str:
 log = structlog.get_logger()
 
 
-async def _settle_outcomes(
+async def _vote_outcomes(
     outcome_attestor: OutcomeAttestor,
     chain_client: ChainClient,
     resolved: list[object],
     neuron: DjinnValidator,
 ) -> None:
-    """Write consensus outcomes on-chain for newly resolved signals.
+    """Compute quality scores and submit votes to OutcomeVoting.
 
-    For each resolved signal that reaches consensus:
-    1. Look up the genius address from SignalCommitment
-    2. Look up all purchases for the signal from Escrow
-    3. Call Account.recordOutcome() and Escrow.setOutcome() for each purchase
+    Instead of writing individual outcomes on-chain (which leaks real picks),
+    validators compute an aggregate quality score per Genius-Idiot cycle and
+    vote on it via OutcomeVoting. When 2/3+ validators agree, settlement is
+    triggered automatically on-chain.
+
+    Flow:
+    1. For each resolved signal, find the Genius and all Idiot purchasers
+    2. Group resolved signals by (Genius, Idiot) pair
+    3. For pairs with all cycle signals resolved, compute quality score
+    4. Submit vote to OutcomeVoting contract
     """
     from djinn_validator.core.outcomes import OutcomeAttestation
 
@@ -68,70 +74,113 @@ async def _settle_outcomes(
             if neuron.metagraph.validator_permit[uid]
         )
     except Exception:
-        total_validators = 1  # Fallback: just this validator
+        total_validators = 1
 
-    settled_count = 0
+    # Collect resolved attestations that have consensus
+    consensus_attestations: list[OutcomeAttestation] = []
     for attestation in resolved:
         if not isinstance(attestation, OutcomeAttestation):
             continue
+        consensus = outcome_attestor.check_consensus(attestation.signal_id, total_validators)
+        if consensus is not None:
+            consensus_attestations.append(attestation)
 
-        signal_id = attestation.signal_id
-        consensus = outcome_attestor.check_consensus(signal_id, total_validators)
-        if consensus is None:
-            continue
+    if not consensus_attestations:
+        return
 
-        # Convert string signal_id to uint256 for on-chain lookup
-        from web3 import Web3
+    # Group by (genius, idiot) pairs: for each resolved signal, find the
+    # genius and all buyers, then check if the full cycle is ready for voting
+    from web3 import Web3
 
+    # Track which pairs we've already voted on this round
+    voted_pairs: set[tuple[str, str]] = set()
+
+    for attestation in consensus_attestations:
         signal_id_int = int.from_bytes(
-            Web3.solidity_keccak(["string"], [signal_id]), "big"
+            Web3.solidity_keccak(["string"], [attestation.signal_id]), "big"
         )
 
-        # Get genius address from on-chain signal
         signal_data = await chain_client.get_signal(signal_id_int)
         genius = signal_data.get("genius", "")
         if not genius or genius == "0x" + "0" * 40:
-            log.warning("signal_genius_not_found", signal_id=signal_id)
             continue
 
-        # Get all purchases for this signal
         purchase_ids = await chain_client.get_purchases_by_signal(signal_id_int)
-        if not purchase_ids:
-            log.debug("no_purchases_for_signal", signal_id=signal_id)
-            continue
-
         for pid in purchase_ids:
             purchase = await chain_client.get_purchase(pid)
             if not purchase:
                 continue
-
             idiot = purchase.get("idiot", "")
             if not idiot or idiot == "0x" + "0" * 40:
                 continue
 
-            # Skip already settled
-            if purchase.get("outcome", 0) != 0:
+            pair_key = (genius.lower(), idiot.lower())
+            if pair_key in voted_pairs:
                 continue
 
+            # Check if audit cycle is ready (10 signals)
+            is_ready = await chain_client.is_audit_ready(genius, idiot)
+            if not is_ready:
+                continue
+
+            # Check if already finalized on-chain
+            cycle = await chain_client.get_current_cycle(genius, idiot)
+            is_finalized = await chain_client.is_cycle_finalized(genius, idiot, cycle)
+            if is_finalized:
+                voted_pairs.add(pair_key)
+                continue
+
+            # Get all purchases in this cycle and compute quality score
+            cycle_purchase_ids = await chain_client.get_purchase_ids(genius, idiot)
+            if not cycle_purchase_ids:
+                continue
+
+            # Fetch purchase data and signal data for score computation
+            cycle_purchases = []
+            for cpid in cycle_purchase_ids:
+                p = await chain_client.get_purchase(cpid)
+                if p:
+                    # Look up signal SLA
+                    sig_data = await chain_client.get_signal(p["signalId"])
+                    p["slaMultiplierBps"] = sig_data.get("slaMultiplierBps", 10_000)
+                    cycle_purchases.append(p)
+
+            # Compute quality score using the consensus outcomes
+            score = outcome_attestor.compute_quality_score(
+                consensus_attestations, cycle_purchases,
+            )
+
+            # Submit vote on-chain
             try:
-                result = await chain_client.settle_purchase(
+                tx_hash = await chain_client.submit_vote(genius, idiot, score)
+                voted_pairs.add(pair_key)
+                log.info(
+                    "vote_submitted",
                     genius=genius,
                     idiot=idiot,
-                    purchase_id=pid,
-                    outcome=consensus.value,
+                    cycle=cycle,
+                    quality_score=score,
+                    tx_hash=tx_hash,
                 )
-                if result.get("account_tx") or result.get("escrow_tx"):
-                    settled_count += 1
             except Exception as e:
-                log.error(
-                    "settle_purchase_failed",
-                    signal_id=signal_id,
-                    purchase_id=pid,
-                    err=str(e),
-                )
+                err_str = str(e)
+                if "AlreadyVoted" in err_str:
+                    log.debug("already_voted", genius=genius, idiot=idiot, cycle=cycle)
+                    voted_pairs.add(pair_key)
+                elif "CycleAlreadyFinalized" in err_str:
+                    log.debug("cycle_already_finalized", genius=genius, idiot=idiot, cycle=cycle)
+                    voted_pairs.add(pair_key)
+                else:
+                    log.error(
+                        "vote_submission_failed",
+                        genius=genius,
+                        idiot=idiot,
+                        cycle=cycle,
+                        err=err_str,
+                    )
 
-    if settled_count:
-        log.info("outcomes_settled_on_chain", count=settled_count)
+    if voted_pairs:
+        log.info("votes_submitted", count=len(voted_pairs))
 
 
 async def epoch_loop(
@@ -234,9 +283,9 @@ async def epoch_loop(
             if resolved:
                 log.info("outcomes_resolved", count=len(resolved))
 
-            # Settle resolved outcomes on-chain
+            # Submit voted outcomes on-chain (aggregate quality scores, no individual outcomes)
             if resolved and chain_client and chain_client.can_write:
-                await _settle_outcomes(
+                await _vote_outcomes(
                     outcome_attestor, chain_client, resolved, neuron,
                 )
 
@@ -339,6 +388,7 @@ async def async_main() -> None:
         escrow_address=config.escrow_address,
         signal_address=config.signal_commitment_address,
         account_address=config.account_address,
+        outcome_voting_address=config.outcome_voting_address,
         private_key=config.base_validator_private_key,
         chain_id=config.base_chain_id,
     )

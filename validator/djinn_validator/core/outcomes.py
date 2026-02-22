@@ -626,6 +626,45 @@ class OutcomeAttestor:
 
         return None
 
+    def compute_quality_score(
+        self,
+        attestations: list[OutcomeAttestation],
+        purchases: list[dict[str, Any]],
+    ) -> int:
+        """Compute the USDC-denominated quality score for a batch of outcomes.
+
+        Matches the Audit.sol computeScore() formula:
+        - Favorable: +notional * (odds - 1e6) / 1e6
+        - Unfavorable: -notional * slaMultiplierBps / 10_000
+        - Void: 0
+
+        Args:
+            attestations: Resolved outcomes for each signal in the cycle
+            purchases: On-chain purchase data dicts (notional, odds, slaMultiplierBps)
+
+        Returns:
+            Quality score in USDC with 6 decimals (can be negative)
+        """
+        # Build signal_id -> outcome map from attestations
+        outcome_map: dict[str, Outcome] = {}
+        for att in attestations:
+            outcome_map[att.signal_id] = att.outcome
+
+        score = 0
+        for p in purchases:
+            signal_id = str(p.get("signalId", ""))
+            outcome = outcome_map.get(signal_id, Outcome.PENDING)
+            notional = p.get("notional", 0)
+            odds = p.get("odds", 1_000_000)
+            sla_bps = p.get("slaMultiplierBps", 10_000)
+
+            if outcome == Outcome.FAVORABLE:
+                score += notional * (odds - 1_000_000) // 1_000_000
+            elif outcome == Outcome.UNFAVORABLE:
+                score -= notional * sla_bps // 10_000
+
+        return score
+
     async def cleanup_resolved(self, max_age_seconds: float = 86400) -> int:
         """Remove resolved signals and old attestations to prevent memory growth.
 

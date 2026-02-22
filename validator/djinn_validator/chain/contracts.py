@@ -128,6 +128,80 @@ ACCOUNT_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+        ],
+        "name": "getCurrentCycle",
+        "outputs": [{"name": "cycle", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+        ],
+        "name": "getSignalCount",
+        "outputs": [{"name": "count", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+        ],
+        "name": "getPurchaseIds",
+        "outputs": [{"name": "ids", "type": "uint256[]"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+OUTCOME_VOTING_ABI = [
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+            {"name": "qualityScore", "type": "int256"},
+        ],
+        "name": "submitVote",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+            {"name": "cycle", "type": "uint256"},
+        ],
+        "name": "isCycleFinalized",
+        "outputs": [{"name": "", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "genius", "type": "address"},
+            {"name": "idiot", "type": "address"},
+            {"name": "cycle", "type": "uint256"},
+            {"name": "qualityScore", "type": "int256"},
+        ],
+        "name": "getVoteCount",
+        "outputs": [{"name": "count", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "validator", "type": "address"}],
+        "name": "isValidator",
+        "outputs": [{"name": "", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
 ]
 
 # Connection-type errors that indicate the RPC endpoint is unreachable
@@ -148,6 +222,7 @@ class ChainClient:
         escrow_address: str = "",
         signal_address: str = "",
         account_address: str = "",
+        outcome_voting_address: str = "",
         private_key: str = "",
         chain_id: int = 8453,
     ) -> None:
@@ -161,6 +236,7 @@ class ChainClient:
         self._escrow_address = escrow_address
         self._signal_address = signal_address
         self._account_address = account_address
+        self._outcome_voting_address = outcome_voting_address
         self._chain_id = chain_id
         self._circuit_breaker = CircuitBreaker(
             name="rpc",
@@ -195,10 +271,12 @@ class ChainClient:
         self._escrow: AsyncContract | None = None
         self._signal: AsyncContract | None = None
         self._account: AsyncContract | None = None
+        self._outcome_voting: AsyncContract | None = None
         for label, addr, abi, attr in [
             ("escrow", self._escrow_address, ESCROW_ABI, "_escrow"),
             ("signal", self._signal_address, SIGNAL_COMMITMENT_ABI, "_signal"),
             ("account", self._account_address, ACCOUNT_ABI, "_account"),
+            ("outcome_voting", self._outcome_voting_address, OUTCOME_VOTING_ABI, "_outcome_voting"),
         ]:
             if addr:
                 try:
@@ -562,6 +640,105 @@ class ChainClient:
                 log.error("escrow_set_outcome_failed", purchase_id=purchase_id, err=err_str)
 
         return result
+
+    # ------------------------------------------------------------------
+    # Account read helpers for quality score computation
+    # ------------------------------------------------------------------
+
+    async def get_current_cycle(self, genius: str, idiot: str) -> int:
+        """Get the current audit cycle for a Genius-Idiot pair."""
+        if self._account is None:
+            return 0
+        try:
+            genius_addr = self._w3.to_checksum_address(genius)
+            idiot_addr = self._w3.to_checksum_address(idiot)
+            return await self._with_failover(
+                lambda: self._account.functions.getCurrentCycle(genius_addr, idiot_addr).call()  # type: ignore[union-attr]
+            )
+        except Exception as e:
+            log.error("get_current_cycle_failed", genius=genius, idiot=idiot, err=str(e))
+            return 0
+
+    async def get_signal_count(self, genius: str, idiot: str) -> int:
+        """Get the signal count in the current cycle for a Genius-Idiot pair."""
+        if self._account is None:
+            return 0
+        try:
+            genius_addr = self._w3.to_checksum_address(genius)
+            idiot_addr = self._w3.to_checksum_address(idiot)
+            return await self._with_failover(
+                lambda: self._account.functions.getSignalCount(genius_addr, idiot_addr).call()  # type: ignore[union-attr]
+            )
+        except Exception as e:
+            log.error("get_signal_count_failed", genius=genius, idiot=idiot, err=str(e))
+            return 0
+
+    async def get_purchase_ids(self, genius: str, idiot: str) -> list[int]:
+        """Get all purchase IDs for the current cycle of a Genius-Idiot pair."""
+        if self._account is None:
+            return []
+        try:
+            genius_addr = self._w3.to_checksum_address(genius)
+            idiot_addr = self._w3.to_checksum_address(idiot)
+            return await self._with_failover(
+                lambda: self._account.functions.getPurchaseIds(genius_addr, idiot_addr).call()  # type: ignore[union-attr]
+            )
+        except Exception as e:
+            log.error("get_purchase_ids_failed", genius=genius, idiot=idiot, err=str(e))
+            return []
+
+    # ------------------------------------------------------------------
+    # OutcomeVoting write methods
+    # ------------------------------------------------------------------
+
+    async def submit_vote(
+        self,
+        genius: str,
+        idiot: str,
+        quality_score: int,
+    ) -> str:
+        """Submit a quality score vote to OutcomeVoting. Returns tx hash."""
+        if self._outcome_voting is None:
+            raise RuntimeError("OutcomeVoting contract not configured")
+
+        genius_addr = self._w3.to_checksum_address(genius)
+        idiot_addr = self._w3.to_checksum_address(idiot)
+
+        return await self._send_tx(
+            self._outcome_voting, "submitVote",
+            genius_addr, idiot_addr, quality_score,
+            gas_limit=200_000,
+        )
+
+    async def is_cycle_finalized(self, genius: str, idiot: str, cycle: int) -> bool:
+        """Check if a cycle has been finalized in OutcomeVoting."""
+        if self._outcome_voting is None:
+            return False
+        try:
+            genius_addr = self._w3.to_checksum_address(genius)
+            idiot_addr = self._w3.to_checksum_address(idiot)
+            return await self._with_failover(
+                lambda: self._outcome_voting.functions.isCycleFinalized(  # type: ignore[union-attr]
+                    genius_addr, idiot_addr, cycle,
+                ).call()
+            )
+        except Exception as e:
+            log.error("is_cycle_finalized_failed", genius=genius, idiot=idiot, cycle=cycle, err=str(e))
+            return False
+
+    async def is_registered_validator(self) -> bool:
+        """Check if this validator is registered in OutcomeVoting."""
+        if self._outcome_voting is None or not self._validator_address:
+            return False
+        try:
+            return await self._with_failover(
+                lambda: self._outcome_voting.functions.isValidator(  # type: ignore[union-attr]
+                    self._w3.to_checksum_address(self._validator_address),
+                ).call()
+            )
+        except Exception as e:
+            log.error("is_registered_validator_failed", err=str(e))
+            return False
 
     async def close(self) -> None:
         """Close the underlying HTTP provider session."""

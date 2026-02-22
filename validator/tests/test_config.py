@@ -97,6 +97,7 @@ class TestConfigNetworkWarning:
                          signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
                          account_address="0x1234567890abcdef1234567890abcdef12345678",
                          collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+                         outcome_voting_address="0x1234567890abcdef1234567890abcdef12345678",
                          base_validator_private_key="0x" + "ab" * 32)
         warnings = config.validate()
         assert not any("BT_NETWORK" in w for w in warnings)
@@ -119,6 +120,7 @@ class TestConfigStrictAutoDetect:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            outcome_voting_address="0x1234567890abcdef1234567890abcdef12345678",
             base_validator_private_key="0x" + "ab" * 32,
             base_chain_id=99999,  # Non-standard → generates a warning
         )
@@ -144,6 +146,7 @@ class TestConfigStrictAutoDetect:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            outcome_voting_address="0x1234567890abcdef1234567890abcdef12345678",
             base_validator_private_key="0x" + "ab" * 32,
             base_chain_id=99999,
         )
@@ -255,6 +258,7 @@ class TestConfigAddressValidation:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            outcome_voting_address="0x1234567890abcdef1234567890abcdef12345678",
             base_validator_private_key="0x" + "ab" * 32,
         )
         warnings = config.validate()
@@ -343,6 +347,7 @@ class TestShamirThresholdProduction:
             signal_commitment_address="0x1234567890abcdef1234567890abcdef12345678",
             account_address="0x1234567890abcdef1234567890abcdef12345678",
             collateral_address="0x1234567890abcdef1234567890abcdef12345678",
+            outcome_voting_address="0x1234567890abcdef1234567890abcdef12345678",
             base_validator_private_key="0x" + "ab" * 32,
         )
         defaults.update(overrides)
